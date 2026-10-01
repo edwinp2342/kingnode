@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   const rows = [];
   await Promise.all(days.map(async day => {
     try {
-      const r = await fetch(`https://cdn.finra.org/equity/regsho/daily/CNMSshvol${ymd(day)}.txt`, { headers: { "user-agent": "Mozilla/5.0 (Undertow)" } });
+      const r = await fetch(`https://cdn.finra.org/equity/regsho/daily/CNMSshvol${ymd(day)}.txt`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
       if (!r.ok) return;
       const text = await r.text();
       const line = text.split("\n").find(l => l.split("|")[1] === sym);

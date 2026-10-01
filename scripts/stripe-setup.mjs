@@ -7,7 +7,7 @@ if (!key) { console.error("Set STRIPE_SECRET_KEY first."); process.exit(1); }
 const stripe = new Stripe(key);
 
 const product = await stripe.products.create({
-  name: "Undertow Pro",
+  name: "Kingnode Pro",
   description: "All tickers, all expirations, alerts, exports and Ask the desk.",
 });
 const monthly = await stripe.prices.create({ product: product.id, currency: "usd", unit_amount: 1900, recurring: { interval: "month" }, nickname: "Pro monthly" });

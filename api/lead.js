@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   if (last.length >= 5) return res.status(429).json({ error: "rate_limited" });
   last.push(now); recent.set(ip, last);
 
-  const text = `New Undertow lead: ${lead.name} — ${lead.business}\n` +
+  const text = `New Kingnode lead: ${lead.name} — ${lead.business}\n` +
     `Needs: ${lead.need}\nPhone: ${lead.phone || "—"}\nEmail: ${lead.email || "—"}\n` +
     (lead.message ? `Notes: ${lead.message}` : "");
   console.log("LEAD", JSON.stringify(lead));

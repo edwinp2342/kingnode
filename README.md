@@ -1,6 +1,6 @@
-# Undertow
+# Kingnode
 
-*The current under the tape.* A dealer-positioning and institutional-flow terminal for options traders — gamma heatmap, call/put walls, gamma flip, max pain, expected move, IV skew and fresh positioning — with a plain-English read on top. Free for SPX and SPY; Pro ($19/mo or $159/yr) for every ticker and expiration, alerts, CSV export and "Ask the desk".
+*The level dealers defend.* A dealer-positioning and institutional-flow terminal for options traders — gamma heatmap, call/put walls, gamma flip, max pain, expected move, IV skew and fresh positioning — with a plain-English read on top. Free for SPX and SPY; Pro ($19/mo or $159/yr) for every ticker and expiration, alerts, CSV export and "Ask the desk".
 
 ## Files
 
@@ -88,9 +88,9 @@ Switching vendors changes nothing in the terminal. If a vendor renames a field, 
 ## Setup
 
 ```bash
-unzip undertow.zip && cd undertow
+unzip kingnode.zip && cd kingnode
 npm install
-git init && git add -A && git commit -m "Undertow"
+git init && git add -A && git commit -m "Kingnode"
 STRIPE_SECRET_KEY=sk_test_... node scripts/stripe-setup.mjs   # prints the price IDs
 cp .env.example .env.local && echo "APP_SECRET=$(openssl rand -hex 32)" >> .env.local
 npm i -g vercel && vercel && vercel env add APP_SECRET   # repeat for each variable
@@ -101,7 +101,7 @@ Then: Stripe → Settings → Billing → Customer portal → enable cancel and 
 
 ## Personal-use quick start (no Stripe, no Anthropic key)
 
-    unzip undertow.zip && cd undertow && npm install
+    unzip kingnode.zip && cd kingnode && npm install
     cp .env.example .env.local
     # set APP_SECRET, and either leave DATA_PROVIDER=cboe or add a TRADIER_TOKEN/POLYGON_KEY
     npx vercel dev          # http://localhost:3000/app.html

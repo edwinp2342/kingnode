@@ -1,5 +1,5 @@
 // Recent insider filings (SEC Form 4) for a ticker, from EDGAR full-text search. Free; SEC requires a descriptive User-Agent.
-const UA = process.env.SEC_USER_AGENT || "Undertow terminal contact@example.com";
+const UA = process.env.SEC_USER_AGENT || "Kingnode terminal contact@example.com";
 const cache = new Map();
 export default async function handler(req, res) {
   const sym = String(req.query?.symbol || "").toUpperCase().replace(/[^A-Z.]/g, "").slice(0, 8);

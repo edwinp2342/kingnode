@@ -1,4 +1,4 @@
-// Undertow flow collector — run this on your own machine or a small VPS during market hours.
+// Kingnode flow collector — run this on your own machine or a small VPS during market hours.
 //   POLYGON_KEY=... FLOW_SECRET=... SITE_URL=https://yoursite node collector/flow-collector.mjs SPY QQQ NVDA
 // Subscribes to Polygon's options trade stream (needs an options plan with trades), classifies each print
 // (sweep / block / aggressor side vs the quote), and ships batches to /api/flow every 2 seconds.

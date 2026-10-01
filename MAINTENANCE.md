@@ -18,18 +18,18 @@ It exits if the socket drops; wrap it in `pm2` (`npm i -g pm2 && pm2 start flow-
 ## 3. The health check + a scheduled Claude Code agent
 `/api/health` tests the data provider, bars, and every required env var, and returns 503 if anything is broken. Point a scheduled Claude Code task at it so something notices before you do.
 
-Create `~/undertow-check.md`:
+Create `~/kingnode-check.md`:
 
     Every weekday at 8:45 ET:
     1. curl https://YOURSITE/api/health and read the JSON.
-    2. If ok is false: open the undertow repo, look at the failing check, and fix it (a provider field rename, an expired key, a cron mis-schedule). Run `vercel --prod` when the fix is verified locally with `vercel dev`.
+    2. If ok is false: open the kingnode repo, look at the failing check, and fix it (a provider field rename, an expired key, a cron mis-schedule). Run `vercel --prod` when the fix is verified locally with `vercel dev`.
     3. curl the morning endpoint with the CRON_SECRET and confirm it returned posted:true.
     4. Report in one paragraph: what was checked, what was fixed, what needs me.
 
 Then schedule it (macOS/Linux):
 
     crontab -e
-    45 8 * * 1-5  cd ~/undertow && claude -p "$(cat ~/undertow-check.md)" >> ~/undertow-check.log 2>&1
+    45 8 * * 1-5  cd ~/kingnode && claude -p "$(cat ~/kingnode-check.md)" >> ~/kingnode-check.log 2>&1
 
 Claude Code runs with your repo, your env, and your Vercel login, so it can actually deploy fixes. Read the log once a week.
 

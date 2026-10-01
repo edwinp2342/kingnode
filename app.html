@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Undertow — the current under the tape</title>
+<title>Kingnode — the first level a trader looks for</title>
 <meta name="description" content="Dealer positioning, options flow, institutional lean and TradingView charting on one screen.">
 <meta name="robots" content="noindex">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23131722%22/><path d=%22M15 62c12-14 24-14 36 0s24 14 36 0%22 stroke=%22%232962FF%22 stroke-width=%2210%22 fill=%22none%22 stroke-linecap=%22round%22/></svg>">
@@ -176,7 +176,7 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
 </head>
 <body>
 <header class="bar">
-  <a class="logo" href="./"><svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="20" fill="#131722"/><path d="M15 62c12-14 24-14 36 0s24 14 36 0" stroke="#2962FF" stroke-width="10" fill="none" stroke-linecap="round"/></svg>Undertow</a>
+  <a class="logo" href="./"><svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="20" fill="#131722"/><path d="M15 62c12-14 24-14 36 0s24 14 36 0" stroke="#2962FF" stroke-width="10" fill="none" stroke-linecap="round"/></svg>Kingnode</a>
   <form class="sym" id="symForm" autocomplete="off"><div class="search"><input id="symIn" value="SPX" aria-label="Search ticker or company" placeholder="Search ticker or company  /" maxlength="30"><div class="sug" id="sug" hidden></div></div><button class="btn small" type="submit">Go</button></form>
   <div class="chips" id="chips"></div>
   <div class="right">
@@ -258,8 +258,8 @@ const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
 const FREE = new Set(["SPX","SPY"]);
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:4, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true };
-function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("undertow:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
-function saveSettings(){ try { localStorage.setItem("undertow:settings", JSON.stringify(S.set)); } catch {} }
+function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
+function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
 const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(), seekerMode:"gex", seekerRange:3, flowExp:"all", cfSort:"prem", view:null, inst:null, gate:false, flow:null, flowDemo:false, flowMinPrem:50000, flowKind:"all", flowSide:"all", flowCp:"all",
   set:loadSettings(), sym:"SPX", chain:null, bars:null, barsMeta:null, barsDemo:false, demo:false, err:"", tab:"seeker", hview:"net", inspect:null, exps:[], allExps:[], plan:null, token:"", exp:0, timer:null, lastAlert:{}, calc:null };
 
@@ -287,9 +287,9 @@ const isWeekday = d => d.getDay() % 6 !== 0;
 function applyToken(t){
   S.token = ""; S.plan = null; S.exp = 0;
   if (!t) return;
-  try { const p = JSON.parse(atob(t.split(".")[0].replace(/-/g,"+").replace(/_/g,"/"))); S.token = t; S.plan = p.p; S.exp = p.e*1000; localStorage.setItem("undertow:token", t); } catch {}
+  try { const p = JSON.parse(atob(t.split(".")[0].replace(/-/g,"+").replace(/_/g,"/"))); S.token = t; S.plan = p.p; S.exp = p.e*1000; localStorage.setItem("kingnode:token", t); } catch {}
 }
-function clearToken(){ S.token=""; S.plan=null; S.exp=0; try{ localStorage.removeItem("undertow:token"); }catch{} }
+function clearToken(){ S.token=""; S.plan=null; S.exp=0; try{ localStorage.removeItem("kingnode:token"); }catch{} }
 function openUpgrade(why){ document.getElementById("upWhy").textContent = why || ""; document.getElementById("upMsg").textContent = ""; const d = document.getElementById("upDlg"); if (!d.open) d.showModal(); }
 function requirePro(why){ if (isPro()) return false; openUpgrade(why); return true; }
 async function startCheckout(plan, btn){
@@ -479,7 +479,7 @@ function computeFrom(d, expsSel, range, model){
 }
 
 // ---------- intraday history of the levels (per ticker, per day, in this browser) ----------
-function histKey(){ return `undertow:hist:${S.sym}:${new Date().toISOString().slice(0,10)}`; }
+function histKey(){ return `kingnode:hist:${S.sym}:${new Date().toISOString().slice(0,10)}`; }
 function recordHistory(){
   if (S.demo) return;
   try {
@@ -560,7 +560,7 @@ function renderAsk(){
   inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
   box.append(h("div",{class:"ask"}, inp, h("button",{class:"btn small", onclick:go},"Ask")), out);
 }
-const AL_KEY = "undertow:alertrules";
+const AL_KEY = "kingnode:alertrules";
 function getRules(){ try { return {...{on:false, minPrem:250000, sweepsOnly:false, minVolOi:2, sideAsk:true, minDte:0, discord:false, levels:true}, ...JSON.parse(localStorage.getItem(AL_KEY)||"{}")}; } catch { return {on:false, minPrem:250000, sweepsOnly:false, minVolOi:2, sideAsk:true, minDte:0, discord:false, levels:true}; } }
 function setRules(r){ try { localStorage.setItem(AL_KEY, JSON.stringify(r)); } catch {} }
 function checkFlowAlerts(){
@@ -574,7 +574,7 @@ function checkFlowAlerts(){
 }
 function fireAlert(title, text){
   S.alertLog.unshift({t:Date.now(), title, text}); S.alertLog = S.alertLog.slice(0,50);
-  if ("Notification" in window && Notification.permission === "granted") { try { new Notification(`Undertow · ${title}`, {body:text}); } catch {} }
+  if ("Notification" in window && Notification.permission === "granted") { try { new Notification(`Kingnode · ${title}`, {body:text}); } catch {} }
   const r = getRules(); if (r.discord) fetch("/api/notify", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({token:S.token, text:`**${title}** — ${text}`})}).catch(()=>{});
   renderAlerts();
 }
@@ -763,7 +763,7 @@ function viewChain(){
         h("td",{class:"c"},fmt(C.oi)), h("td",null,fmt(C.vol)), h("td",null,fmt((C.iv||0)*100,1)+"%"), h("td",null,fmt(C.mid,2)), h("td",{style:{textAlign:"center",fontWeight:600}},fmt(K)), h("td",null,fmt(P.mid,2)), h("td",null,fmt((P.iv||0)*100,1)+"%"), h("td",null,fmt(P.vol)), h("td",{class:"p"},fmt(P.oi))); }))));
 }
 // ---------- Morning levels: one row per ticker, ready to paste ----------
-const WATCH_KEY = "undertow:watch";
+const WATCH_KEY = "kingnode:watch";
 function getWatch(){ try { return JSON.parse(localStorage.getItem(WATCH_KEY) || "null") || ["SPX","SPY","QQQ","IWM"]; } catch { return ["SPX","SPY"]; } }
 function setWatch(l){ try { localStorage.setItem(WATCH_KEY, JSON.stringify(l.slice(0,12))); } catch {} }
 const watchCache = new Map();
@@ -936,7 +936,7 @@ function viewChart(){
   svg.addEventListener("wheel", ev => { ev.preventDefault(); const r = svg.getBoundingClientRect(); const fx = Math.max(0, Math.min(1, ((ev.clientX-r.left)/r.width*W - pad.l)/(W-pad.l-pad.r))); const n = view.to - view.from, factor = ev.deltaY > 0 ? 1.15 : 1/1.15; const nn = Math.max(20, Math.min(all.length, Math.round(n*factor))); const anchor = view.from + fx*n; let from = Math.round(anchor - fx*nn); from = Math.max(0, Math.min(all.length-nn, from)); S.view = {sym:S.sym, n:all.length, from, to:from+nn}; rerender(); }, {passive:false});
   let drag = null;
   svg.addEventListener("mousedown", ev => { drag = {x:ev.clientX, y:ev.clientY, from:view.from, moved:false}; });
-  svg.addEventListener("click", ev => { if (drag?.moved) return; const r = svg.getBoundingClientRect(); const y = (ev.clientY-r.top)/r.height*H; if (y < pad.t || y > H-pad.b) return; const px = yMax - (y-pad.t)/plotH*(yMax-yMin); S.lines = S.lines || {}; const L = S.lines[S.sym] = S.lines[S.sym] || []; const tol = (yMax-yMin)*0.01; const i = L.findIndex(v => Math.abs(v-px) < tol); if (i >= 0) L.splice(i,1); else L.push(+px.toFixed(2)); try { localStorage.setItem("undertow:lines", JSON.stringify(S.lines)); } catch {} rerender(); });
+  svg.addEventListener("click", ev => { if (drag?.moved) return; const r = svg.getBoundingClientRect(); const y = (ev.clientY-r.top)/r.height*H; if (y < pad.t || y > H-pad.b) return; const px = yMax - (y-pad.t)/plotH*(yMax-yMin); S.lines = S.lines || {}; const L = S.lines[S.sym] = S.lines[S.sym] || []; const tol = (yMax-yMin)*0.01; const i = L.findIndex(v => Math.abs(v-px) < tol); if (i >= 0) L.splice(i,1); else L.push(+px.toFixed(2)); try { localStorage.setItem("kingnode:lines", JSON.stringify(S.lines)); } catch {} rerender(); });
   window.addEventListener("mouseup", () => { drag = null; }, {once:true});
   svg.addEventListener("mousemove", ev => { if (!drag) return; if (Math.abs(ev.clientX-drag.x) > 3) drag.moved = true; const r = svg.getBoundingClientRect(); const n = view.to - view.from; const dBars = Math.round((drag.x - ev.clientX)/r.width*W/(W-pad.l-pad.r)*n); if (!dBars) return; let from = Math.max(0, Math.min(all.length-n, drag.from + dBars)); if (from === view.from) return; S.view = {sym:S.sym, n:all.length, from, to:from+n}; drag = {x:ev.clientX, from}; rerender(); });
   svg.addEventListener("mouseleave", () => { cross.style.display = "none"; ohlc.textContent = `${S.sym} · ${st.interval} · ${bars.length} bars${S.barsDemo ? " · demo bars" : " · delayed"}`; });
@@ -1028,7 +1028,7 @@ function viewFlow(){
 }
 
 // ---------- Heatseeker: how positioning moved through the session (strike × time) ----------
-function seekerKey(){ return `undertow:seeker:${S.sym}:${new Date().toISOString().slice(0,10)}`; }
+function seekerKey(){ return `kingnode:seeker:${S.sym}:${new Date().toISOString().slice(0,10)}`; }
 function recordSeeker(){
   const c = S.calc; const row = { t: Date.now(), spot: c.spot, k: c.strikes.map(s => [s.K, Math.round(s.gex/1e5), Math.round(s.vex/1e4), Math.round(s.dex/1e6)]) };
   if (S.demo){ if (!S.seekerHist.length || S.seekerHist[0].demo !== S.sym) S.seekerHist = synthSeeker(c); return; }
@@ -1152,7 +1152,7 @@ function viewSeeker(){
 function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r); g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h); g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r); g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath(); }
 
 // ---------- Playbook: event-driven, flow-tailing swing setups with the sizing rules baked in ----------
-const PB_KEY = "undertow:playbook";
+const PB_KEY = "kingnode:playbook";
 const PB_DEF = {account:25000, maxRiskPct:5, maxPositions:3, minDte:30, stopPct:20, positions:[]};
 function getPb(){ try { return {...PB_DEF, ...JSON.parse(localStorage.getItem(PB_KEY)||"{}")}; } catch { return {...PB_DEF}; } }
 function setPb(p){ try { localStorage.setItem(PB_KEY, JSON.stringify(p)); } catch {} }
@@ -1323,7 +1323,7 @@ function inspectPanel(){
       h("div",{class:"kv", style:{marginTop:"8px"}}, [["Open interest",fmt(x.oi)],["Volume today",fmt(x.vol)],["Vol / OI", x.oi ? fmt(x.vol/x.oi,2)+"×" : "—"],["Mid",fmt(x.mid,2)],["Bid / Ask",`${fmt(x.bid,2)} / ${fmt(x.ask,2)}`],["IV",fmt(x.iv*100,1)+"%"],["Delta",fmt(x.delta,3)],["Gamma",x.gamma.toExponential(2)],["OI notional",money(x.oi*x.mid*100)],["Volume notional",money(x.vol*x.mid*100)],["Dealer gamma $",money(x.gex)],["Distance from spot",pct((x.K/c.spot-1)*100)],["DTE",dte(x.exp)]].map(([k,v]) => h("div",null, h("span",null,k), h("span",null,v))))); };
   return h("div",{class:"insp"}, h("h3",null, h("span",null,`Contract inspector — ${fmt(ins.K)} · ${ins.exp}`), h("button",{class:"btn small", onclick:()=>{ S.inspect=null; renderTabs(); }},"Close")), ...list.sort((a,b)=>a.type<b.type?-1:1).map(row));
 }
-const TRACK_KEY = "undertow:tracked";
+const TRACK_KEY = "kingnode:tracked";
 function getTracked(){ try { return JSON.parse(localStorage.getItem(TRACK_KEY)||"[]"); } catch { return []; } }
 function setTracked(l){ try { localStorage.setItem(TRACK_KEY, JSON.stringify(l.slice(0,40))); } catch {} }
 function toggleTracked(key, x){ const l = getTracked(); const i = l.findIndex(t=>t.key===key); if (i>=0) l.splice(i,1); else l.push({key, sym:S.sym, exp:x.exp, K:x.K, type:x.type, added:Date.now(), hist:[]}); setTracked(l); }
@@ -1364,15 +1364,15 @@ symIn.addEventListener("blur", () => setTimeout(() => sugEl.hidden = true, 150))
 symIn.addEventListener("focus", () => { if (symIn.value.trim() && sugItems.length) sugEl.hidden = false; });
 document.getElementById("symForm").addEventListener("submit", e => { e.preventDefault(); const v = symIn.value.trim().toUpperCase(); if (!v) return; if (sugItems.length && !NAMES.has(v) && !/^[A-Z.]{1,6}$/.test(v)){ goSym(sugItems[0].symbol); return; } goSym(v); });
 document.getElementById("refreshBtn").onclick = load;
-document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)}`; try { const r = await fetch("/api/notify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, text:`🚩 **Undertow feedback** ${note}\n${ctx}`})}); notice(r.ok ? "Flagged. Sent to your Discord with the screen context." : "Couldn't send — set DISCORD_WEBHOOK and NOTIFY_OPEN=true.", !r.ok); } catch { notice("Couldn't reach the server.", true); } };
+document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)}`; try { const r = await fetch("/api/notify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, text:`🚩 **Kingnode feedback** ${note}\n${ctx}`})}); notice(r.ok ? "Flagged. Sent to your Discord with the screen context." : "Couldn't send — set DISCORD_WEBHOOK and NOTIFY_OPEN=true.", !r.ok); } catch { notice("Couldn't reach the server.", true); } };
 document.getElementById("settingsBtn").onclick = () => { const f = document.getElementById("setForm"); for (const el of f.elements) if (el.name && S.set[el.name] != null) el.value = S.set[el.name]; document.getElementById("setDlg").showModal(); };
 document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer(); S.exps = []; load(); });
 document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; saveSettings(); document.getElementById("setDlg").close(); S.exps = []; load(); };
 document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); } });
-document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("undertow:theme", next);}catch{} mountChart(); renderTabs(); };
-try { const t = localStorage.getItem("undertow:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
-try { applyToken(localStorage.getItem("undertow:token") || ""); } catch {}
-try { S.lines = JSON.parse(localStorage.getItem("undertow:lines") || "{}"); } catch { S.lines = {}; }
+document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
+try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+try { applyToken(localStorage.getItem("kingnode:token") || ""); } catch {}
+try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
 document.querySelectorAll("#upDlg .plan2").forEach(b => b.addEventListener("click", () => startCheckout(b.dataset.plan, b)));
 document.getElementById("restoreLink").onclick = () => document.getElementById("rsDlg").showModal();
 document.getElementById("rsForm").addEventListener("submit", restoreAccess);

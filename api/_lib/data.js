@@ -25,7 +25,7 @@ async function cboeChain(symbol) {
   let lastErr;
   for (const s of candidates) {
     try {
-      const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`, { headers: { "user-agent": "Mozilla/5.0 (Undertow)" } });
+      const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
       if (!r.ok) { lastErr = new Error("http " + r.status); continue; }
       const j = await r.json(), d = j.data || j;
       if (!Array.isArray(d.options)) { lastErr = new Error("no options"); continue; }
@@ -116,7 +116,7 @@ export async function fetchBars(symbol, interval, range, extended = false) {
     return { symbol, interval, range, bars: (j.results || []).map(b => [b.t, b.o, b.h, b.l, b.c, b.v || 0]).slice(-1500), delayed: false, source: "polygon" };
   }
   const y = YAHOO[symbol] || symbol;
-  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(y)}?interval=${interval}&range=${range}&includePrePost=${extended ? "true" : "false"}`, { headers: { "user-agent": "Mozilla/5.0 (Undertow)" } });
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(y)}?interval=${interval}&range=${range}&includePrePost=${extended ? "true" : "false"}`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
   if (!r.ok) throw new Error("yahoo http " + r.status);
   const j = await r.json(), res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0];
   if (!res0?.timestamp || !q) throw new Error("no bars");
