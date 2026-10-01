@@ -1,0 +1,31 @@
+{
+  "functions": {
+    "api/chain.js": {
+      "maxDuration": 15
+    },
+    "api/bars.js": {
+      "maxDuration": 15
+    },
+    "api/generate.js": {
+      "maxDuration": 60
+    },
+    "api/cron/morning.js": {
+      "maxDuration": 60
+    },
+    "api/health.js": {
+      "maxDuration": 30
+    },
+    "api/shortvol.js": {
+      "maxDuration": 30
+    },
+    "api/insiders.js": {
+      "maxDuration": 15
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/morning",
+      "schedule": "5 13 * * 1-5"
+    }
+  ]
+}

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Undertow — The current under the tape. Dealer positioning, flow and institutions, $19/mo.</title>
+<meta name="description" content="Dealer gamma heatmaps, call and put walls, gamma flip, expected move and fresh positioning for SPX, SPY and every optionable name. Free for SPX and SPY. Pro is $19 a month.">
+<meta property="og:title" content="Undertow — dealer positioning without the fund-sized price tag">
+<meta property="og:description" content="Gamma heatmap, walls, flip, expected move and fresh positioning. Free for SPX/SPY. Pro $19/mo.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0B0F17">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%230B0F17%22/><rect x=%2220%22 y=%2248%22 width=%2260%22 height=%228%22 fill=%22%23F5B942%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{ --bg:#0B0F17; --panel:#121826; --panel2:#182033; --ink:#E6EBF4; --muted:#8B96AB; --rule:#232C3D; --pos:#2DD4BF; --neg:#F97066; --gold:#F5B942; --gold-ink:#1A1300;
+  --sans:"IBM Plex Sans","Helvetica Neue",Arial,system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace; box-sizing:border-box; color-scheme:dark;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px) }
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-behavior:smooth; scroll-padding-top:80px} @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 var(--sans)}
+a{color:inherit} :focus-visible{outline:2px solid var(--gold); outline-offset:3px}
+.w{max-width:1120px; margin:0 auto; padding:0 24px}
+h1,h2,h3{letter-spacing:-.02em; line-height:1.08; margin:0}
+h2{font-size:clamp(28px,4vw,42px); font-weight:700; max-width:22ch}
+.lede{color:var(--muted); font-size:18px; max-width:56ch}
+.btn{display:inline-block; border:1px solid var(--rule); border-radius:10px; padding:13px 20px; font:600 15px/1.2 var(--sans); cursor:pointer; text-decoration:none; text-align:center; background:var(--panel2); color:var(--ink)}
+.btn.gold{background:var(--gold); color:var(--gold-ink); border-color:transparent}
+.btn.gold:hover{filter:brightness(1.06)}
+nav.top{position:sticky; top:0; z-index:10; background:rgba(11,15,23,.85); backdrop-filter:blur(10px); border-bottom:1px solid var(--rule)}
+nav .w{display:flex; align-items:center; gap:22px; height:62px}
+.logo{font-weight:700; display:flex; align-items:center; gap:8px; text-decoration:none; font-size:17px}
+.logo i{width:18px; height:4px; background:var(--gold); border-radius:2px}
+nav .links{display:flex; gap:20px; margin-left:auto; font-size:14px; color:var(--muted)}
+nav .links a{text-decoration:none}
+nav .btn{padding:9px 14px; font-size:14px}
+.hero{padding:64px 0 32px; text-align:center}
+.hero h1{font-size:clamp(40px,6.4vw,74px); font-weight:700; letter-spacing:-.035em; max-width:18ch; margin:0 auto 18px}
+.hero .lede{margin:0 auto 26px}
+.ctas{display:flex; gap:12px; justify-content:center; flex-wrap:wrap}
+.fine{color:var(--muted); font-size:13px; margin-top:14px}
+.demo{margin:36px auto 0; max-width:1240px; padding:0 16px}
+.demo .frame{border:1px solid var(--rule); border-radius:14px; overflow:hidden; background:var(--panel); box-shadow:0 40px 80px -40px rgba(0,0,0,.8)}
+.demo iframe{width:100%; height:720px; border:0; display:block}
+.demo p{text-align:center; color:var(--muted); font-size:13px; margin:12px 0 0}
+section.s{padding:88px 0}
+.s-head{margin-bottom:32px; display:flex; flex-direction:column; gap:12px}
+.feats{display:grid; grid-template-columns:repeat(3,1fr); gap:16px} .feats .feat:nth-child(n+7){}
+.feat{background:var(--panel); border:1px solid var(--rule); border-radius:14px; padding:22px}
+.feat h3{font-size:18px; margin-bottom:8px}
+.feat p{color:var(--muted); margin:0; font-size:15px}
+.feat .k{font-family:var(--mono); color:var(--gold); font-size:12px; margin-bottom:10px; display:block}
+.cmp{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+.cmp .col{background:var(--panel); border:1px solid var(--rule); border-radius:14px; padding:24px}
+.cmp .col.us{border-color:var(--gold)}
+.cmp h3{font-size:16px; color:var(--muted); margin-bottom:14px}
+.cmp ul{margin:0; padding:0; list-style:none; display:grid; gap:10px}
+.cmp li{padding-left:22px; position:relative}
+.cmp .us li::before{content:"✓"; position:absolute; left:0; color:var(--pos)}
+.cmp .them li::before{content:"–"; position:absolute; left:0; color:var(--muted)}
+.plans{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+.plan{background:var(--panel); border:1px solid var(--rule); border-radius:16px; padding:26px; display:flex; flex-direction:column}
+.plan.feat{border:2px solid var(--gold)}
+.plan .pill{align-self:flex-start; background:var(--gold); color:var(--gold-ink); font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; margin-bottom:12px}
+.plan h3{font-size:20px}
+.plan .price{font-family:var(--mono); font-weight:600; font-size:40px; margin:12px 0 2px}
+.plan .per{color:var(--muted); font-size:13px}
+.plan ul{padding:0; margin:20px 0 24px; list-style:none; display:grid; gap:9px; flex:1; align-content:start; font-size:15px}
+.plan li{padding-left:22px; position:relative}
+.plan li::before{content:"✓"; position:absolute; left:0; color:var(--pos)}
+.faq{max-width:780px}
+.faq details{border-bottom:1px solid var(--rule); padding:16px 0}
+.faq summary{cursor:pointer; font-weight:600; font-size:17px; list-style:none; display:flex; justify-content:space-between; gap:16px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"+"; color:var(--muted)} .faq details[open] summary::after{content:"–"}
+.faq p{color:var(--muted); margin:10px 0 0; max-width:66ch; font-size:15px}
+.final{text-align:center; padding:80px 0 96px}
+.final h2{margin:0 auto 16px} .final .lede{margin:0 auto 26px}
+footer{border-top:1px solid var(--rule); padding:24px 0 40px; color:var(--muted); font-size:13px}
+footer p{margin:6px 0; max-width:90ch}
+@media (max-width:900px){ .feats,.cmp,.plans{grid-template-columns:1fr} nav .links{display:none} nav .btn{margin-left:auto} .demo iframe{height:560px} section.s{padding:60px 0} }
+</style>
+</head>
+<body>
+<nav class="top"><div class="w">
+  <a class="logo" href="#top"><i></i>Undertow</a>
+  <div class="links"><a href="#what">What you get</a><a href="#why">Why cheaper</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a></div>
+  <a class="btn gold" href="app.html">Open the terminal</a>
+</div></nav>
+
+<header class="hero" id="top"><div class="w">
+  <h1>See the current under the tape.</h1>
+  <p class="lede">Price is the surface. Undertow shows what's moving it underneath: dealer gamma walls and the flip, institutional flow at the ask, dark-pool short volume, insider filings, and TradingView charting with live pricing — for any stock or ETF, in plain English, for $19 a month. SPX and SPY are free.</p>
+  <div class="ctas"><a class="btn gold" href="app.html">Open the free terminal</a><a class="btn" href="#pricing">See Pro</a></div>
+  <p class="fine">No account to try it. Data is 15-minute delayed. Not investment advice.</p>
+</div>
+<div class="demo"><div class="frame"><iframe src="app.html" title="Undertow terminal, live" loading="lazy"></iframe></div><p>This is the real terminal, not a screenshot. Scroll inside it.</p></div>
+</header>
+
+<section class="s" id="what"><div class="w">
+  <div class="s-head"><h2>Everything the expensive terminals show. Explained.</h2><p class="lede">Most positioning tools hand you a wall of colors and a Discord. Undertow tells you what the colors mean, and adds the parts they charge extra for.</p></div>
+  <div class="feats">
+    <div class="feat"><span class="k">HEATMAP</span><h3>Dealer gamma by strike and expiration</h3><p>Teal pins, coral accelerates. The five biggest nodes are flagged so you're not squinting for them.</p></div>
+    <div class="feat"><span class="k">LEVELS</span><h3>Call wall, put wall, gamma flip, max pain</h3><p>The four numbers most traders actually use, computed live and listed at the top of the screen.</p></div>
+    <div class="feat"><span class="k">THE READ</span><h3>Plain-English regime call</h3><p>"Positive gamma, spot 0.4% above the flip, call wall at 7,800" written out as a paragraph you can act on. Pro adds Ask the desk for your own questions.</p></div>
+    <div class="feat"><span class="k">EXPECTED MOVE</span><h3>Straddle-implied range per expiration</h3><p>0DTE through LEAPS, with the ATM IV and the ± range so you can size and pick strikes.</p></div>
+    <div class="feat"><span class="k">FRESH POSITIONING</span><h3>Volume vs open interest</h3><p>Contracts trading 1.5× their OI today — new bets, ranked by dollar notional — instead of a firehose of every print.</p></div>
+    <div class="feat"><span class="k">FLOW</span><h3>Sweeps, blocks, and who's at the ask</h3><p>A live options tape with premium, side and type filters, plus the most active contracts, one click from the heatmap.</p></div>
+    <div class="feat"><span class="k">INSTITUTIONS</span><h3>Is big money buying or selling?</h3><p>One composite lean from options flow, accumulation/distribution, money flow, FINRA short volume and insider filings.</p></div>
+    <div class="feat"><span class="k">CHARTING</span><h3>TradingView, built in</h3><p>The full TradingView chart — live pricing, every indicator, drawing tools, extended hours, symbol search — sits at the top of the screen. Switch to the built-in chart to see the walls and expected move drawn on price.</p></div>
+    <div class="feat"><span class="k">ANY TICKER</span><h3>Search every stock, ETF and index</h3><p>Type a ticker or a company name. 250 popular names are built in; everything else is a keystroke away.</p></div>
+  </div>
+</div></section>
+
+<section class="s" id="why" style="padding-top:0"><div class="w">
+  <div class="s-head"><h2>Why it's a fraction of the price.</h2><p class="lede">Dealer positioning is math on the chain, not magic. We don't bundle a community, a course or an "analyst," so you don't pay for one.</p></div>
+  <div class="cmp">
+    <div class="col them"><h3>The usual terminal</h3><ul><li>Priced for funds and full-time traders</li><li>Heatmap without an explanation</li><li>Lite tier locks you to one ticker on a slow refresh</li><li>Access through Discord, no refunds</li><li>Learning curve measured in weeks</li></ul></div>
+    <div class="col us"><h3>Undertow</h3><ul><li>$19 a month, or $159 a year</li><li>Every level explained in a sentence</li><li>Free tier with SPX and SPY, no card</li><li>Cancel any time from the app</li><li>Useful in the first five minutes</li></ul></div>
+  </div>
+</div></section>
+
+<section class="s" id="pricing" style="padding-top:0"><div class="w">
+  <div class="s-head"><h2>Free for the indexes. Pro for everything else.</h2></div>
+  <div class="plans" id="plans"></div>
+</div></section>
+
+<section class="s" id="faq" style="padding-top:0"><div class="w">
+  <div class="s-head"><h2>Questions traders ask.</h2></div>
+  <div class="faq">
+    <details><summary>Where does the data come from, and is it real-time?</summary><p>Options chains with open interest, volume, IV and greeks, refreshed every minute and delayed 15 minutes. That's plenty for levels that move on open interest, which updates once a day. Real-time flow is on the roadmap for Pro.</p></details>
+    <details><summary>How is dealer gamma calculated?</summary><p>Gamma × open interest × 100 × spot² × 1%, per strike and expiration. Default model assumes dealers are long calls and short puts (the standard convention); you can flip to a magnitude-only model in the controls. The heatmap, walls and flip all derive from that.</p></details>
+    <details><summary>Does this tell me what to trade?</summary><p>No. It tells you where hedging flows are likely to support, cap or accelerate price so you can plan around them. Positioning is context, not a signal, and nothing here is investment advice.</p></details>
+    <details><summary>What's in Free?</summary><p>SPX and SPY, the nearest four expirations, the heatmap, profile, skew, expected move and fresh positioning, with the plain-English read. Pro adds every ticker, every expiration, alerts, CSV export and Ask the desk.</p></details>
+    <details><summary>Can I cancel?</summary><p>Any time, from the Pro badge in the app. You keep access through the end of the period you paid for.</p></details>
+  </div>
+</div></section>
+
+<section class="final"><div class="w">
+  <h2>Stop guessing where the pin is.</h2>
+  <p class="lede">Open the terminal, pull up SPX, and read the levels before the bell.</p>
+  <a class="btn gold" href="app.html">Open the free terminal</a>
+</div></section>
+
+<footer><div class="w">
+  <p><b>Undertow</b> · <a href="#pricing">Pricing</a> · <a href="mailto:hello@example.com" id="contact">Contact</a></p>
+  <p>Undertow is an analytics tool, not a broker or an investment adviser. Nothing on this site is a recommendation to buy or sell any security. Options involve risk and are not suitable for all investors. Market data is delayed at least 15 minutes and provided for informational purposes only.</p>
+</div></footer>
+
+<script>
+// ===== EDIT THESE =====
+const CONFIG = {
+  contactEmail: "hello@example.com",
+  plans: [
+    { name:"Free", price:"$0", per:"no card", cta:"Open the terminal", href:"/app.html",
+      items:["SPX and SPY","Nearest 4 expirations","Heatmap, profile, skew, expected move","Fresh positioning","The plain-English read"] },
+    { name:"Pro monthly", price:"$19", per:"per month, cancel anytime", cta:"Go Pro monthly", plan:"monthly",
+      items:["Every optionable ticker","Every expiration, 0DTE to LEAPS","Level alerts","Ask the desk","CSV export"] },
+    { name:"Pro yearly", price:"$159", per:"per year — save 30%", pill:"Best value", cta:"Go Pro yearly", plan:"yearly", featured:true,
+      items:["Everything in Pro monthly","Two months and change free","Locked price for the year","Early access to new tools"] },
+  ],
+};
+// ======================
+(() => {
+  document.getElementById("contact").href = "mailto:" + CONFIG.contactEmail;
+  document.getElementById("plans").replaceChildren(...CONFIG.plans.map(p => {
+    const el = document.createElement("div"); el.className = "plan" + (p.featured ? " feat" : "");
+    if (p.pill){ const s = document.createElement("span"); s.className = "pill"; s.textContent = p.pill; el.append(s); }
+    const h3 = document.createElement("h3"); h3.textContent = p.name; el.append(h3);
+    const pr = document.createElement("div"); pr.className = "price"; pr.textContent = p.price; el.append(pr);
+    const per = document.createElement("div"); per.className = "per"; per.textContent = p.per; el.append(per);
+    const ul = document.createElement("ul"); for (const i of p.items){ const li = document.createElement("li"); li.textContent = i; ul.append(li); } el.append(ul);
+    const a = document.createElement("a"); a.className = "btn " + (p.featured ? "gold" : ""); a.href = p.href || "/app.html?upgrade"; a.textContent = p.cta;
+    if (p.plan) a.addEventListener("click", async e => { e.preventDefault(); a.textContent = "Opening checkout…";
+      try { const r = await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({plan:p.plan})}); const j = await r.json(); if (j.url) location.href = j.url; else throw 0; }
+      catch { a.textContent = p.cta; location.href = "app.html?upgrade"; } });
+    el.append(a); return el;
+  }));
+})();
+</script>
+</body>
+</html>
