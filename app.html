@@ -24,7 +24,6 @@ button,input,select{font:inherit; color:inherit}
 :focus-visible{outline:2px solid var(--blue); outline-offset:1px}
 a{color:var(--blue)}
 .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
-#tape{height:46px; border-bottom:1px solid var(--rule); overflow:hidden}
 .bar{display:flex; align-items:center; gap:10px; padding:6px 12px; border-bottom:1px solid var(--rule); background:var(--bg); flex-wrap:wrap}
 .logo{font-weight:700; display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--ink); font-size:15px; margin-right:4px}
 .logo svg{width:22px; height:22px}
@@ -56,7 +55,7 @@ a{color:var(--blue)}
 .up{color:var(--pos)} .dn{color:var(--neg)}
 .symrow{display:flex; align-items:center; gap:12px; padding:6px 12px; border-bottom:1px solid var(--rule); flex-wrap:wrap; min-height:44px}
 #symName{font-weight:600; font-size:14px}
-#tvQuote{min-width:260px; max-width:420px; flex:1}
+.quote{display:flex; align-items:baseline; gap:8px} .quote .px{font-size:20px; font-weight:700} .quote .chg{font-size:13px}
 .live{display:inline-flex; align-items:center; gap:5px; color:var(--pos); font-weight:600; text-transform:uppercase; font-size:10.5px; letter-spacing:.05em}
 .live i{width:7px; height:7px; border-radius:50%; background:var(--pos); box-shadow:0 0 0 0 rgba(38,166,154,.6); animation:pulse 2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(38,166,154,.6)} 70%{box-shadow:0 0 0 6px rgba(38,166,154,0)} 100%{box-shadow:0 0 0 0 rgba(38,166,154,0)}}
@@ -64,9 +63,9 @@ a{color:var(--blue)}
 tr.fresh td{animation:flash 1.6s ease-out}
 @keyframes flash{from{background:color-mix(in srgb,var(--gold) 28%,transparent)} to{background:transparent}}
 .asof{font-size:11.5px; color:var(--muted); display:flex; gap:8px; align-items:center; margin-left:auto}
-#tvChart{height:58vh; min-height:380px; border-bottom:1px solid var(--rule); background:var(--bg)}
+#tvChart{height:62vh; min-height:400px; border-bottom:1px solid var(--rule); background:var(--bg)}
 .tvfb{height:100%; overflow:auto; padding:0 8px}
-.tvfb svg{max-height:calc(58vh - 120px) !important}
+.tvfb svg{max-height:calc(62vh - 120px) !important}
 @media (max-width:980px){ .tvfb svg{max-height:calc(52vh - 120px) !important} }
 .tabs{display:flex; gap:0; border-bottom:1px solid var(--rule); padding:0 8px; overflow-x:auto; scrollbar-width:none; background:var(--bg); position:sticky; top:0; z-index:4}
 .card{background:var(--panel)}
@@ -176,7 +175,6 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
 </style>
 </head>
 <body>
-<div id="tape"></div>
 <header class="bar">
   <a class="logo" href="./"><svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="20" fill="#131722"/><path d="M15 62c12-14 24-14 36 0s24 14 36 0" stroke="#2962FF" stroke-width="10" fill="none" stroke-linecap="round"/></svg>Undertow</a>
   <form class="sym" id="symForm" autocomplete="off"><div class="search"><input id="symIn" value="SPX" aria-label="Search ticker or company" placeholder="Search ticker or company  /" maxlength="30"><div class="sug" id="sug" hidden></div></div><button class="btn small" type="submit">Go</button></form>
@@ -191,7 +189,7 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
 </header>
 <div class="symrow">
   <span id="symName"></span>
-  <div id="tvQuote"></div>
+  <div class="quote"><span class="px num" id="px">—</span><span class="chg num" id="chg"></span></div>
   <span class="badge" id="ahq" hidden></span>
   <div class="asof" id="asof"></div>
 </div>
@@ -217,8 +215,7 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
     <label>Alert distance (% from level)<input name="alertPct" type="number" min="0.05" max="2" step="0.05"></label>
     <label>Fresh positioning: min vol/OI<input name="freshRatio" type="number" min="0.5" max="20" step="0.1"></label>
     <label>Fresh positioning: min volume<input name="freshMinVol" type="number" min="0" max="100000"></label>
-    <label>Main chart<select name="chart"><option value="tv">TradingView</option><option value="builtin">Built-in (levels drawn on)</option></select></label>
-    <label>TradingView default interval<select name="tvInterval"><option value="1">1m</option><option value="5">5m</option><option value="15">15m</option><option value="60">1h</option><option value="D">Daily</option></select></label>
+
   </div>
   <div class="actions" style="justify-content:space-between"><span><button class="btn gold" type="submit">Save</button> <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></span><button class="btn small" type="button" id="resetSet">Reset to defaults</button></div>
 </form></dialog>
@@ -260,7 +257,7 @@ const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Inv
 const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
 const FREE = new Set(["SPX","SPY"]);
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:4, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
-  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, chart:"builtin", tvInterval:"5", showPdl:true, showOr:true };
+  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("undertow:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("undertow:settings", JSON.stringify(S.set)); } catch {} }
 const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(), seekerMode:"gex", seekerRange:3, flowExp:"all", cfSort:"prem", view:null, inst:null, gate:false, flow:null, flowDemo:false, flowMinPrem:50000, flowKind:"all", flowSide:"all", flowCp:"all",
@@ -322,48 +319,9 @@ function renderPlan(){
   renderChips();
 }
 
-// ---------- TradingView ----------
-const TV_MAP = { SPX:"SP:SPX", NDX:"NASDAQ:NDX", RUT:"TVC:RUT", VIX:"CBOE:VIX", DJX:"TVC:DJI", XSP:"SP:SPX", OEX:"SP:OEX", SPY:"AMEX:SPY", QQQ:"NASDAQ:QQQ", IWM:"AMEX:IWM", DIA:"AMEX:DIA", GLD:"AMEX:GLD", TLT:"NASDAQ:TLT" };
-const tvSym = s => TV_MAP[s] || s;
-let tvReady = null, tvCur = "";
-function tvLoad(){
-  if (tvReady) return tvReady;
-  tvReady = new Promise(res => { if (window.TradingView) return res(true); const sc = document.createElement("script"); sc.src = "https://s3.tradingview.com/tv.js"; sc.async = true; sc.onload = () => res(!!window.TradingView); sc.onerror = () => res(false); document.head.append(sc); setTimeout(() => res(!!window.TradingView), 8000); });
-  return tvReady;
-}
-async function mountTv(){
-  const host = document.getElementById("tvChart"); if (!host || S.set.chart !== "tv") return;
-  const ok = await tvLoad();
-  if (!ok){ tvFallback("TradingView couldn't load here — showing the built-in chart. On your own site it loads normally."); return; }
-  if (tvCur === S.sym) return; tvCur = S.sym;
-  host.replaceChildren(h("div",{id:"tvWidget", style:{height:"100%"}}));
-  try {
-    new TradingView.widget({ container_id:"tvWidget", autosize:true, symbol:tvSym(S.sym), interval:S.set.tvInterval || "5", timezone:"America/New_York",
-      theme: document.documentElement.dataset.theme === "light" ? "light" : "dark", style:"1", locale:"en", withdateranges:true, range:"1D", allow_symbol_change:true, save_image:false,
-      studies:["MAExp@tv-basicstudies","VWAP@tv-basicstudies","RSI@tv-basicstudies"], hide_side_toolbar:false, details:false, hotlist:false, calendar:false, support_host:"https://www.tradingview.com" });
-  } catch { tvFallback("TradingView failed to start — showing the built-in chart."); }
-}
-function tvFallback(msg){ const host = document.getElementById("tvChart"); tvCur = ""; host.replaceChildren(h("div",{class:"tvfb"}, msg ? h("div",{class:"hint", style:{padding:"8px 12px"}}, msg) : null, viewChart())); if (!S.bars) loadBars(); }
-function mountQuote(){
-  const q = document.getElementById("tvQuote"); if (!q) return; q.replaceChildren();
-  const w = h("div",{class:"tradingview-widget-container", style:{width:"100%"}}, h("div",{class:"tradingview-widget-container__widget"}));
-  const sc = document.createElement("script"); sc.src = "https://s3.tradingview.com/external-embedding/embed-widget-single-quote.js"; sc.async = true;
-  sc.textContent = JSON.stringify({ symbol: tvSym(S.sym), width:"100%", colorTheme: document.documentElement.dataset.theme === "light" ? "light" : "dark", isTransparent:true, locale:"en" });
-  const fallbackQ = () => q.replaceChildren(h("span",{class:"num", style:{fontSize:"18px",fontWeight:600}}, S.chain ? fmt(S.chain.spot,2) : "—"), h("span",{class:"hint"}, S.demo ? " demo" : " chain spot, delayed"));
-  sc.onerror = fallbackQ;
-  w.append(sc); q.append(w);
-  setTimeout(() => { if (!q.querySelector("iframe")) q.replaceChildren(h("span",{class:"num", style:{fontSize:"18px",fontWeight:600}}, S.chain ? fmt(S.chain.spot,2) : "—"), h("span",{class:"hint"}, S.demo ? " demo" : " chain spot, delayed")); }, 6000);
-}
-function mountTape(){
-  const t = document.getElementById("tape"); if (!t || t.dataset.done) return; t.dataset.done = "1";
-  const w = h("div",{class:"tradingview-widget-container"}, h("div",{class:"tradingview-widget-container__widget"}));
-  const sc = document.createElement("script"); sc.src = "https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js"; sc.async = true;
-  sc.textContent = JSON.stringify({ symbols:[{proName:"SP:SPX",title:"S&P 500"},{proName:"NASDAQ:NDX",title:"Nasdaq 100"},{proName:"TVC:DJI",title:"Dow"},{proName:"TVC:RUT",title:"Russell"},{proName:"CBOE:VIX",title:"VIX"},{proName:"TVC:US10Y",title:"10Y"},{proName:"TVC:DXY",title:"DXY"},{proName:"NYMEX:CL1!",title:"Crude"},{proName:"COMEX:GC1!",title:"Gold"},{proName:"BITSTAMP:BTCUSD",title:"BTC"}], showSymbolLogo:false, isTransparent:true, displayMode:"regular", colorTheme: document.documentElement.dataset.theme === "light" ? "light" : "dark", locale:"en" });
-  sc.onerror = () => { t.style.display = "none"; };
-  w.append(sc); t.append(w);
-  setTimeout(() => { if (!t.querySelector("iframe")) t.style.display = "none"; }, 7000);
-}
-
+// ---------- main chart host (built-in) ----------
+function mountChart(){ const host = document.getElementById("tvChart"); if (!host) return; host.replaceChildren(h("div",{class:"tvfb"}, viewChart())); if (!S.bars) loadBars(); }
+function tvFallback(){ mountChart(); }
 // ---------- data ----------
 async function load(){
   const sym = S.sym;
@@ -384,8 +342,7 @@ async function load(){
   S.allExps = [...new Set(data.rows.map(r => r[0]))].sort();
   if (!S.exps.length || !S.exps.every(e => S.allExps.includes(e))) S.exps = S.allExps.slice(0, isPro() ? S.set.expCount : Math.min(4, S.set.expCount));
   compute(); renderAll(); checkAlerts();
-  if (S.set.chart === "tv") mountTv(); else { tvCur = ""; tvFallback(""); }
-  mountQuote();
+  mountChart();
   if (S.tab === "chart") loadBars();
 }
 // Static-hosting bars: Cboe's delayed intraday (1-minute) and historical (daily) chart feeds, aggregated to the chosen interval.
@@ -569,13 +526,15 @@ function renderChips(){
 function renderAll(){
   const d = S.chain, c = S.calc;
   document.getElementById("symName").textContent = `${S.sym}${NAMES.get(S.sym) ? " · " + NAMES.get(S.sym) : ""}`;
+  document.getElementById("px").textContent = fmt(d.spot, 2);
+  const chg = document.getElementById("chg"); chg.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(d.changePct||0)})`; chg.className = "chg num " + (d.change>=0?"up":"dn");
   document.getElementById("asof").replaceChildren(h("span",{class:"live"}, h("i",null), S.demo ? "demo" : "live"), h("span",{id:"cd"},""), h("span",null, "chain " + new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})), h("span",{class:"badge"+(S.demo?" demo":"")}, S.demo ? "Demo data" : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
   updateAh();
   // levels
   document.getElementById("regime").replaceChildren(
     h("div",{class:"regime "+(c.total>0?"pos":"neg")}, h("b",null, c.total > 0 ? "Positive gamma — dampened" : "Negative gamma — amplified"), h("span",{class:"hint"}, "GEX ", money(c.total), " per 1% move")),
     h("div",{class:"regime "+(c.totalVex>0?"pos":"neg")}, h("b",null, c.totalVex > 0 ? "Positive vanna — vol down lifts price" : "Negative vanna — vol down pressures price"), h("span",{class:"hint"}, "VEX ", money(c.totalVex), " per 1 vol pt", c.vexPeak ? ` · peak at ${fmt(c.vexPeak.K)}` : "")));
-  const HELP = {"Call wall":"Strike above spot with the most call gamma. Dealers sell into rallies here, so it tends to cap price. A break above can squeeze.","Put wall":"Strike below spot with the most put gamma. First real support; losing it tends to accelerate selling.","Gamma flip":"Where net dealer gamma changes sign. Above it, hedging dampens moves; below it, hedging amplifies them.","Max pain":"Strike where the most options expire worthless for the nearest expiration. Price often drifts toward it into expiry.","Vanna peak":"Strike where vanna exposure is largest. When IV drops, dealer hedging near this strike moves price most — the classic post-event 'vanna rally' level.","Chain spot":"The underlying price the options data was priced against. The TradingView quote above is live; this one is what the levels are computed from.","Expected move":"What the ATM straddle says the market is pricing for the nearest expiration, as ± points."};
+  const HELP = {"Call wall":"Strike above spot with the most call gamma. Dealers sell into rallies here, so it tends to cap price. A break above can squeeze.","Put wall":"Strike below spot with the most put gamma. First real support; losing it tends to accelerate selling.","Gamma flip":"Where net dealer gamma changes sign. Above it, hedging dampens moves; below it, hedging amplifies them.","Max pain":"Strike where the most options expire worthless for the nearest expiration. Price often drifts toward it into expiry.","Vanna peak":"Strike where vanna exposure is largest. When IV drops, dealer hedging near this strike moves price most — the classic post-event 'vanna rally' level.","Chain spot":"The underlying price the options data was priced against (15-min delayed on the free feed).","Expected move":"What the ATM straddle says the market is pricing for the nearest expiration, as ± points."};
   const L = [["Chain spot", c.spot, S.demo ? "demo" : "options data, delayed"],["Call wall", c.callWall?.K, c.callWall ? money(c.callWall.cG) + " call gamma" : ""],["Put wall", c.putWall?.K, c.putWall ? money(c.putWall.pG) + " put gamma" : ""],["Gamma flip", c.flip, "regime changes here"],["Vanna peak", c.vexPeak?.K, c.vexPeak ? money(c.vexPeak.vex) + " VEX" : ""],["Max pain", c.maxPain, c.near],["Expected move", c.em[0] ? "±" + fmt(c.em[0].move,1) : null, c.em[0] ? `${fmt(c.em[0].pct,2)}% into ${c.em[0].exp}` : ""]];
   document.getElementById("levels").replaceChildren(...L.map(([n,v,s]) => h("div",{class:"lvl", title:HELP[n]}, h("div",null, h("b",null,n, h("span",{class:"q","aria-hidden":"true"},"?")), h("small",null,s)), h("span",{class:"v"}, typeof v === "number" ? fmt(v, n === "Chain spot" ? 2 : 0) : (v || "—")))));
   document.getElementById("read").replaceChildren(...readText().map(t => h("p",null,t)));
@@ -637,7 +596,7 @@ function renderAlertsOld(){
   else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
 }
 function renderTabs(){
-  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["play","Playbook"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"],["chart","Built-in chart"]];
+  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["play","Playbook"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
   document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)));
   const p = document.getElementById("panel");
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
@@ -1406,18 +1365,17 @@ document.getElementById("symForm").addEventListener("submit", e => { e.preventDe
 document.getElementById("refreshBtn").onclick = load;
 document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)}`; try { const r = await fetch("/api/notify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, text:`🚩 **Undertow feedback** ${note}\n${ctx}`})}); notice(r.ok ? "Flagged. Sent to your Discord with the screen context." : "Couldn't send — set DISCORD_WEBHOOK and NOTIFY_OPEN=true.", !r.ok); } catch { notice("Couldn't reach the server.", true); } };
 document.getElementById("settingsBtn").onclick = () => { const f = document.getElementById("setForm"); for (const el of f.elements) if (el.name && S.set[el.name] != null) el.value = S.set[el.name]; document.getElementById("setDlg").showModal(); };
-document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer();
-setInterval(() => { if (document.visibilityState === "visible" && getRules().on && S.tab !== "flow" && S.tab !== "cflow") loadFlow(); }, 20000); S.exps = []; tvCur = ""; const host = document.getElementById("tvChart"); if (S.set.chart !== "tv"){ tvFallback(""); } load(); });
+document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer(); S.exps = []; load(); });
 document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; saveSettings(); document.getElementById("setDlg").close(); S.exps = []; load(); };
 document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); } });
-document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("undertow:theme", next);}catch{} tvCur = ""; mountTv(); mountQuote(); const t = document.getElementById("tape"); if (t){ t.replaceChildren(); delete t.dataset.done; t.style.display = ""; mountTape(); } };
+document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("undertow:theme", next);}catch{} mountChart(); renderTabs(); };
 try { const t = localStorage.getItem("undertow:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { applyToken(localStorage.getItem("undertow:token") || ""); } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("undertow:lines") || "{}"); } catch { S.lines = {}; }
 document.querySelectorAll("#upDlg .plan2").forEach(b => b.addEventListener("click", () => startCheckout(b.dataset.plan, b)));
 document.getElementById("restoreLink").onclick = () => document.getElementById("rsDlg").showModal();
 document.getElementById("rsForm").addEventListener("submit", restoreAccess);
-renderPlan(); mountTape();
+renderPlan();
 { const m = location.search.match(/[?&]checkout=([^&]+)/); if (m){ history.replaceState(null,"",location.pathname); finishCheckout(decodeURIComponent(m[1])); } else if (S.token && S.exp - Date.now() < 12*3600e3) refreshToken(); }
 if (S.set.defaultSym && (isPro() || FREE.has(S.set.defaultSym))){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
 { const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); if (isPro() || FREE.has(v)){ S.sym = v; document.getElementById("symIn").value = v; } } }
@@ -1428,6 +1386,7 @@ function startTimer(){ clearInterval(S.timer); clearInterval(tickTimer); const m
   S.timer = setInterval(() => { if (document.visibilityState === "visible") load(); nextAt = Date.now() + ms; }, ms);
   tickTimer = setInterval(() => { const el = document.getElementById("cd"); if (el) el.textContent = `next ${Math.max(0, Math.ceil((nextAt - Date.now())/1000))}s`; }, 1000); }
 startTimer();
+setInterval(() => { if (document.visibilityState === "visible" && getRules().on && S.tab !== "flow" && S.tab !== "cflow") loadFlow(); }, 20000);
 })();
 </script>
 </body>
