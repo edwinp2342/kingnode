@@ -260,7 +260,7 @@ const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Inv
 const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
 const FREE = new Set(["SPX","SPY"]);
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:4, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
-  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, chart:"tv", tvInterval:"5", showPdl:true, showOr:true };
+  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, chart:"builtin", tvInterval:"5", showPdl:true, showOr:true };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("undertow:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("undertow:settings", JSON.stringify(S.set)); } catch {} }
 const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(), seekerMode:"gex", seekerRange:3, flowExp:"all", cfSort:"prem", view:null, inst:null, gate:false, flow:null, flowDemo:false, flowMinPrem:50000, flowKind:"all", flowSide:"all", flowCp:"all",
@@ -343,7 +343,7 @@ async function mountTv(){
       studies:["MAExp@tv-basicstudies","VWAP@tv-basicstudies","RSI@tv-basicstudies"], hide_side_toolbar:false, details:false, hotlist:false, calendar:false, support_host:"https://www.tradingview.com" });
   } catch { tvFallback("TradingView failed to start — showing the built-in chart."); }
 }
-function tvFallback(msg){ const host = document.getElementById("tvChart"); tvCur = ""; host.replaceChildren(h("div",{class:"tvfb"}, h("div",{class:"hint", style:{padding:"8px 12px"}}, msg), viewChart())); if (!S.bars) loadBars(); }
+function tvFallback(msg){ const host = document.getElementById("tvChart"); tvCur = ""; host.replaceChildren(h("div",{class:"tvfb"}, msg ? h("div",{class:"hint", style:{padding:"8px 12px"}}, msg) : null, viewChart())); if (!S.bars) loadBars(); }
 function mountQuote(){
   const q = document.getElementById("tvQuote"); if (!q) return; q.replaceChildren();
   const w = h("div",{class:"tradingview-widget-container", style:{width:"100%"}}, h("div",{class:"tradingview-widget-container__widget"}));
@@ -387,6 +387,30 @@ async function load(){
   if (S.set.chart === "tv") mountTv(); else { tvCur = ""; tvFallback(""); }
   mountQuote();
   if (S.tab === "chart") loadBars();
+}
+// Static-hosting bars: Cboe's delayed intraday (1-minute) and historical (daily) chart feeds, aggregated to the chosen interval.
+async function cboeBars(sym, iv, rg){
+  const tries = INDEX_SYMS.has(sym) ? [`_${sym}`, sym] : [sym];
+  const mins = {"1m":1,"5m":5,"15m":15,"30m":30,"1h":60}[iv];
+  for (const s of tries){
+    try {
+      if (iv === "1d"){
+        const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/charts/historical/${s}.json`); if (!r.ok) continue;
+        const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (!arr.length) continue;
+        const days = {"1d":2,"5d":8,"1mo":32,"3mo":95,"6mo":185,"1y":370,"2y":740,"5y":1830}[rg] || 95;
+        const bars = arr.map(x => [Date.parse((x.date || x.datetime || x.time) + (String(x.date||"").length === 10 ? "T16:00:00-04:00" : "")), +x.open, +x.high, +x.low, +x.close, +(x.volume||x.stock_volume||0)]).filter(b => isFinite(b[0]) && isFinite(b[4])).sort((a,b)=>a[0]-b[0]);
+        return { bars: bars.slice(-days), source:"cboe-direct" };
+      }
+      const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (!r.ok) continue;
+      const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (!arr.length) continue;
+      const one = arr.map(x => { const t = x.datetime || x.date || x.time; const ts = Date.parse(/[T ]\d/.test(String(t)) ? String(t).replace(" ","T") + (/[+-]\d\d:?\d\d$|Z$/.test(String(t)) ? "" : "-04:00") : t); return [ts, +(x.open ?? x.price ?? x.close), +(x.high ?? x.price ?? x.close), +(x.low ?? x.price ?? x.close), +(x.close ?? x.price), +(x.volume||x.stock_volume||0)]; }).filter(b => isFinite(b[0]) && isFinite(b[4])).sort((a,b)=>a[0]-b[0]);
+      if (!mins || mins === 1) return { bars: one, source:"cboe-direct" };
+      const out = []; let cur = null;
+      for (const b of one){ const bucket = Math.floor(b[0]/(mins*60000))*mins*60000; if (!cur || cur[0] !== bucket){ cur = [bucket, b[1], b[2], b[3], b[4], b[5]]; out.push(cur); } else { cur[2] = Math.max(cur[2], b[2]); cur[3] = Math.min(cur[3], b[3]); cur[4] = b[4]; cur[5] += b[5]; } }
+      return { bars: out, source:"cboe-direct" };
+    } catch {}
+  }
+  return null;
 }
 // Static-hosting fallback (no serverless): fetch Cboe's delayed chain directly. Same normalized shape as api/chain.js.
 const INDEX_SYMS = new Set(["SPX","NDX","RUT","VIX","DJX","XSP","OEX"]);
@@ -839,8 +863,11 @@ async function loadBars(){
   const sym = S.sym, iv = S.set.interval, rg = S.set.chartRange;
   S.view = null; // new bars → reset the window
   const ext = S.set.extended && iv !== "1d";
-  try { const r = await fetch(`/api/bars?symbol=${sym}&interval=${iv}&range=${rg}&extended=${ext?1:0}`); if (!r.ok || (r.headers.get("content-type")||"").includes("text/html")) throw 0; const j = await r.json(); if (!j.bars?.length) throw 0; S.bars = j.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = j.session || null; }
-  catch { S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; }
+  let got = null;
+  try { const r = await fetch(`/api/bars?symbol=${sym}&interval=${iv}&range=${rg}&extended=${ext?1:0}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) got = j; } } catch {}
+  if (!got) got = await cboeBars(sym, iv, rg);
+  if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; }
+  else { S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; }
   updateAh();
   if (S.tab === "chart") renderTabs();
   const fb = document.querySelector("#tvChart .tvfb"); if (fb){ const msg = fb.querySelector(".hint")?.textContent || ""; tvFallback(msg); }
@@ -939,7 +966,7 @@ function viewChart(){
   if (em){ const t = svgEl("text",{x:pad.l+6, y:Y(c.spot+em.move)+12}); t.textContent = `expected move ±${fmt(em.move,1)}`; t.style.fill = "var(--gold)"; svg.append(t); }
   [0,.25,.5,.75,1].forEach(f => { const i = Math.min(bars.length-1, Math.round((bars.length-1)*f)); const t = svgEl("text",{x:X(i), y:H-8, "text-anchor":"middle"}); const d = new Date(bars[i][0]); t.textContent = st.interval==="1d" ? d.toLocaleDateString([],{month:"short",day:"numeric"}) : d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) + (st.chartRange!=="1d" ? " " + d.toLocaleDateString([],{month:"numeric",day:"numeric"}) : ""); svg.append(t); });
   // crosshair
-  const ohlc = h("div",{class:"ohlc"}, `${S.sym} · ${st.interval} · ${bars.length} bars${S.barsDemo ? " · demo bars" : " · delayed"}`);
+  const ohlc = h("div",{class:"ohlc"}, `${S.sym} · ${st.interval} · ${bars.length} bars${S.barsDemo ? " · demo bars" : " · 15-min delayed"}`);
   const cross = svgEl("g",{style:"display:none"}); const cv = svgEl("line",{y1:pad.t,y2:H-24,stroke:"var(--muted)","stroke-dasharray":"2 3"}); const ch = svgEl("line",{x1:pad.l,x2:W-pad.r,stroke:"var(--muted)","stroke-dasharray":"2 3"}); cross.append(cv, ch); svg.append(cross);
   svg.addEventListener("mousemove", ev => { const r = svg.getBoundingClientRect(); const x = (ev.clientX-r.left)/r.width*W, y = (ev.clientY-r.top)/r.height*H; const i = Math.max(0, Math.min(bars.length-1, Math.floor((x-pad.l)/(W-pad.l-pad.r)*bars.length))); const b = bars[i]; if (!b) return; cross.style.display = ""; cv.setAttribute("x1",X(i)); cv.setAttribute("x2",X(i)); ch.setAttribute("y1",y); ch.setAttribute("y2",y);
     const d = new Date(b[0]); const px = yMax - (y-pad.t)/plotH*(yMax-yMin);
