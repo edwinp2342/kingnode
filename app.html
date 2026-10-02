@@ -231,9 +231,10 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
     <label>Alert distance (% from level)<input name="alertPct" type="number" min="0.05" max="2" step="0.05"></label>
     <label>Fresh positioning: min vol/OI<input name="freshRatio" type="number" min="0.5" max="20" step="0.1"></label>
     <label>Fresh positioning: min volume<input name="freshMinVol" type="number" min="0" max="100000"></label>
+    <label style="grid-column:1/-1">Discord webhook URL (for ⚑ Flag and alerts — works without a server)<input name="webhook" placeholder="https://discord.com/api/webhooks/…"></label>
 
   </div>
-  <div class="actions" style="justify-content:space-between"><span><button class="btn gold" type="submit">Save</button> <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></span><button class="btn small" type="button" id="resetSet">Reset to defaults</button></div>
+  <div class="actions" style="justify-content:space-between"><span><button class="btn gold" type="submit">Save</button> <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></span><button class="btn small" type="button" id="exportFlags">Export my flags</button> <button class="btn small" type="button" id="resetSet">Reset to defaults</button></div>
 </form></dialog>
 <dialog id="upDlg"><form method="dialog">
   <h2>Go Pro</h2>
@@ -273,7 +274,7 @@ const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Inv
 const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
 const FREE = new Set(["SPX","SPY","VIX","NDX","RUT","XSP","QQQ","IWM","DIA"]);
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
-  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true };
+  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
 const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(), seekerMode:"gex", seekerRange:3, flowExp:"all", cfSort:"prem", view:null, inst:null, gate:false, flow:null, flowDemo:false, flowMinPrem:50000, flowKind:"all", flowSide:"all", flowCp:"all",
@@ -335,6 +336,16 @@ function renderPlan(){
   renderChips();
 }
 
+// ---------- Notify: server → direct Discord webhook (from the browser) → clipboard ----------
+async function notify(text){
+  try { const r = await fetch("/api/notify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, text})}); if (r.ok) return "server"; } catch {}
+  const hook = (S.set.webhook||"").trim();
+  if (/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(hook)){
+    try { const r = await fetch(hook, {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({content:text.slice(0,1900)})}); if (r.ok || r.status === 204) return "discord"; } catch {}
+  }
+  try { await navigator.clipboard.writeText(text); return "clipboard"; } catch {}
+  return null;
+}
 // ---------- Index tape: our own, from the server quotes API or straight from Cboe on the static site ----------
 const TAPE = ["SPX","NDX","RUT","VIX","SPY","QQQ","IWM","DIA","XSP"];
 const TAPE_NAMES = {SPX:"S&P 500", NDX:"Nasdaq 100", RUT:"Russell 2000", VIX:"VIX", SPY:"SPY", QQQ:"QQQ", IWM:"IWM", DIA:"Dow ETF", XSP:"Mini-SPX"};
@@ -640,14 +651,14 @@ function checkFlowAlerts(){
 function fireAlert(title, text){
   S.alertLog.unshift({t:Date.now(), title, text}); S.alertLog = S.alertLog.slice(0,50);
   if ("Notification" in window && Notification.permission === "granted") { try { new Notification(`Kingnode · ${title}`, {body:text}); } catch {} }
-  const r = getRules(); if (r.discord) fetch("/api/notify", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({token:S.token, text:`**${title}** — ${text}`})}).catch(()=>{});
+  const r = getRules(); if (r.discord) notify(`**${title}** — ${text}`);
   renderAlerts();
 }
 function renderAlerts(){
   const el = document.getElementById("alerts"); el.replaceChildren();
   const r = getRules();
   const rule = (label, key, type="checkbox", step) => h("label",{class:"hint",style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",padding:"3px 0"}}, label, type==="checkbox" ? h("input",{type:"checkbox", checked:!!r[key], onchange:e=>{ r[key]=e.target.checked; setRules(r); renderAlerts(); }}) : h("input",{type:"number", step, value:r[key], style:{width:"90px",background:"var(--bg)",border:"1px solid var(--rule2)",borderRadius:"4px",padding:"3px 6px",color:"var(--ink)",fontFamily:"var(--mono)",fontSize:"12px"}, onchange:e=>{ r[key]=Number(e.target.value); setRules(r); }}));
-  el.append(h("div",{style:{display:"grid",gap:"2px"}}, rule("Suspicious flow alerts","on"), rule("Min premium $","minPrem","number",50000), rule("Sweeps only","sweepsOnly"), rule("Ask side only","sideAsk"), rule("Min vol/OI","minVolOi","number",0.5), rule("Min DTE","minDte","number",1), rule("Also post to Discord (Pro)","discord")),
+  el.append(h("div",{style:{display:"grid",gap:"2px"}}, rule("Suspicious flow alerts","on"), rule("Min premium $","minPrem","number",50000), rule("Sweeps only","sweepsOnly"), rule("Ask side only","sideAsk"), rule("Min vol/OI","minVolOi","number",0.5), rule("Min DTE","minDte","number",1), rule("Also post to Discord (set webhook in ⚙)","discord")),
     h("p",{class:"hint",style:{margin:"6px 0 4px"}}, "Level alerts fire when spot comes within " + S.set.alertPct + "% of a wall or the flip."));
   if ("Notification" in window && Notification.permission !== "granted") el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable browser notifications"));
   if (S.alertLog.length) el.append(h("div",{style:{marginTop:"8px",borderTop:"1px solid var(--rule)",paddingTop:"6px",maxHeight:"180px",overflow:"auto"}}, S.alertLog.slice(0,12).map(a => h("div",{style:{padding:"4px 0",fontSize:"12px"}}, h("span",{class:"hint"}, new Date(a.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) + " "), h("b",null,a.title + ": "), a.text))));
@@ -1456,9 +1467,13 @@ symIn.addEventListener("blur", () => setTimeout(() => sugEl.hidden = true, 150))
 symIn.addEventListener("focus", () => { if (symIn.value.trim() && sugItems.length) sugEl.hidden = false; });
 document.getElementById("symForm").addEventListener("submit", e => { e.preventDefault(); const v = symIn.value.trim().toUpperCase(); if (!v) return; if (sugItems.length && !NAMES.has(v) && !/^[A-Z.]{1,6}$/.test(v)){ goSym(sugItems[0].symbol); return; } goSym(v); });
 document.getElementById("refreshBtn").onclick = load;
-document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)}`; try { const r = await fetch("/api/notify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, text:`🚩 **Kingnode feedback** ${note}\n${ctx}`})}); notice(r.ok ? "Flagged. Sent to your Discord with the screen context." : "Couldn't send — set DISCORD_WEBHOOK and NOTIFY_OPEN=true.", !r.ok); } catch { notice("Couldn't reach the server.", true); } };
+document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)} · ${new Date().toLocaleString()}`;
+  const text = `🚩 **Kingnode feedback** ${note}\n${ctx}`; const how = await notify(text);
+  const log = (() => { try { return JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch { return []; } })(); log.unshift({t:Date.now(), note, ctx}); try { localStorage.setItem("kingnode:flags", JSON.stringify(log.slice(0,200))); } catch {}
+  notice(how === "server" || how === "discord" ? "Flagged. Sent to your Discord with the screen context." : how === "clipboard" ? "No Discord webhook set — flag copied to your clipboard and saved locally. Add a webhook URL in ⚙ Settings to send automatically." : "Saved locally. Add a Discord webhook URL in ⚙ Settings to send flags.", how !== "server" && how !== "discord"); };
 document.getElementById("settingsBtn").onclick = () => { const f = document.getElementById("setForm"); for (const el of f.elements) if (el.name && S.set[el.name] != null) el.value = S.set[el.name]; document.getElementById("setDlg").showModal(); };
 document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer(); S.exps = []; load(); });
+document.getElementById("exportFlags").onclick = () => { let log = []; try { log = JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch {} const txt = log.map(f => `${new Date(f.t).toLocaleString()}\n${f.note}\n${f.ctx}\n`).join("\n") || "No flags yet."; const a = h("a",{href:URL.createObjectURL(new Blob([txt],{type:"text/plain"})), download:"kingnode-flags.txt"}); document.body.append(a); a.click(); a.remove(); };
 document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; saveSettings(); document.getElementById("setDlg").close(); S.exps = []; load(); };
 document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); } });
 document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
