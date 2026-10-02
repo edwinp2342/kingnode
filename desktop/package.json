@@ -1,0 +1,43 @@
+{
+  "name": "kingnode-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "serve": "node server.js",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "@vercel/blob": "^0.27.3",
+    "dotenv": "^16.6.1",
+    "stripe": "^17.7.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.kingnode.terminal",
+    "productName": "Kingnode",
+    "files": [
+      "main.js",
+      "server.js",
+      "../api/**",
+      "../app.html",
+      "../index.html",
+      "../icon.svg",
+      "../manifest.webmanifest"
+    ],
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

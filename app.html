@@ -6,6 +6,10 @@
 <title>Kingnode — the first level a trader looks for</title>
 <meta name="description" content="Dealer positioning, options flow, institutional lean and TradingView charting on one screen.">
 <meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon.svg">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23131722%22/><path d=%22M15 62c12-14 24-14 36 0s24 14 36 0%22 stroke=%22%232962FF%22 stroke-width=%2210%22 fill=%22none%22 stroke-linecap=%22round%22/></svg>">
 <style>
 :root{
@@ -1420,6 +1424,7 @@ document.querySelectorAll("#upDlg .plan2").forEach(b => b.addEventListener("clic
 document.getElementById("restoreLink").onclick = () => document.getElementById("rsDlg").showModal();
 document.getElementById("rsForm").addEventListener("submit", restoreAccess);
 renderPlan();
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 { const m = location.search.match(/[?&]checkout=([^&]+)/); if (m){ history.replaceState(null,"",location.pathname); finishCheckout(decodeURIComponent(m[1])); } else if (S.token && S.exp - Date.now() < 12*3600e3) refreshToken(); }
 if (S.set.defaultSym && (isPro() || FREE.has(S.set.defaultSym))){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
 { const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); if (isPro() || FREE.has(v)){ S.sym = v; document.getElementById("symIn").value = v; } } }
