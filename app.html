@@ -195,7 +195,6 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
   <form class="sym" id="symForm" autocomplete="off"><div class="search"><input id="symIn" value="SPX" aria-label="Search ticker or company" placeholder="Search ticker or company  /" maxlength="30"><div class="sug" id="sug" hidden></div></div><button class="btn small" type="submit">Go</button></form>
   <div class="chips" id="chips"></div>
   <div class="right">
-    <span id="planBadge"></span>
     <button class="btn small" id="refreshBtn">Refresh</button>
     <button class="btn small" id="flagBtn" title="Flag what you're looking at — sends a note with context to your Discord">⚑ Flag</button>
     <button class="btn small" id="settingsBtn" title="Settings">⚙</button>
@@ -236,34 +235,6 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
   </div>
   <div class="actions" style="justify-content:space-between"><span><button class="btn gold" type="submit">Save</button> <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></span><button class="btn small" type="button" id="exportFlags">Export my flags</button> <button class="btn small" type="button" id="resetSet">Reset to defaults</button></div>
 </form></dialog>
-<dialog id="upDlg"><form method="dialog">
-  <h2>Go Pro</h2>
-  <p class="hint" id="upWhy" style="margin:0"></p>
-  <div class="plans2">
-    <button type="button" class="plan2" data-plan="monthly"><b>$19<small>/month</small></b><span>All tickers, all expirations, alerts, exports, the desk. Cancel anytime.</span></button>
-    <button type="button" class="plan2 feat" data-plan="yearly"><em>Save 30%</em><b>$159<small>/year</small></b><span>Same tools, two months and change free.</span></button>
-  </div>
-  <ul class="perks">
-    <li>Every optionable ticker, not just SPX and SPY</li>
-    <li>Every expiration on the heatmap, including 0DTE through LEAPS</li>
-    <li>Level alerts when price approaches a wall or the flip</li>
-    <li>Ask the desk: a plain-English read of the positioning</li>
-    <li>CSV export of levels and the chain</li>
-  </ul>
-  <div id="upMsg" class="hint" style="color:var(--neg);min-height:18px"></div>
-  <div class="actions" style="justify-content:space-between">
-    <button class="btn" type="button" onclick="this.closest('dialog').close()">Not now</button>
-    <button class="btn small" type="button" id="restoreLink">Already subscribed?</button>
-  </div>
-</form></dialog>
-<dialog id="rsDlg"><form method="dialog" id="rsForm">
-  <h2>Restore access</h2>
-  <p class="hint" style="margin:0">Email from your receipt and the last 4 digits of the card.</p>
-  <label class="hint" style="display:block;margin-top:12px">Email<input id="rsEmail" type="email" autocomplete="email"></label>
-  <label class="hint" style="display:block;margin-top:8px">Last 4 of card<input id="rsLast4" inputmode="numeric" maxlength="4"></label>
-  <div id="rsMsg" class="hint" style="color:var(--neg);min-height:18px"></div>
-  <div class="actions"><button class="btn gold" type="submit">Restore</button><button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></div>
-</form></dialog>
 
 <script>
 (() => {
@@ -272,7 +243,6 @@ const QUICK = ["SPX","SPY","QQQ","IWM","VIX","NVDA","TSLA","AAPL","AMZN","MSFT",
 const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Invesco Nasdaq-100 ETF"],["IWM","iShares Russell 2000 ETF"],["DIA","SPDR Dow Jones ETF"],["VIX","Cboe Volatility Index"],["NDX","Nasdaq-100 Index"],["RUT","Russell 2000 Index"],["XSP","Mini-SPX Index"],["TLT","iShares 20+ Year Treasury"],["GLD","SPDR Gold"],["SLV","iShares Silver"],["USO","United States Oil"],["UVXY","ProShares Ultra VIX"],["SQQQ","ProShares UltraPro Short QQQ"],["TQQQ","ProShares UltraPro QQQ"],["SOXL","Direxion Semiconductor Bull 3x"],["ARKK","ARK Innovation ETF"],["XLF","Financial Select Sector"],["XLE","Energy Select Sector"],["XLK","Technology Select Sector"],["XLV","Health Care Select Sector"],["XLI","Industrial Select Sector"],["XLU","Utilities Select Sector"],["XLP","Consumer Staples Select"],["XLY","Consumer Discretionary Select"],["XBI","SPDR Biotech"],["SMH","VanEck Semiconductor"],["KRE","SPDR Regional Banking"],["HYG","iShares High Yield Corporate"],["EEM","iShares Emerging Markets"],["FXI","iShares China Large-Cap"],["BITO","ProShares Bitcoin Strategy"],["IBIT","iShares Bitcoin Trust"],
 ["AAPL","Apple"],["MSFT","Microsoft"],["NVDA","NVIDIA"],["AMZN","Amazon"],["GOOGL","Alphabet A"],["GOOG","Alphabet C"],["META","Meta Platforms"],["TSLA","Tesla"],["BRK.B","Berkshire Hathaway B"],["AVGO","Broadcom"],["LLY","Eli Lilly"],["JPM","JPMorgan Chase"],["V","Visa"],["MA","Mastercard"],["UNH","UnitedHealth"],["XOM","Exxon Mobil"],["COST","Costco"],["WMT","Walmart"],["HD","Home Depot"],["PG","Procter & Gamble"],["JNJ","Johnson & Johnson"],["NFLX","Netflix"],["ORCL","Oracle"],["CRM","Salesforce"],["ADBE","Adobe"],["AMD","Advanced Micro Devices"],["INTC","Intel"],["QCOM","Qualcomm"],["TXN","Texas Instruments"],["MU","Micron"],["ARM","Arm Holdings"],["TSM","Taiwan Semiconductor"],["ASML","ASML Holding"],["SMCI","Super Micro Computer"],["MRVL","Marvell"],["LRCX","Lam Research"],["AMAT","Applied Materials"],["KLAC","KLA"],["ANET","Arista Networks"],["PLTR","Palantir"],["SNOW","Snowflake"],["CRWD","CrowdStrike"],["PANW","Palo Alto Networks"],["NOW","ServiceNow"],["SHOP","Shopify"],["UBER","Uber"],["ABNB","Airbnb"],["COIN","Coinbase"],["MSTR","MicroStrategy"],["HOOD","Robinhood"],["SOFI","SoFi"],["SQ","Block"],["PYPL","PayPal"],["AFRM","Affirm"],["RBLX","Roblox"],["DKNG","DraftKings"],["BA","Boeing"],["CAT","Caterpillar"],["DE","Deere"],["GE","GE Aerospace"],["RTX","RTX"],["LMT","Lockheed Martin"],["NOC","Northrop Grumman"],["GS","Goldman Sachs"],["MS","Morgan Stanley"],["BAC","Bank of America"],["C","Citigroup"],["WFC","Wells Fargo"],["SCHW","Charles Schwab"],["AXP","American Express"],["BLK","BlackRock"],["KO","Coca-Cola"],["PEP","PepsiCo"],["MCD","McDonald's"],["SBUX","Starbucks"],["NKE","Nike"],["DIS","Disney"],["CMCSA","Comcast"],["T","AT&T"],["VZ","Verizon"],["TMUS","T-Mobile"],["PFE","Pfizer"],["MRK","Merck"],["ABBV","AbbVie"],["AMGN","Amgen"],["GILD","Gilead"],["BMY","Bristol Myers Squibb"],["MRNA","Moderna"],["NVO","Novo Nordisk"],["ISRG","Intuitive Surgical"],["CVS","CVS Health"],["CVX","Chevron"],["COP","ConocoPhillips"],["OXY","Occidental"],["SLB","Schlumberger"],["FCX","Freeport-McMoRan"],["NEM","Newmont"],["F","Ford"],["GM","General Motors"],["RIVN","Rivian"],["LCID","Lucid"],["NIO","NIO"],["BABA","Alibaba"],["PDD","PDD Holdings"],["JD","JD.com"],["MELI","MercadoLibre"],["SE","Sea Limited"],["SPOT","Spotify"],["ROKU","Roku"],["TTD","The Trade Desk"],["ZM","Zoom"],["DDOG","Datadog"],["NET","Cloudflare"],["MDB","MongoDB"],["ZS","Zscaler"],["OKTA","Okta"],["TEAM","Atlassian"],["WDAY","Workday"],["INTU","Intuit"],["ADP","ADP"],["IBM","IBM"],["CSCO","Cisco"],["DELL","Dell"],["HPQ","HP"],["UPS","UPS"],["FDX","FedEx"],["DAL","Delta Air Lines"],["UAL","United Airlines"],["AAL","American Airlines"],["LUV","Southwest"],["CCL","Carnival"],["RCL","Royal Caribbean"],["MAR","Marriott"],["LOW","Lowe's"],["TGT","Target"],["TJX","TJX"],["LULU","Lululemon"],["CMG","Chipotle"],["ELF","e.l.f. Beauty"],["CELH","Celsius"],["ENPH","Enphase"],["FSLR","First Solar"],["PLUG","Plug Power"],["GME","GameStop"],["AMC","AMC Entertainment"],["MARA","MARA Holdings"],["RIOT","Riot Platforms"],["CLSK","CleanSpark"],["IONQ","IonQ"],["RGTI","Rigetti"],["QUBT","Quantum Computing"],["APP","AppLovin"],["VRT","Vertiv"],["CEG","Constellation Energy"],["VST","Vistra"],["NRG","NRG Energy"],["OKLO","Oklo"],["SMR","NuScale"],["RKLB","Rocket Lab"],["ASTS","AST SpaceMobile"],["LUNR","Intuitive Machines"],["HIMS","Hims & Hers"],["TEM","Tempus AI"],["RDDT","Reddit"],["DUOL","Duolingo"],["CAVA","Cava"],["SBET","SharpLink Gaming"],["CRCL","Circle"],["CRWV","CoreWeave"],["NBIS","Nebius"],["ORCL","Oracle"]];
 const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
-const FREE = new Set(["SPX","SPY","VIX","NDX","RUT","XSP","QQQ","IWM","DIA"]);
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
@@ -297,45 +267,14 @@ const fmt = (n, d=0) => n == null || !isFinite(n) ? "—" : n.toLocaleString(und
 const money = n => { const a = Math.abs(n); const s = a >= 1e9 ? (a/1e9).toFixed(2)+"B" : a >= 1e6 ? (a/1e6).toFixed(1)+"M" : a >= 1e3 ? (a/1e3).toFixed(0)+"K" : a.toFixed(0); return (n < 0 ? "-$" : "$") + s; };
 const pct = n => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 const dte = exp => Math.max(0, Math.round((new Date(exp + "T16:00:00") - Date.now()) / 86400000));
-const isPro = () => !!S.plan && S.exp > Date.now();
 const isWeekday = d => d.getDay() % 6 !== 0;
 
-// ---------- plans (same token scheme as the server) ----------
-function applyToken(t){
-  S.token = ""; S.plan = null; S.exp = 0;
-  if (!t) return;
-  try { const p = JSON.parse(atob(t.split(".")[0].replace(/-/g,"+").replace(/_/g,"/"))); S.token = t; S.plan = p.p; S.exp = p.e*1000; localStorage.setItem("kingnode:token", t); } catch {}
-}
-function clearToken(){ S.token=""; S.plan=null; S.exp=0; try{ localStorage.removeItem("kingnode:token"); }catch{} }
-function openUpgrade(why){ document.getElementById("upWhy").textContent = why || ""; document.getElementById("upMsg").textContent = ""; const d = document.getElementById("upDlg"); if (!d.open) d.showModal(); }
-function requirePro(why){ if (isPro()) return false; openUpgrade(why); return true; }
-async function startCheckout(plan, btn){
-  btn.disabled = true;
-  try { const r = await fetch("/api/checkout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({plan})}); const j = await r.json(); if (!j.url) throw j; location.href = j.url; }
-  catch(e){ btn.disabled = false; document.getElementById("upMsg").textContent = e?.error === "not_configured" ? "Payments aren't set up on this site yet." : "Couldn't open checkout."; }
-}
-async function finishCheckout(sid){
-  try { const r = await fetch("/api/session",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({session_id:sid})}); const j = await r.json(); if (j.token){ applyToken(j.token); renderPlan(); notice("You're on Pro. Every ticker and expiration is unlocked."); } }
-  catch { notice("Couldn't confirm the payment. Use “Already subscribed?” to restore access.", true); }
-}
-async function refreshToken(){
-  if (!S.token) return;
-  try { const r = await fetch("/api/refresh",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token})}); const j = await r.json(); if (r.status===402||r.status===401){ clearToken(); renderPlan(); return; } if (j.token) applyToken(j.token); renderPlan(); } catch {}
-}
-async function restoreAccess(e){
-  e.preventDefault(); const msg = document.getElementById("rsMsg"); msg.textContent = "";
-  const email = document.getElementById("rsEmail").value.trim(), last4 = document.getElementById("rsLast4").value.trim();
-  try { const r = await fetch("/api/restore",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,last4})}); const j = await r.json(); if (!j.token){ msg.textContent = j.error==="no_subscription" ? "No active subscription matches." : "Couldn't restore right now."; return; } applyToken(j.token); document.getElementById("rsDlg").close(); document.getElementById("upDlg").close(); renderPlan(); load(); }
-  catch { msg.textContent = "Couldn't reach the server."; }
-}
-async function openPortal(){ try { const r = await fetch("/api/portal",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token})}); const j = await r.json(); if (j.url) location.href = j.url; } catch {} }
-function renderPlan(){
-  const el = document.getElementById("planBadge"); el.replaceChildren();
-  if (isPro()) el.append(h("span",{class:"badge pro", style:{cursor:"pointer"}, title:"Manage subscription", onclick:openPortal},"Pro"));
-  else el.append(h("button",{class:"btn small gold", onclick:()=>openUpgrade("")},"Go Pro"));
-  renderChips();
-}
-
+// ---------- personal build: no plans, no gating ----------
+const isPro = () => true;
+function requirePro(){ return false; }
+function openUpgrade(){ }
+function renderPlan(){ }
+function applyToken(){ } function clearToken(){ }
 // ---------- Notify: server → direct Discord webhook (from the browser) → clipboard ----------
 async function notify(text){
   try { const r = await fetch("/api/notify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, text})}); if (r.ok) return "server"; } catch {}
@@ -390,7 +329,6 @@ async function load(){
   try {
     let r = await fetch(`/api/chain?symbol=${encodeURIComponent(sym)}${S.token ? "&token=" + encodeURIComponent(S.token) : ""}`).catch(() => null);
     if (!r || r.status === 404 || (r.headers.get("content-type")||"").includes("text/html")) { r = await cboeDirect(sym); }
-    if (r.status === 402){ S.gate = true; openUpgrade(`${sym} is a Pro ticker. Free includes SPX and SPY.`); S.sym = "SPX"; document.getElementById("symIn").value = "SPX"; renderChips(); return load(); }
     if (!r.ok) throw 0;
     data = await r.json();
     if (!data.rows || !data.rows.length) throw 0;
@@ -596,7 +534,7 @@ function renderStatus(){
 // ---------- render ----------
 function notice(msg, err){ const p = document.getElementById("panel"); const n = h("div",{class:"notice"+(err?" err":"")}, msg); p.prepend(n); setTimeout(()=>n.remove(), 6000); }
 function renderChips(){
-  document.getElementById("chips").replaceChildren(...QUICK.map(s => h("button",{class:"chip"+(S.gate&&!isPro()&&!FREE.has(s)?" lock":""), "aria-pressed":String(s===S.sym), title:NAMES.get(s)||"", onclick:()=>goSym(s)}, s)));
+  document.getElementById("chips").replaceChildren(...QUICK.map(s => h("button",{class:"chip", "aria-pressed":String(s===S.sym), title:NAMES.get(s)||"", onclick:()=>goSym(s)}, s)));
 }
 function renderAll(){
   const d = S.chain, c = S.calc;
@@ -620,7 +558,7 @@ function renderAll(){
 }
 function renderAsk(){
   const box = document.getElementById("askBox"); box.replaceChildren();
-  const inp = h("input",{placeholder: isPro() ? "Ask the desk: e.g. “Is 5700 likely to hold into Friday?”" : "Ask the desk (Pro)", "aria-label":"Ask the desk"});
+  const inp = h("input",{placeholder: "Ask the desk: e.g. “Is 7,700 likely to hold into Friday?” (needs the desktop app + API key)", "aria-label":"Ask the desk"});
   const out = h("div",{class:"answer"});
   const go = async () => {
     if (requirePro("Ask the desk turns the positioning into a plain-English answer to your question.")) return;
@@ -689,11 +627,11 @@ function renderTabs(){
 }
 function controls(){
   const expChips = h("div",{class:"exps"}, S.allExps.map((e,i) => {
-    const on = S.exps.includes(e), locked = S.gate && !isPro() && i >= 4;
+    const on = S.exps.includes(e), locked = false;
     return h("button",{class:"chip"+(locked?" lock":""), "aria-pressed":String(on), title: locked ? "Pro unlocks all expirations" : `${dte(e)} DTE`, onclick:()=>{ if (locked){ openUpgrade("Free shows the nearest 4 expirations. Pro shows all of them."); return; } S.exps = on ? S.exps.filter(x=>x!==e) : [...S.exps, e].sort(); if (!S.exps.length) S.exps=[e]; compute(); renderAll(); }}, e.slice(5) + (dte(e)===0 ? " 0D" : ""));
   }));
   const grpBtn = (l, pick) => h("button",{type:"button", class:"chip", onclick:()=>{ const sel = pick(S.allExps); if (sel.length){ S.exps = sel; compute(); renderAll(); } }}, l);
-  const groups = h("div",{class:"exps"}, grpBtn("0DTE", a => a.filter(e => dte(e) === 0)), grpBtn("This week", a => a.filter(e => dte(e) <= 7)), grpBtn("Next 4", a => a.slice(0,4)), grpBtn("Monthly", a => a.filter(e => { const d = new Date(e+"T12:00:00"); return d.getDay()===5 && d.getDate() >= 15 && d.getDate() <= 21; })), grpBtn("All", a => isPro() || !S.gate ? a : a.slice(0,4)));
+  const groups = h("div",{class:"exps"}, grpBtn("0DTE", a => a.filter(e => dte(e) === 0)), grpBtn("This week", a => a.filter(e => dte(e) <= 7)), grpBtn("Next 4", a => a.slice(0,4)), grpBtn("Monthly", a => a.filter(e => { const d = new Date(e+"T12:00:00"); return d.getDay()===5 && d.getDate() >= 15 && d.getDate() <= 21; })), grpBtn("All", a => a));
   return h("div",{class:"ctl"},
     h("span",null,"Expirations"), groups, expChips,
     S.tab === "heat" ? h("label",null,"Show", h("select",{onchange:e=>{S.hview=e.target.value; renderTabs();}}, [["net","Net gamma (GEX)"],["vex","Vanna (VEX)"],["dex","Delta (DEX)"],["calls","Call gamma"],["puts","Put gamma"],["oi","Open interest"],["vol","Volume"]].map(([v,l])=>h("option",{value:v, selected:S.hview===v}, l)))) : null,
@@ -859,7 +797,7 @@ function viewWatch(){
   const list = getWatch();
   const box = h("div",null);
   const addIn = h("input",{placeholder:"Add ticker", maxlength:8, style:{width:"110px",background:"var(--panel2)",border:"1px solid var(--rule)",borderRadius:"8px",padding:"6px 10px",fontFamily:"var(--mono)",textTransform:"uppercase"}});
-  const add = () => { const v = addIn.value.trim().toUpperCase(); if (!v) return; if (!isPro() && !FREE.has(v)){ openUpgrade(`${v} is a Pro ticker.`); return; } if (!list.includes(v)) { list.push(v); setWatch(list); } addIn.value = ""; renderTabs(); };
+  const add = () => { const v = addIn.value.trim().toUpperCase(); if (!v) return; if (!list.includes(v)) { list.push(v); setWatch(list); } addIn.value = ""; renderTabs(); };
   addIn.addEventListener("keydown", e => { if (e.key==="Enter") add(); });
   const tbl = h("table",{class:"data"}, h("thead",null,h("tr",null,["Ticker","Spot","Chg","Regime","Put wall","Flip","Call wall","Max pain","Exp. move",""].map(x=>h("th",null,x)))), h("tbody",{id:"watchBody"}, list.map(sym => h("tr",{"data-sym":sym}, h("td",null,sym), h("td",{colSpan:8, class:"hint"},"loading…"), h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×"))))));
   box.append(h("div",{class:"ctl"}, h("span",null,"Levels for the nearest 4 expirations, ±8% range."), h("span",{style:{flex:1}}), addIn, h("button",{class:"btn small", onclick:add},"Add"), h("button",{class:"btn small gold", onclick:()=>copyLevels(list)},"Copy for Discord")), h("div",{style:{overflow:"auto"}}, tbl));
@@ -1457,7 +1395,7 @@ function exportCsv(){
 // ---------- boot ----------
 const symIn = document.getElementById("symIn"), sugEl = document.getElementById("sug");
 let sugItems = [], sugIdx = -1, sugTimer = null;
-function goSym(v){ v = v.toUpperCase().replace(/[^A-Z.]/g,""); if (!v) return; sugEl.hidden = true; if (!isPro() && !FREE.has(v) && S.gate){ openUpgrade(`${v} is a Pro ticker. Free includes SPX and SPY.`); return; } S.sym = v; symIn.value = v; S.exps = []; renderChips(); load(); }
+function goSym(v){ v = v.toUpperCase().replace(/[^A-Z.]/g,""); if (!v) return; sugEl.hidden = true; S.sym = v; symIn.value = v; S.exps = []; renderChips(); load(); }
 function showSug(items){ sugItems = items; sugIdx = -1; sugEl.replaceChildren(...items.map((it,i) => h("button",{type:"button", role:"option", onmousedown:e=>{ e.preventDefault(); goSym(it.symbol); }}, h("span",null, h("b",null,it.symbol), h("small",null,it.type||"")), h("span",null,it.name)))); sugEl.hidden = !items.length; }
 function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:""}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:""}); if (out.length > 30) break; } return out.slice(0,8); }
 symIn.addEventListener("input", () => { const q = symIn.value.trim(); clearTimeout(sugTimer); if (!q){ sugEl.hidden = true; return; } showSug(localSearch(q));
@@ -1478,17 +1416,11 @@ document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; sav
 document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); } });
 document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
-try { applyToken(localStorage.getItem("kingnode:token") || ""); } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
-document.querySelectorAll("#upDlg .plan2").forEach(b => b.addEventListener("click", () => startCheckout(b.dataset.plan, b)));
-document.getElementById("restoreLink").onclick = () => document.getElementById("rsDlg").showModal();
-document.getElementById("rsForm").addEventListener("submit", restoreAccess);
 renderPlan(); loadTape();
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
-{ const m = location.search.match(/[?&]checkout=([^&]+)/); if (m){ history.replaceState(null,"",location.pathname); finishCheckout(decodeURIComponent(m[1])); } else if (S.token && S.exp - Date.now() < 12*3600e3) refreshToken(); }
-if (S.set.defaultSym && (isPro() || FREE.has(S.set.defaultSym))){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
-{ const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); if (isPro() || FREE.has(v)){ S.sym = v; document.getElementById("symIn").value = v; } } }
-if (/[?&]upgrade\b/.test(location.search)) setTimeout(()=>openUpgrade(""), 200);
+if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
+{ const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); S.sym = v; document.getElementById("symIn").value = v; } }
 load();
 let tickTimer = null, nextAt = 0;
 function startTimer(){ clearInterval(S.timer); clearInterval(tickTimer); const ms = Math.max(15, S.set.refreshSec)*1000; nextAt = Date.now() + ms;

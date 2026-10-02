@@ -37,8 +37,7 @@ export default async function handler(req, res) {
   const body = typeof req.body === "string" ? safeParse(req.body) : (req.body || {});
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "unknown";
   if (throttled(ip)) return res.status(429).json({ error: "rate_limited" });
-  const pro = !!readToken(body.token);
-  if (!pro) return res.status(402).json({ error: "upgrade_required" }); // "Ask the desk" is Pro-only
+  // personal build: no gating
 
   const prompt = body.prompt;
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > MAX_PROMPT) {

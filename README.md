@@ -1,6 +1,6 @@
 # Kingnode
 
-*The level dealers defend.* A dealer-positioning and institutional-flow terminal for options traders — gamma heatmap, call/put walls, gamma flip, max pain, expected move, IV skew and fresh positioning — with a plain-English read on top. Free for SPX and SPY; Pro ($19/mo or $159/yr) for every ticker and expiration, alerts, CSV export and "Ask the desk".
+*The level dealers defend.* A dealer-positioning and institutional-flow terminal for options traders — gamma heatmap, call/put walls, gamma flip, max pain, expected move, IV skew and fresh positioning — with a plain-English read on top. Every ticker and expiration, alerts, CSV export and "Ask the desk".
 
 ## Files
 
@@ -16,9 +16,6 @@
 | `api/flow.js` + `collector/` | Flow tape ingest and the websocket collector. |
 | `api/chain.js` | Fetches and normalizes the options chain (OI, volume, IV, greeks). Gates non-SPX/SPY tickers to Pro. |
 | `api/generate.js` | "Ask the desk" — sends the computed levels plus the trader's question to Claude. Pro only. |
-| `api/checkout.js`, `session.js`, `refresh.js`, `restore.js`, `portal.js` | Stripe subscriptions (same no-account token system as Shopfront). |
-| `api/lead.js` | Optional contact form endpoint. |
-| `scripts/stripe-setup.mjs` | Creates the Stripe product and both prices. |
 
 ## Layout (v3)
 
@@ -34,7 +31,7 @@ The GitHub Pages build pulls everything from Cboe's delayed feed directly in you
 - **Chain, Heatseeker, ladder, Positioning, Gamma profile, Skew, Chain, Watchlist, Drift, Playbook** — real.
 - **Flow, Contract flow, alerts, Playbook scanner** — built from **volume changes between refreshes** ("derived tape"): each print is a contract whose volume rose since the last refresh, size = the change, side = last trade vs the prior bid/ask. Direction and size are real; timing is 15-min delayed and resolution is one refresh. Leave the tab open and it fills in through the session. Saved per ticker per day.
 - **Data status** card (right rail) shows which feed is live, demo, or failed. Red row → screenshot it plus the console (F12) and send it.
-- Institutions, Discord alerts, Ask the desk, Pro billing need the server version.
+- Institutions and Ask the desk need the server version (desktop app).
 
 
 - **Blackout theme (default):** true-black background for OLED and late sessions. The moon button cycles blackout → dark → light; TradingView widgets follow.
@@ -98,7 +95,6 @@ Switching vendors changes nothing in the terminal. If a vendor renames a field, 
 unzip kingnode.zip && cd kingnode
 npm install
 git init && git add -A && git commit -m "Kingnode"
-STRIPE_SECRET_KEY=sk_test_... node scripts/stripe-setup.mjs   # prints the price IDs
 cp .env.example .env.local && echo "APP_SECRET=$(openssl rand -hex 32)" >> .env.local
 npm i -g vercel && vercel && vercel env add APP_SECRET   # repeat for each variable
 vercel --prod
@@ -115,9 +111,6 @@ Then: Stripe → Settings → Billing → Customer portal → enable cancel and 
 
 Deploy the same way with `vercel --prod`, add the env vars in the Vercel dashboard, attach a Blob store (Storage tab) if you run the collector.
 
-## Compliance
-
-Keep the footer disclaimer. You are selling an analytics tool, not advice; don't market it with return claims or "accuracy" percentages, and don't run a signal channel alongside it without talking to a securities lawyer.
 
 ## Roadmap ideas (what would justify more than $19)
 

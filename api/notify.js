@@ -1,10 +1,9 @@
 // Forwards flow/level alerts from the terminal to your Discord (or any) webhook. Pro token or NOTIFY_OPEN=true required.
-import { readToken, body } from "./_lib/auth.js";
+import { body } from "./_lib/auth.js";
 const recent = new Map();
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
   const b = body(req);
-  if (process.env.NOTIFY_OPEN !== "true" && !readToken(b.token)) return res.status(402).json({ error: "upgrade_required" });
   const hook = process.env.DISCORD_WEBHOOK || process.env.LEAD_WEBHOOK;
   if (!hook) return res.status(500).json({ error: "not_configured" });
   const text = String(b.text || "").slice(0, 1800); if (!text) return res.status(400).json({ error: "empty" });

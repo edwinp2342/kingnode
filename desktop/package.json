@@ -11,8 +11,7 @@
   },
   "dependencies": {
     "@vercel/blob": "^0.27.3",
-    "dotenv": "^16.6.1",
-    "stripe": "^17.7.0"
+    "dotenv": "^16.6.1"
   },
   "devDependencies": {
     "electron": "^33.0.0",
