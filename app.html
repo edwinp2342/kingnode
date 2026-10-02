@@ -28,6 +28,16 @@ button,input,select{font:inherit; color:inherit}
 :focus-visible{outline:2px solid var(--blue); outline-offset:1px}
 a{color:var(--blue)}
 .num{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.tape{height:34px; border-bottom:1px solid var(--rule); background:var(--bg); overflow:hidden; position:relative}
+.tape-in{display:flex; gap:0; height:100%; align-items:center; white-space:nowrap; will-change:transform}
+.tape-in.anim{animation:tape 60s linear infinite}
+.tape:hover .tape-in.anim{animation-play-state:paused}
+@keyframes tape{from{transform:translateX(0)} to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){ .tape-in.anim{animation:none} .tape{overflow-x:auto} }
+.tq{display:inline-flex; align-items:baseline; gap:7px; padding:0 18px; font-family:var(--mono); font-size:12.5px; border-right:1px solid var(--rule); cursor:pointer; height:100%; align-items:center}
+.tq:hover{background:var(--panel)}
+.tq b{font-weight:700; color:var(--ink)} .tq .p{color:var(--ink); font-weight:600} .tq .c{color:var(--pos)} .tq .d{color:var(--neg)} .tq small{color:var(--muted); font-size:10.5px}
+.tq .ext{color:var(--gold); font-size:10px; margin-left:2px}
 .bar{display:flex; align-items:center; gap:10px; padding:6px 12px; border-bottom:1px solid var(--rule); background:var(--bg); flex-wrap:wrap}
 .logo{font-weight:700; display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--ink); font-size:15px; margin-right:4px}
 .logo svg{width:22px; height:22px}
@@ -179,6 +189,7 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
 </style>
 </head>
 <body>
+<div class="tape" id="tape" aria-label="Index tape"><div class="tape-in" id="tapeIn"></div></div>
 <header class="bar">
   <a class="logo" href="./"><svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="20" fill="#131722"/><path d="M15 62c12-14 24-14 36 0s24 14 36 0" stroke="#2962FF" stroke-width="10" fill="none" stroke-linecap="round"/></svg>Kingnode</a>
   <form class="sym" id="symForm" autocomplete="off"><div class="search"><input id="symIn" value="SPX" aria-label="Search ticker or company" placeholder="Search ticker or company  /" maxlength="30"><div class="sug" id="sug" hidden></div></div><button class="btn small" type="submit">Go</button></form>
@@ -260,7 +271,7 @@ const QUICK = ["SPX","SPY","QQQ","IWM","VIX","NVDA","TSLA","AAPL","AMZN","MSFT",
 const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Invesco Nasdaq-100 ETF"],["IWM","iShares Russell 2000 ETF"],["DIA","SPDR Dow Jones ETF"],["VIX","Cboe Volatility Index"],["NDX","Nasdaq-100 Index"],["RUT","Russell 2000 Index"],["XSP","Mini-SPX Index"],["TLT","iShares 20+ Year Treasury"],["GLD","SPDR Gold"],["SLV","iShares Silver"],["USO","United States Oil"],["UVXY","ProShares Ultra VIX"],["SQQQ","ProShares UltraPro Short QQQ"],["TQQQ","ProShares UltraPro QQQ"],["SOXL","Direxion Semiconductor Bull 3x"],["ARKK","ARK Innovation ETF"],["XLF","Financial Select Sector"],["XLE","Energy Select Sector"],["XLK","Technology Select Sector"],["XLV","Health Care Select Sector"],["XLI","Industrial Select Sector"],["XLU","Utilities Select Sector"],["XLP","Consumer Staples Select"],["XLY","Consumer Discretionary Select"],["XBI","SPDR Biotech"],["SMH","VanEck Semiconductor"],["KRE","SPDR Regional Banking"],["HYG","iShares High Yield Corporate"],["EEM","iShares Emerging Markets"],["FXI","iShares China Large-Cap"],["BITO","ProShares Bitcoin Strategy"],["IBIT","iShares Bitcoin Trust"],
 ["AAPL","Apple"],["MSFT","Microsoft"],["NVDA","NVIDIA"],["AMZN","Amazon"],["GOOGL","Alphabet A"],["GOOG","Alphabet C"],["META","Meta Platforms"],["TSLA","Tesla"],["BRK.B","Berkshire Hathaway B"],["AVGO","Broadcom"],["LLY","Eli Lilly"],["JPM","JPMorgan Chase"],["V","Visa"],["MA","Mastercard"],["UNH","UnitedHealth"],["XOM","Exxon Mobil"],["COST","Costco"],["WMT","Walmart"],["HD","Home Depot"],["PG","Procter & Gamble"],["JNJ","Johnson & Johnson"],["NFLX","Netflix"],["ORCL","Oracle"],["CRM","Salesforce"],["ADBE","Adobe"],["AMD","Advanced Micro Devices"],["INTC","Intel"],["QCOM","Qualcomm"],["TXN","Texas Instruments"],["MU","Micron"],["ARM","Arm Holdings"],["TSM","Taiwan Semiconductor"],["ASML","ASML Holding"],["SMCI","Super Micro Computer"],["MRVL","Marvell"],["LRCX","Lam Research"],["AMAT","Applied Materials"],["KLAC","KLA"],["ANET","Arista Networks"],["PLTR","Palantir"],["SNOW","Snowflake"],["CRWD","CrowdStrike"],["PANW","Palo Alto Networks"],["NOW","ServiceNow"],["SHOP","Shopify"],["UBER","Uber"],["ABNB","Airbnb"],["COIN","Coinbase"],["MSTR","MicroStrategy"],["HOOD","Robinhood"],["SOFI","SoFi"],["SQ","Block"],["PYPL","PayPal"],["AFRM","Affirm"],["RBLX","Roblox"],["DKNG","DraftKings"],["BA","Boeing"],["CAT","Caterpillar"],["DE","Deere"],["GE","GE Aerospace"],["RTX","RTX"],["LMT","Lockheed Martin"],["NOC","Northrop Grumman"],["GS","Goldman Sachs"],["MS","Morgan Stanley"],["BAC","Bank of America"],["C","Citigroup"],["WFC","Wells Fargo"],["SCHW","Charles Schwab"],["AXP","American Express"],["BLK","BlackRock"],["KO","Coca-Cola"],["PEP","PepsiCo"],["MCD","McDonald's"],["SBUX","Starbucks"],["NKE","Nike"],["DIS","Disney"],["CMCSA","Comcast"],["T","AT&T"],["VZ","Verizon"],["TMUS","T-Mobile"],["PFE","Pfizer"],["MRK","Merck"],["ABBV","AbbVie"],["AMGN","Amgen"],["GILD","Gilead"],["BMY","Bristol Myers Squibb"],["MRNA","Moderna"],["NVO","Novo Nordisk"],["ISRG","Intuitive Surgical"],["CVS","CVS Health"],["CVX","Chevron"],["COP","ConocoPhillips"],["OXY","Occidental"],["SLB","Schlumberger"],["FCX","Freeport-McMoRan"],["NEM","Newmont"],["F","Ford"],["GM","General Motors"],["RIVN","Rivian"],["LCID","Lucid"],["NIO","NIO"],["BABA","Alibaba"],["PDD","PDD Holdings"],["JD","JD.com"],["MELI","MercadoLibre"],["SE","Sea Limited"],["SPOT","Spotify"],["ROKU","Roku"],["TTD","The Trade Desk"],["ZM","Zoom"],["DDOG","Datadog"],["NET","Cloudflare"],["MDB","MongoDB"],["ZS","Zscaler"],["OKTA","Okta"],["TEAM","Atlassian"],["WDAY","Workday"],["INTU","Intuit"],["ADP","ADP"],["IBM","IBM"],["CSCO","Cisco"],["DELL","Dell"],["HPQ","HP"],["UPS","UPS"],["FDX","FedEx"],["DAL","Delta Air Lines"],["UAL","United Airlines"],["AAL","American Airlines"],["LUV","Southwest"],["CCL","Carnival"],["RCL","Royal Caribbean"],["MAR","Marriott"],["LOW","Lowe's"],["TGT","Target"],["TJX","TJX"],["LULU","Lululemon"],["CMG","Chipotle"],["ELF","e.l.f. Beauty"],["CELH","Celsius"],["ENPH","Enphase"],["FSLR","First Solar"],["PLUG","Plug Power"],["GME","GameStop"],["AMC","AMC Entertainment"],["MARA","MARA Holdings"],["RIOT","Riot Platforms"],["CLSK","CleanSpark"],["IONQ","IonQ"],["RGTI","Rigetti"],["QUBT","Quantum Computing"],["APP","AppLovin"],["VRT","Vertiv"],["CEG","Constellation Energy"],["VST","Vistra"],["NRG","NRG Energy"],["OKLO","Oklo"],["SMR","NuScale"],["RKLB","Rocket Lab"],["ASTS","AST SpaceMobile"],["LUNR","Intuitive Machines"],["HIMS","Hims & Hers"],["TEM","Tempus AI"],["RDDT","Reddit"],["DUOL","Duolingo"],["CAVA","Cava"],["SBET","SharpLink Gaming"],["CRCL","Circle"],["CRWV","CoreWeave"],["NBIS","Nebius"],["ORCL","Oracle"]];
 const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
-const FREE = new Set(["SPX","SPY","VIX"]);
+const FREE = new Set(["SPX","SPY","VIX","NDX","RUT","XSP","QQQ","IWM","DIA"]);
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
@@ -323,6 +334,39 @@ function renderPlan(){
   else el.append(h("button",{class:"btn small gold", onclick:()=>openUpgrade("")},"Go Pro"));
   renderChips();
 }
+
+// ---------- Index tape: our own, from the server quotes API or straight from Cboe on the static site ----------
+const TAPE = ["SPX","NDX","RUT","VIX","SPY","QQQ","IWM","DIA","XSP"];
+const TAPE_NAMES = {SPX:"S&P 500", NDX:"Nasdaq 100", RUT:"Russell 2000", VIX:"VIX", SPY:"SPY", QQQ:"QQQ", IWM:"IWM", DIA:"Dow ETF", XSP:"Mini-SPX"};
+let tapeQuotes = new Map();
+async function tapeFromCboe(sym){
+  // intraday chart gives today's path; the options feed carries current price + change. Try the light one first.
+  const s = INDEX_SYMS.has(sym) ? `_${sym}` : sym;
+  try { const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (r.ok){ const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (arr.length){ const last = arr[arr.length-1], first = arr[0]; const px = +(last.close ?? last.price), open = +(first.open ?? first.price ?? px); const prev = +(d.prev_day_close ?? j.prev_day_close ?? 0) || null; return {symbol:sym, price:px, prev: prev || open, last:px, t:Date.parse(String(last.datetime||last.date||"").replace(" ","T")+"-04:00") || Date.now(), src:"cboe-intraday"}; } } } catch {}
+  try { const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (r.ok){ const j = await r.json(); const d = j.data || j; const px = +(d.current_price ?? d.last ?? d.close ?? 0); if (px) return {symbol:sym, price:px, prev: px - (+d.price_change || 0), last:px, t:Date.now(), src:"cboe-options"}; } } catch {}
+  return null;
+}
+async function loadTape(){
+  let got = [];
+  try { const r = await fetch(`/api/quotes?symbols=${TAPE.join(",")}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); got = (j.quotes||[]).filter(q => q && !q.error && q.price); } } catch {}
+  if (!got.length){
+    const syms = TAPE.filter(s => s !== "XSP");
+    const res = await Promise.all(syms.map(tapeFromCboe)); got = res.filter(Boolean);
+    const spx = got.find(q => q.symbol === "SPX"); if (spx) got.push({symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10, t:spx.t, src:"derived"});
+  }
+  if (!got.length && S.chain && S.demo){ got = TAPE.map(sym => { const sp = {SPX:7743.41, NDX:28510, RUT:2846, VIX:16.8, SPY:772.4, QQQ:642, IWM:282, DIA:471, XSP:774.3}[sym]; return {symbol:sym, price:sp, prev:sp*(1-0.0051), last:sp, t:Date.now(), demo:true}; }); }
+  got.forEach(q => tapeQuotes.set(q.symbol, q)); renderTape();
+}
+function renderTape(){
+  const el = document.getElementById("tapeIn"); if (!el) return;
+  const items = TAPE.map(sym => tapeQuotes.get(sym)).filter(Boolean);
+  if (!items.length){ el.className = "tape-in"; el.replaceChildren(h("span",{class:"tq"}, h("small",null,"loading tape…"))); return; }
+  const chip = q => { const chg = q.price - q.prev, pc = q.prev ? chg/q.prev*100 : 0, up = chg >= 0; const ext = q.last && Math.abs(q.last - q.price) > 0.0001 && ["PRE","POST","POSTPOST","PREPRE"].includes(q.state||"") ? q.last : null;
+    return h("span",{class:"tq", title:TAPE_NAMES[q.symbol] + (q.demo ? " · demo" : q.src ? " · " + q.src : ""), onclick:()=>goSym(q.symbol)}, h("b",null,q.symbol), h("span",{class:"p"}, fmt(q.price, q.price > 1000 ? 2 : 2)), h("span",{class:up?"c":"d"}, `${up?"+":""}${fmt(chg,2)} (${up?"+":""}${fmt(pc,2)}%)`), ext ? h("span",{class:"ext"}, (q.state||"").startsWith("PRE") ? "pre " : "ah ", fmt(ext,2)) : null, q.demo ? h("small",null,"demo") : null); };
+  const once = items.map(chip), twice = items.map(chip);
+  el.className = "tape-in anim"; el.replaceChildren(...once, ...twice);
+}
+setInterval(() => { if (document.visibilityState === "visible") loadTape(); }, 60000);
 
 // ---------- main chart host (built-in) ----------
 function mountChart(){ const host = document.getElementById("tvChart"); if (!host) return; host.replaceChildren(h("div",{class:"tvfb"}, viewChart())); if (!S.bars) loadBars(); }
@@ -533,6 +577,7 @@ function renderStatus(){
     row("Chain time", d?.asOf ? new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : "—", null),
     row("Bars", S.barsDemo ? "DEMO — feed failed" : S.bars ? `${S.bars.length} bars` : "loading", S.bars ? !S.barsDemo : null),
     row("Flow", S.flow ? (S.flowDemo ? "demo" : S.flow.derived ? `derived · ${S.flow.trades.length} prints` : "live") : "—", S.flow ? !S.flowDemo : null),
+    row("Tape", tapeQuotes.size ? `${tapeQuotes.size} tickers · ${[...tapeQuotes.values()][0]?.demo ? "demo" : ([...tapeQuotes.values()][0]?.src || "server")}` : "loading", tapeQuotes.size ? ![...tapeQuotes.values()][0]?.demo : null),
     row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
     row("Host", location.hostname.includes("github.io") ? "static (no server)" : location.hostname, null),
     h("p",{style:{margin:"6px 0 0"}},"If a row is red, screenshot this card and the browser console (F12 → Console) and send it."));
@@ -1423,7 +1468,7 @@ try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } ca
 document.querySelectorAll("#upDlg .plan2").forEach(b => b.addEventListener("click", () => startCheckout(b.dataset.plan, b)));
 document.getElementById("restoreLink").onclick = () => document.getElementById("rsDlg").showModal();
 document.getElementById("rsForm").addEventListener("submit", restoreAccess);
-renderPlan();
+renderPlan(); loadTape();
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 { const m = location.search.match(/[?&]checkout=([^&]+)/); if (m){ history.replaceState(null,"",location.pathname); finishCheckout(decodeURIComponent(m[1])); } else if (S.token && S.exp - Date.now() < 12*3600e3) refreshToken(); }
 if (S.set.defaultSym && (isPro() || FREE.has(S.set.defaultSym))){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
