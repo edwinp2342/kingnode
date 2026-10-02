@@ -182,6 +182,23 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
 .lname{font-size:12.5px} .lname small{display:block; color:var(--muted); font-family:var(--mono); font-size:11px}
 .lverb{font-size:10.5px; font-weight:700; letter-spacing:.05em; white-space:nowrap}
 .ladder-foot{padding:10px 12px; font-size:12px; color:var(--muted); line-height:1.5}
+.hsg-wrap{overflow:auto; max-height:72vh; border:1px solid var(--rule); border-radius:6px; background:var(--bg)}
+.seeker-full .hsg-wrap{max-height:calc(100vh - 120px)}
+table.hsg{border-collapse:separate; border-spacing:0; font-family:var(--mono); font-size:11.5px; min-width:100%}
+table.hsg th{position:sticky; top:0; z-index:3; background:var(--bg); color:var(--muted); font-weight:500; padding:6px 8px; text-align:center; border-bottom:1px solid var(--rule2); white-space:nowrap}
+table.hsg th.stk,table.hsg td.stk{position:sticky; left:0; z-index:2; background:var(--bg); text-align:right; padding:0 10px; font-weight:600; color:var(--muted); border-right:1px solid var(--rule2)}
+table.hsg th.stk{z-index:4}
+table.hsg td{height:22px; min-width:104px; text-align:right; padding:0 10px; position:relative; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.35)}
+table.hsg td.c:hover{outline:1px solid #fff; outline-offset:-1px}
+table.hsg td.king{box-shadow:inset 0 0 0 2px var(--gold); font-weight:700}
+table.hsg td.shortn{box-shadow:inset 0 0 0 2px #EC4899}
+table.hsg .star{position:absolute; left:6px; top:3px; color:var(--gold); font-size:11px}
+table.hsg tr.spot td{box-shadow:inset 0 2px 0 #fff, inset 0 -2px 0 #fff}
+table.hsg tr.spot td.stk{color:#fff}
+table.hsg th.net,table.hsg td.net{position:sticky; right:0; z-index:2; border-left:2px solid var(--rule2); font-weight:700}
+table.hsg th.net{z-index:4}
+table.hsg tfoot td{position:sticky; bottom:0; z-index:3; background:var(--bg); color:var(--muted); font-weight:600; border-top:1px solid var(--rule2)}
+table.hsg tfoot td.pos{color:#BEF264} table.hsg tfoot td.neg{color:#EC4899}
 .sk-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; align-items:center}
 .sk-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
 @media (max-width:980px){ .sk-body{flex-direction:column} .ladder{width:100%} }
@@ -1097,7 +1114,7 @@ function seekerScopeHist(){
   // "sel" = expirations selected on Positioning (recorded); "delta" reuses the same data, differenced from the first snapshot
   return S.seekerHist;
 }
-function viewSeeker(){
+function viewSeekerSession(){
   const c = S.calc, hist = seekerScopeHist(); const box = h("div",{class: SK.full ? "seeker-full" : ""});
   const mode = S.seekerMode, isDelta = mode === "dgex", mi = {gex:1, vex:2, dex:3, dgex:1}[mode], label = {gex:"Gamma",vex:"Vanna",dex:"Delta",dgex:"Δ Gamma since open"}[mode], unit = {gex:1e5,vex:1e4,dex:1e6,dgex:1e5}[mode];
   const btn = (v,l) => h("button",{type:"button","aria-pressed":String(S.seekerMode===v), onclick:()=>{S.seekerMode=v; SK.scrub=null; renderTabs();}}, l);
@@ -1191,6 +1208,68 @@ function viewSeeker(){
   return box;
 }
 function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r); g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h); g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r); g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath(); }
+
+// ---------- Heatseeker grid: strike × expiration, every cell labeled, king node starred ----------
+const HSG = { mode:"gex", step:"auto", view:"grid", net:true, exps:8 };
+function gridColor(t){ // t in [-1,1]. positive: deep teal → teal → lime. negative: midnight → indigo → magenta. zero = near-black.
+  const a = Math.min(1, Math.abs(t)), e = Math.pow(a, 0.55);
+  const mix = (c1, c2, f) => c1.map((v,i) => Math.round(v + (c2[i]-v)*f));
+  const col = t >= 0 ? (e < 0.5 ? mix([10,20,24],[20,120,110],e/0.5) : mix([20,120,110],[190,242,100],(e-0.5)/0.5))
+                     : (e < 0.5 ? mix([12,10,24],[76,29,149],e/0.5) : mix([76,29,149],[236,72,153],(e-0.5)/0.5));
+  return `rgb(${col.join(",")})`;
+}
+function viewSeeker(){
+  if (HSG.view === "session") return viewSeekerSession();
+  const d = S.chain, box = h("div",{class: SK.full ? "seeker-full" : ""});
+  const exps = S.allExps.slice(0, HSG.exps);
+  const calc = computeFrom(d, exps, S.set.range, S.set.model); const spot = calc.spot;
+  const mode = HSG.mode, isDelta = mode === "dgex", key = {gex:"gex", vex:"vex", dex:"dex", dgex:"gex"}[mode], unit = 1;
+  // strike step: bin strikes so the grid stays readable
+  const ks = [...new Set(calc.strikes.map(x=>x.K))].sort((a,b)=>a-b); const minGap = ks.length > 1 ? Math.min(...ks.slice(1).map((k,i)=>k-ks[i])) : 1;
+  const autoStep = ks.length > 60 ? minGap*5 : ks.length > 36 ? minGap*2 : minGap; const step = HSG.step === "auto" ? autoStep : Number(HSG.step);
+  const binOf = K => Math.round(K/step)*step;
+  const rowsK = [...new Set(ks.map(binOf))].sort((a,b)=>b-a);
+  const cell = new Map(); // `${exp}|${bin}` -> {v, cOI, pOI, cVol, pVol}
+  for (const c of calc.byCell.values()){ const b = binOf(c.K), k = `${c.exp}|${b}`; const o = cell.get(k) || {v:0, cOI:0, pOI:0, cVol:0, pVol:0}; o.v += c[key]; o.cOI += c.cOI; o.pOI += c.pOI; o.cVol += c.cVol; o.pVol += c.pVol; cell.set(k, o); }
+  // Δ since open: compare with the first Heatseeker snapshot of the day (GEX only, selected-exp basis)
+  let open0 = null; if (isDelta){ const h0 = S.seekerHist[0]; if (h0) open0 = new Map(h0.k.map(x => [binOf(x[0]), (open0?.get(binOf(x[0]))||0) + x[1]*1e5])); }
+  const val = (exp, b) => { const o = cell.get(`${exp}|${b}`); if (!o) return 0; return o.v; };
+  const rowNet = b => exps.reduce((a,e)=>a+val(e,b),0);
+  const vals = rowsK.flatMap(b => exps.map(e => val(e,b))); const vmax = Math.max(1e-9, ...vals.map(Math.abs));
+  const netMax = Math.max(1e-9, ...rowsK.map(b => Math.abs(rowNet(b))));
+  // king node = largest positive cell; short node = largest negative; spot row
+  let king = null, shortN = null; rowsK.forEach(b => exps.forEach(e => { const v = val(e,b); if (v > (king?.v||0)) king = {e,b,v}; if (v < (shortN?.v||0)) shortN = {e,b,v}; }));
+  const spotRow = rowsK.find(b => b <= spot) ?? rowsK[rowsK.length-1];
+  const fmtv = v => Math.abs(v) < 1e3 ? "" : money(v).replace("$","").replace("-","−");
+  const btn = (v,l) => h("button",{type:"button","aria-pressed":String(HSG.mode===v), onclick:()=>{HSG.mode=v; renderTabs();}}, l);
+  box.append(h("div",{class:"sk-head"},
+    h("div",{class:"grp"}, btn("gex","GEX"), btn("vex","VEX"), btn("dex","DEX")),
+    h("div",{class:"grp"}, [["grid","Grid"],["session","Session map"]].map(([v,l]) => h("button",{type:"button","aria-pressed":String(HSG.view===v), onclick:()=>{HSG.view=v; renderTabs();}}, l))),
+    h("select",{class:"sk-sel", onchange:e=>{HSG.step=e.target.value; renderTabs();}}, [["auto","Step auto"],[minGap,`Step ${minGap}`],[minGap*2,`Step ${minGap*2}`],[minGap*5,`Step ${minGap*5}`],[minGap*10,`Step ${minGap*10}`]].map(([v,l])=>h("option",{value:v, selected:String(HSG.step)===String(v)}, l))),
+    h("select",{class:"sk-sel", onchange:e=>{S.set.range=Number(e.target.value); saveSettings(); renderTabs();}}, [2,3,4,6,8,12].map(v=>h("option",{value:v, selected:S.set.range===v}, "±"+v+"%"))),
+    h("select",{class:"sk-sel", onchange:e=>{HSG.exps=Number(e.target.value); renderTabs();}}, [4,6,8,10,12].map(v=>h("option",{value:v, selected:HSG.exps===v}, v+" expiries"))),
+    h("span",{class:"sk-title"}, S.sym, h("span",{class:"hint"}, ` · ${ {gex:"gamma exposure, $ per 1% move",vex:"vanna exposure, $ delta per 1 vol pt",dex:"dealer delta, $"}[mode] }`)),
+    h("span",{style:{flex:1}}), S.demo ? h("span",{class:"badge demo"},"Demo data") : h("span",{class:"hint"},"chain " + new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})),
+    h("button",{class:"btn small", onclick:()=>{ SK.full = !SK.full; renderTabs(); }}, SK.full ? "Exit" : "Full screen")));
+  const tip = document.getElementById("tip");
+  const th = (txt, cls) => h("th",{class:cls||""}, txt);
+  const table = h("table",{class:"hsg"},
+    h("thead",null, h("tr",null, th("Strike","stk"), ...exps.map(e => h("th",null, h("div",null, e), h("div",{class:"hint"}, dte(e)===0 ? "0DTE" : dte(e)+"d"))), HSG.net ? th("Net","net") : null)),
+    h("tbody",null, ...rowsK.map(b => h("tr",{class: b===spotRow ? "spot" : ""},
+      h("td",{class:"stk"}, fmt(b, step < 1 ? 2 : 0)),
+      ...exps.map(e => { const v = val(e,b), o = cell.get(`${e}|${b}`); const isKing = king && king.e===e && king.b===b, isShort = shortN && shortN.e===e && shortN.b===b;
+        return h("td",{class:"c"+(isKing?" king":"")+(isShort?" shortn":""), style:{background:gridColor(v/vmax), color: Math.abs(v)/vmax > 0.55 ? "#061013" : "#D1D4DC"},
+          onmouseenter:ev=>{ if(!o){ tip.style.display="none"; return; } tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; tip.textContent = `${fmt(b)} · ${e}\n${mode.toUpperCase()} ${money(v)}\ncalls OI ${fmt(o.cOI)} vol ${fmt(o.cVol)}\nputs  OI ${fmt(o.pOI)} vol ${fmt(o.pVol)}`; },
+          onmousemove:ev=>{ tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; }, onmouseleave:()=>tip.style.display="none",
+          onclick:()=>{ S.inspect = {exp:e, K:b}; S.tab = "heat"; renderTabs(); document.querySelector(".insp")?.scrollIntoView({behavior:"smooth", block:"nearest"}); }},
+          fmtv(v), isKing ? h("span",{class:"star"},"★") : null); }),
+      HSG.net ? h("td",{class:"net", style:{background:gridColor(rowNet(b)/netMax), color: Math.abs(rowNet(b))/netMax > 0.55 ? "#061013" : "#D1D4DC"}}, fmtv(rowNet(b))) : null))),
+    h("tfoot",null, h("tr",null, th("Σ","stk"), ...exps.map(e => { const t = rowsK.reduce((a,b)=>a+val(e,b),0); return h("td",{class:"sum "+(t>=0?"pos":"neg")}, fmtv(t)); }), HSG.net ? h("td",{class:"sum "+(calc.total>=0?"pos":"neg")}, fmtv(rowsK.reduce((a,b)=>a+rowNet(b),0))) : null)));
+  box.append(h("div",{class:"hsg-wrap"}, table));
+  const kingTxt = king ? `★ King node ${fmt(king.b)} · ${king.e} · ${money(king.v)}` : "";
+  box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"linear-gradient(90deg,#4C1D95,#EC4899)"}}), "dealers short — moves accelerate"), h("span",null, h("i",{style:{background:"linear-gradient(90deg,#14786E,#BEF264)"}}), "dealers long — support / pin"), h("span",{style:{color:"var(--gold)",fontWeight:600}}, kingTxt), h("span",{class:"hint"},`spot ${fmt(spot,2)} row outlined · Net = across ${exps.length} expiries · click a cell for the contracts`)));
+  return box;
+}
 
 // ---------- Playbook: event-driven, flow-tailing swing setups with the sizing rules baked in ----------
 const PB_KEY = "kingnode:playbook";
