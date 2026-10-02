@@ -201,6 +201,7 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
     <div class="card" id="levelsCard"><h2>Key levels</h2><div id="regime"></div><div class="levels" id="levels"></div></div>
     <div class="card"><h2>The read</h2><div class="read" id="read"></div><div id="askBox"></div></div>
     <div class="card" id="alertsCard"><h2>Alerts</h2><div id="alerts"></div></div>
+    <div class="card"><h2>Data status</h2><div id="dstatus" class="hint"></div></div>
   </aside>
 </div>
 <div class="tip" id="tip"></div>
@@ -251,12 +252,12 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
 <script>
 (() => {
 "use strict";
-const QUICK = ["SPX","SPY","QQQ","IWM","NVDA","TSLA","AAPL","AMZN","MSFT","META","GOOGL","AMD","NFLX","COIN","PLTR"];
+const QUICK = ["SPX","SPY","QQQ","IWM","VIX","NVDA","TSLA","AAPL","AMZN","MSFT","META","GOOGL","AMD","NFLX","COIN","PLTR"];
 const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Invesco Nasdaq-100 ETF"],["IWM","iShares Russell 2000 ETF"],["DIA","SPDR Dow Jones ETF"],["VIX","Cboe Volatility Index"],["NDX","Nasdaq-100 Index"],["RUT","Russell 2000 Index"],["XSP","Mini-SPX Index"],["TLT","iShares 20+ Year Treasury"],["GLD","SPDR Gold"],["SLV","iShares Silver"],["USO","United States Oil"],["UVXY","ProShares Ultra VIX"],["SQQQ","ProShares UltraPro Short QQQ"],["TQQQ","ProShares UltraPro QQQ"],["SOXL","Direxion Semiconductor Bull 3x"],["ARKK","ARK Innovation ETF"],["XLF","Financial Select Sector"],["XLE","Energy Select Sector"],["XLK","Technology Select Sector"],["XLV","Health Care Select Sector"],["XLI","Industrial Select Sector"],["XLU","Utilities Select Sector"],["XLP","Consumer Staples Select"],["XLY","Consumer Discretionary Select"],["XBI","SPDR Biotech"],["SMH","VanEck Semiconductor"],["KRE","SPDR Regional Banking"],["HYG","iShares High Yield Corporate"],["EEM","iShares Emerging Markets"],["FXI","iShares China Large-Cap"],["BITO","ProShares Bitcoin Strategy"],["IBIT","iShares Bitcoin Trust"],
 ["AAPL","Apple"],["MSFT","Microsoft"],["NVDA","NVIDIA"],["AMZN","Amazon"],["GOOGL","Alphabet A"],["GOOG","Alphabet C"],["META","Meta Platforms"],["TSLA","Tesla"],["BRK.B","Berkshire Hathaway B"],["AVGO","Broadcom"],["LLY","Eli Lilly"],["JPM","JPMorgan Chase"],["V","Visa"],["MA","Mastercard"],["UNH","UnitedHealth"],["XOM","Exxon Mobil"],["COST","Costco"],["WMT","Walmart"],["HD","Home Depot"],["PG","Procter & Gamble"],["JNJ","Johnson & Johnson"],["NFLX","Netflix"],["ORCL","Oracle"],["CRM","Salesforce"],["ADBE","Adobe"],["AMD","Advanced Micro Devices"],["INTC","Intel"],["QCOM","Qualcomm"],["TXN","Texas Instruments"],["MU","Micron"],["ARM","Arm Holdings"],["TSM","Taiwan Semiconductor"],["ASML","ASML Holding"],["SMCI","Super Micro Computer"],["MRVL","Marvell"],["LRCX","Lam Research"],["AMAT","Applied Materials"],["KLAC","KLA"],["ANET","Arista Networks"],["PLTR","Palantir"],["SNOW","Snowflake"],["CRWD","CrowdStrike"],["PANW","Palo Alto Networks"],["NOW","ServiceNow"],["SHOP","Shopify"],["UBER","Uber"],["ABNB","Airbnb"],["COIN","Coinbase"],["MSTR","MicroStrategy"],["HOOD","Robinhood"],["SOFI","SoFi"],["SQ","Block"],["PYPL","PayPal"],["AFRM","Affirm"],["RBLX","Roblox"],["DKNG","DraftKings"],["BA","Boeing"],["CAT","Caterpillar"],["DE","Deere"],["GE","GE Aerospace"],["RTX","RTX"],["LMT","Lockheed Martin"],["NOC","Northrop Grumman"],["GS","Goldman Sachs"],["MS","Morgan Stanley"],["BAC","Bank of America"],["C","Citigroup"],["WFC","Wells Fargo"],["SCHW","Charles Schwab"],["AXP","American Express"],["BLK","BlackRock"],["KO","Coca-Cola"],["PEP","PepsiCo"],["MCD","McDonald's"],["SBUX","Starbucks"],["NKE","Nike"],["DIS","Disney"],["CMCSA","Comcast"],["T","AT&T"],["VZ","Verizon"],["TMUS","T-Mobile"],["PFE","Pfizer"],["MRK","Merck"],["ABBV","AbbVie"],["AMGN","Amgen"],["GILD","Gilead"],["BMY","Bristol Myers Squibb"],["MRNA","Moderna"],["NVO","Novo Nordisk"],["ISRG","Intuitive Surgical"],["CVS","CVS Health"],["CVX","Chevron"],["COP","ConocoPhillips"],["OXY","Occidental"],["SLB","Schlumberger"],["FCX","Freeport-McMoRan"],["NEM","Newmont"],["F","Ford"],["GM","General Motors"],["RIVN","Rivian"],["LCID","Lucid"],["NIO","NIO"],["BABA","Alibaba"],["PDD","PDD Holdings"],["JD","JD.com"],["MELI","MercadoLibre"],["SE","Sea Limited"],["SPOT","Spotify"],["ROKU","Roku"],["TTD","The Trade Desk"],["ZM","Zoom"],["DDOG","Datadog"],["NET","Cloudflare"],["MDB","MongoDB"],["ZS","Zscaler"],["OKTA","Okta"],["TEAM","Atlassian"],["WDAY","Workday"],["INTU","Intuit"],["ADP","ADP"],["IBM","IBM"],["CSCO","Cisco"],["DELL","Dell"],["HPQ","HP"],["UPS","UPS"],["FDX","FedEx"],["DAL","Delta Air Lines"],["UAL","United Airlines"],["AAL","American Airlines"],["LUV","Southwest"],["CCL","Carnival"],["RCL","Royal Caribbean"],["MAR","Marriott"],["LOW","Lowe's"],["TGT","Target"],["TJX","TJX"],["LULU","Lululemon"],["CMG","Chipotle"],["ELF","e.l.f. Beauty"],["CELH","Celsius"],["ENPH","Enphase"],["FSLR","First Solar"],["PLUG","Plug Power"],["GME","GameStop"],["AMC","AMC Entertainment"],["MARA","MARA Holdings"],["RIOT","Riot Platforms"],["CLSK","CleanSpark"],["IONQ","IonQ"],["RGTI","Rigetti"],["QUBT","Quantum Computing"],["APP","AppLovin"],["VRT","Vertiv"],["CEG","Constellation Energy"],["VST","Vistra"],["NRG","NRG Energy"],["OKLO","Oklo"],["SMR","NuScale"],["RKLB","Rocket Lab"],["ASTS","AST SpaceMobile"],["LUNR","Intuitive Machines"],["HIMS","Hims & Hers"],["TEM","Tempus AI"],["RDDT","Reddit"],["DUOL","Duolingo"],["CAVA","Cava"],["SBET","SharpLink Gaming"],["CRCL","Circle"],["CRWV","CoreWeave"],["NBIS","Nebius"],["ORCL","Oracle"]];
 const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
-const FREE = new Set(["SPX","SPY"]);
-const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:4, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
+const FREE = new Set(["SPX","SPY","VIX"]);
+const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
@@ -338,6 +339,7 @@ async function load(){
     data = synthChain(sym); demo = true;
   }
   if (S.chain && S.chain.symbol !== data.symbol){ S.inspect = null; S.inst = null; }
+  if (!demo && S.chain && !S.demo) recordDerived(S.chain, data);
   S.chain = data; S.demo = demo; S.err = "";
   S.allExps = [...new Set(data.rows.map(r => r[0]))].sort();
   if (!S.exps.length || !S.exps.every(e => S.allExps.includes(e))) S.exps = S.allExps.slice(0, isPro() ? S.set.expCount : Math.min(4, S.set.expCount));
@@ -376,12 +378,12 @@ async function cboeDirect(sym){
   for (const s of tries){
     try {
       const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (!r.ok) continue;
-      const j = await r.json(), d = j.data || j; if (!Array.isArray(d.options)) continue;
+      const j = await r.json(), d = j.data || j; const opts = Array.isArray(d.options) ? d.options : Array.isArray(d) ? d : null; if (!opts) { console.warn("cboe chain: unexpected shape", Object.keys(d)); continue; }
       const rows = [];
-      for (const o of d.options){ const m = String(o.option||"").match(/^([A-Z]+)(\d{6})([CP])(\d{8})$/); if (!m) continue;
-        rows.push([`20${m[2].slice(0,2)}-${m[2].slice(2,4)}-${m[2].slice(4,6)}`, m[3], Number(m[4])/1000, +o.open_interest||0, +o.volume||0, +o.iv||0, +o.gamma||0, +o.delta||0, +o.bid||0, +o.ask||0, +o.last_trade_price||0]); }
+      for (const o of opts){ const m = String(o.option||"").match(/^([A-Z]+)(\d{6})([CP])(\d{8})$/); if (!m) continue;
+        rows.push([`20${m[2].slice(0,2)}-${m[2].slice(2,4)}-${m[2].slice(4,6)}`, m[3], Number(m[4])/1000, +o.open_interest||0, +o.volume||0, +o.iv||0, +o.gamma||0, +o.delta||0, +o.bid||0, +o.ask||0, +o.last_trade_price||0, o.last_trade_time||null]); }
       const exps = [...new Set(rows.map(r=>r[0]))].sort().slice(0,12), keep = new Set(exps);
-      const body = { symbol:sym, spot:+(d.current_price ?? d.close ?? 0), asOf:j.timestamp || new Date().toISOString(), delayed:true, source:"cboe-direct", change:+d.price_change||0, changePct:+d.price_change_percent||0, rows: rows.filter(r => keep.has(r[0]) && r[2] > 0) };
+      const body = { symbol:sym, spot:+(d.current_price ?? d.last ?? d.close ?? d.prev_day_close ?? 0), asOf:j.timestamp || new Date().toISOString(), delayed:true, source:"cboe-direct", change:+d.price_change||0, changePct:+d.price_change_percent||0, rows: rows.filter(r => keep.has(r[0]) && r[2] > 0) };
       return { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => body };
     } catch {}
   }
@@ -518,6 +520,19 @@ function checkAlerts(){
   }
 }
 
+function renderStatus(){
+  const el = document.getElementById("dstatus"); if (!el) return;
+  const row = (k,v,ok) => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"3px 0"}}, h("span",null,k), h("span",{class:ok===true?"c":ok===false?"p":"", style:{fontFamily:"var(--mono)"}}, v));
+  const d = S.chain;
+  el.replaceChildren(
+    row("Chain", S.demo ? "DEMO — feed failed" : `${d?.source||"server"} · ${d?.rows?.length||0} contracts`, !S.demo),
+    row("Chain time", d?.asOf ? new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : "—", null),
+    row("Bars", S.barsDemo ? "DEMO — feed failed" : S.bars ? `${S.bars.length} bars` : "loading", S.bars ? !S.barsDemo : null),
+    row("Flow", S.flow ? (S.flowDemo ? "demo" : S.flow.derived ? `derived · ${S.flow.trades.length} prints` : "live") : "—", S.flow ? !S.flowDemo : null),
+    row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
+    row("Host", location.hostname.includes("github.io") ? "static (no server)" : location.hostname, null),
+    h("p",{style:{margin:"6px 0 0"}},"If a row is red, screenshot this card and the browser console (F12 → Console) and send it."));
+}
 // ---------- render ----------
 function notice(msg, err){ const p = document.getElementById("panel"); const n = h("div",{class:"notice"+(err?" err":"")}, msg); p.prepend(n); setTimeout(()=>n.remove(), 6000); }
 function renderChips(){
@@ -540,6 +555,7 @@ function renderAll(){
   document.getElementById("read").replaceChildren(...readText().map(t => h("p",null,t)));
   renderAsk();
   renderAlerts();
+  renderStatus();
   renderTabs();
 }
 function renderAsk(){
@@ -616,8 +632,10 @@ function controls(){
     const on = S.exps.includes(e), locked = S.gate && !isPro() && i >= 4;
     return h("button",{class:"chip"+(locked?" lock":""), "aria-pressed":String(on), title: locked ? "Pro unlocks all expirations" : `${dte(e)} DTE`, onclick:()=>{ if (locked){ openUpgrade("Free shows the nearest 4 expirations. Pro shows all of them."); return; } S.exps = on ? S.exps.filter(x=>x!==e) : [...S.exps, e].sort(); if (!S.exps.length) S.exps=[e]; compute(); renderAll(); }}, e.slice(5) + (dte(e)===0 ? " 0D" : ""));
   }));
+  const grpBtn = (l, pick) => h("button",{type:"button", class:"chip", onclick:()=>{ const sel = pick(S.allExps); if (sel.length){ S.exps = sel; compute(); renderAll(); } }}, l);
+  const groups = h("div",{class:"exps"}, grpBtn("0DTE", a => a.filter(e => dte(e) === 0)), grpBtn("This week", a => a.filter(e => dte(e) <= 7)), grpBtn("Next 4", a => a.slice(0,4)), grpBtn("Monthly", a => a.filter(e => { const d = new Date(e+"T12:00:00"); return d.getDay()===5 && d.getDate() >= 15 && d.getDate() <= 21; })), grpBtn("All", a => isPro() || !S.gate ? a : a.slice(0,4)));
   return h("div",{class:"ctl"},
-    h("span",null,"Expirations"), expChips,
+    h("span",null,"Expirations"), groups, expChips,
     S.tab === "heat" ? h("label",null,"Show", h("select",{onchange:e=>{S.hview=e.target.value; renderTabs();}}, [["net","Net gamma (GEX)"],["vex","Vanna (VEX)"],["dex","Delta (DEX)"],["calls","Call gamma"],["puts","Put gamma"],["oi","Open interest"],["vol","Volume"]].map(([v,l])=>h("option",{value:v, selected:S.hview===v}, l)))) : null,
     S.tab === "heat" ? h("div",{class:"grp", style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["smooth","Smooth"],["grid","Grid"]].map(([v,l]) => h("button",{type:"button","aria-pressed":String(S_HEAT.mode===v), style:{border:0,background:S_HEAT.mode===v?"var(--panel2)":"transparent",color:S_HEAT.mode===v?"var(--ink)":"var(--muted)",padding:"3px 9px",cursor:"pointer",fontSize:"12px"}, onclick:()=>{S_HEAT.mode=v; renderTabs();}}, l))) : null,
     h("label",null,"Range ±", h("select",{onchange:e=>{S.set.range=Number(e.target.value); compute(); renderAll();}}, [2,4,6,8,12,20].map(v=>h("option",{value:v, selected:v===S.set.range}, v+"%")))),
@@ -827,7 +845,7 @@ async function loadBars(){
   if (!got) got = await cboeBars(sym, iv, rg);
   if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; }
   else { S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; }
-  updateAh();
+  updateAh(); renderStatus();
   if (S.tab === "chart") renderTabs();
   const fb = document.querySelector("#tvChart .tvfb"); if (fb){ const msg = fb.querySelector(".hint")?.textContent || ""; tvFallback(msg); }
 }
@@ -957,6 +975,29 @@ function updateAh(){
   el.textContent = `${mins < 570 ? "PRE" : "AH"} ${fmt(last[4],2)} (${chg>=0?"+":""}${fmt(chg,2)})`; el.className = "badge " + (chg >= 0 ? "up" : "dn"); el.hidden = false;
 }
 
+// ---------- Derived flow: when there's no trade feed, build the tape from volume changes between chain refreshes ----------
+const DF_KEY = () => `kingnode:dflow:${S.sym}:${new Date().toISOString().slice(0,10)}`;
+function deriveFlow(prev, next){
+  if (!prev || prev.symbol !== next.symbol || !prev.rows?.length) return [];
+  const key = r => `${r[0]}|${r[1]}|${r[2]}`; const pm = new Map(prev.rows.map(r => [key(r), r]));
+  const out = []; const now = Date.now();
+  for (const r of next.rows){ const p = pm.get(key(r)); if (!p) continue; const dv = r[4] - p[4]; if (dv <= 0) continue;
+    const px = r[10] || (r[8]+r[9])/2; if (!px) continue;
+    const bid = p[8], ask = p[9]; const side = ask && px >= ask - 0.005 ? "A" : bid && px <= bid + 0.005 ? "B" : "M";
+    let t = now; if (r[11]){ const d = Date.parse(String(r[11]).replace(" ","T") + (/[+-]\d\d:?\d\d$|Z$/.test(String(r[11])) ? "" : "-04:00")); if (isFinite(d)) t = d; }
+    const prem = Math.round(px*dv*100); const kind = dv >= 500 ? "block" : (dv >= 50 && side !== "M" && (r[9]-r[8]) <= px*0.1) ? "sweep" : "trade";
+    out.push({ t, u:next.symbol, o:`${next.symbol}${r[0]}${r[1]}${r[2]}`, exp:r[0], K:r[2], cp:r[1], px:+px.toFixed(2), sz:dv, prem, side, kind, ex:0, derived:true }); }
+  return out;
+}
+function loadDerived(){ try { return JSON.parse(localStorage.getItem(DF_KEY())||"[]"); } catch { return []; } }
+function saveDerived(list){ try { localStorage.setItem(DF_KEY(), JSON.stringify(list.slice(-3000))); } catch {} }
+function recordDerived(prev, next){
+  const fresh = deriveFlow(prev, next); if (!fresh.length) return 0;
+  const list = loadDerived().concat(fresh); saveDerived(list); S.derivedCount = list.length;
+  if (S.flow && S.flow.derived){ S.flow = { at:Date.now(), live:true, sym:S.sym, derived:true, trades:list }; if (["flow","cflow","play"].includes(S.tab)) renderTabs(); checkFlowAlerts(); }
+  return fresh.length;
+}
+
 // ---------- Flow tape ----------
 let flowTimer = null;
 async function loadFlow(){
@@ -964,7 +1005,8 @@ async function loadFlow(){
   const had = S.flow && S.flow.sym === S.sym;
   let changed = !had;
   try { const r = await fetch(`/api/flow?symbol=${S.sym}`); if (!r.ok) throw 0; const j = await r.json(); if (!j.trades?.length) throw 0; changed = !had || j.at !== S.flow.at; S.flow = {...j, sym:S.sym}; S.flowDemo = false; }
-  catch { if (!had || !S.flowDemo){ S.flow = { at:Date.now(), live:false, sym:S.sym, trades: synthFlow() }; S.flowDemo = true; changed = true; } }
+  catch { const d = S.demo ? [] : loadDerived(); if (d.length){ if (!had || !S.flow.derived || S.flow.trades.length !== d.length){ S.flow = { at:Date.now(), live:true, sym:S.sym, derived:true, trades:d }; S.flowDemo = false; changed = true; } }
+    else if (!had || !S.flowDemo){ S.flow = { at:Date.now(), live:false, sym:S.sym, trades: synthFlow() }; S.flowDemo = true; changed = true; } }
   if (changed) checkFlowAlerts();
   if (S.tab === "flow" || S.tab === "cflow" || S.tab === "play"){ if (changed) renderTabs(); flowTimer = setTimeout(loadFlow, S.flowDemo ? 60000 : 10000); }
 }
@@ -989,7 +1031,7 @@ function viewFlow(){
     h("label",null,"Calls/Puts", h("select",{onchange:e=>{S.flowCp=e.target.value; renderTabs();}}, [["all","Both"],["C","Calls"],["P","Puts"]].map(([v,l])=>h("option",{value:v, selected:S.flowCp===v}, l)))),
     h("label",null,"Expiry", h("select",{onchange:e=>{S.flowExp=e.target.value; renderTabs();}}, [["all","All"], ...[...new Set((f?.trades||[]).map(t=>t.exp))].sort().map(e=>[e,e.slice(5)])].map(([v,l])=>h("option",{value:v, selected:S.flowExp===v}, l)))),
     h("span",{style:{flex:1}}),
-    f ? h("span",{class:"badge"+(S.flowDemo?" demo":(f.live?" pro":""))}, S.flowDemo ? "Demo flow" : f.live ? "Live" : "Collector offline") : null);
+    f ? h("span",{class:"badge"+(S.flowDemo?" demo":(f.live?" pro":""))}, S.flowDemo ? "Demo flow" : f.derived ? "Derived from volume · 15-min delayed" : f.live ? "Live" : "Collector offline") : null);
   box.append(filt);
   if (!f){ box.append(h("div",{class:"empty"},"Loading tape…")); return box; }
   const rows = f.trades.filter(t => t.prem >= S.flowMinPrem && (S.flowKind==="all" || t.kind===S.flowKind) && (S.flowSide==="all" || t.side===S.flowSide) && (S.flowCp==="all" || t.cp===S.flowCp) && (S.flowExp==="all" || t.exp===S.flowExp)).sort((a,b)=>b.t-a.t);
@@ -1023,7 +1065,8 @@ function viewFlow(){
       h("td",{class:t.side==="A"?"c":t.side==="B"?"p":""}, t.side==="A"?"ASK":t.side==="B"?"BID":"MID"), h("td",null,fmt(t.sz)), h("td",null,fmt(t.px,2)), h("td",{style:{fontWeight:600}},money(t.prem)),
       h("td",null, t.kind==="sweep" ? h("span",{class:"badge pro"},"SWEEP") : t.kind==="block" ? h("span",{class:"badge"},"BLOCK") : ""), h("td",null, S.calc ? pct((t.K/S.calc.spot-1)*100) : "")); })))));
   if (S.flowSeen.size === 0) rows.forEach(t => S.flowSeen.add(`${t.t}|${t.o||t.K}|${t.sz}`));
-  if (S.flowDemo) box.append(h("p",{class:"hint"},"Demo prints. Live flow needs the collector running against a vendor trade stream — see collector/ in the project."));
+  if (S.flowDemo) box.append(h("p",{class:"hint"},S.demo ? "Demo prints." : "No prints yet. On the free feed the tape is built from volume changes between refreshes — leave the tab open and it fills in as contracts trade. Side is inferred from the last trade vs the previous bid/ask."));
+  else if (f.derived) box.append(h("p",{class:"hint"},"Derived tape: each print is a contract whose volume rose since the last refresh; size = the change, side = last trade vs prior bid/ask. Good for direction and size, not for exact timing."));
   return box;
 }
 

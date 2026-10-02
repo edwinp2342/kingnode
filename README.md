@@ -28,7 +28,14 @@ Ticker tape (TradingView) → toolbar with search and quick tickers → symbol r
 
 **TradingView widgets** load from s3.tradingview.com on your own domain. They can't load inside the claude.ai preview (its security policy blocks third-party scripts), so the preview falls back to the built-in chart automatically. TradingView's widget terms require leaving their logo/attribution visible, which the widgets do themselves.
 
-## Terminal features
+## Running it live on the free feed (static site, no server)
+
+The GitHub Pages build pulls everything from Cboe's delayed feed directly in your browser: chain (OI, volume, IV, greeks), intraday and daily bars. Quote and levels are 15 minutes behind. What you get without a server:
+- **Chain, Heatseeker, ladder, Positioning, Gamma profile, Skew, Chain, Watchlist, Drift, Playbook** — real.
+- **Flow, Contract flow, alerts, Playbook scanner** — built from **volume changes between refreshes** ("derived tape"): each print is a contract whose volume rose since the last refresh, size = the change, side = last trade vs the prior bid/ask. Direction and size are real; timing is 15-min delayed and resolution is one refresh. Leave the tab open and it fills in through the session. Saved per ticker per day.
+- **Data status** card (right rail) shows which feed is live, demo, or failed. Red row → screenshot it plus the console (F12) and send it.
+- Institutions, Discord alerts, Ask the desk, Pro billing need the server version.
+
 
 - **Blackout theme (default):** true-black background for OLED and late sessions. The moon button cycles blackout → dark → light; TradingView widgets follow.
 - **Contract "What if":** in the inspector, sliders for price move, days forward and IV change show the estimated contract price (Black-Scholes from the quoted IV, scaled to the live mid). This is the theta/vol-crush check before you buy.
