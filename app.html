@@ -267,7 +267,21 @@ const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
 // Everything else shows "verify" — ratios (debt, interest income) drift quarter to quarter, so confirm in Zoya/Musaffa before sizing.
 const HALAL_EXCLUDED = { TLT:"bond fund — interest", HYG:"bond fund — interest", JPM:"bank", BAC:"bank", C:"bank", WFC:"bank", GS:"investment bank", MS:"investment bank", SCHW:"brokerage — interest income", AXP:"lender", BLK:"asset manager — bond/interest products", XLF:"financials ETF", KRE:"bank ETF", HOOD:"brokerage — margin interest", SOFI:"lender", AFRM:"lender", SQ:"lending arm", PYPL:"lending/credit", COIN:"interest + staking income (debated)", DKNG:"gambling", CCL:"cruises — alcohol/casino", RCL:"cruises — alcohol/casino", BITO:"derivatives fund (debated)", UVXY:"derivatives fund (debated)", SQQQ:"leveraged derivatives fund (debated)", TQQQ:"leveraged derivatives fund (debated)", SOXL:"leveraged derivatives fund (debated)" };
 const HALAL_INDEX = { SPX:"index — mixed constituents", SPY:"broad ETF — holds banks/alcohol", QQQ:"broad ETF — mixed", IWM:"broad ETF — bank-heavy", DIA:"broad ETF — mixed", NDX:"index — mixed", RUT:"index — bank-heavy", XSP:"index — mixed", VIX:"volatility derivative" };
-function halalStatus(sym){ if (HALAL_EXCLUDED[sym]) return {s:"excluded", why:HALAL_EXCLUDED[sym]}; if (HALAL_INDEX[sym]) return {s:"index", why:HALAL_INDEX[sym]}; return {s:"verify", why:"business screens clean; confirm ratios in Zoya"}; }
+function halalStatus(sym){ const u = HALAL_MAP.get(sym); if (u){ if (u[3] === "fails") return {s:"excluded", why:u[4]||"fails standard screens"}; if (u[3] === "mixed") return {s:"mixed", why:u[4]||"scholars differ / ratio near limit"}; return {s:"passes", why:u[4]||"passes AAOIFI-style screens on recent data — verify"}; } if (HALAL_EXCLUDED[sym]) return {s:"excluded", why:HALAL_EXCLUDED[sym]}; if (HALAL_INDEX[sym]) return {s:"index", why:HALAL_INDEX[sym]}; return {s:"verify", why:"not screened here — check Zoya/Musaffa"}; }
+// Curated halal universe. "passes" = passes AAOIFI-style screens on recent data (business + debt/mcap < 33% + interest-bearing assets < 33% + impermissible income < 5%),
+// "mixed" = passes business but ratios hover near a limit or scholars differ, "fails" = fails. Verify in Zoya/Musaffa before trading — ratios change every quarter.
+const HALAL_UNIVERSE = [
+ ["NVDA","NVIDIA","Semis","passes"],["AMD","Advanced Micro Devices","Semis","passes"],["TSM","Taiwan Semiconductor","Semis","passes"],["AVGO","Broadcom","Semis","mixed","debt/mcap near limit after acquisitions"],["QCOM","Qualcomm","Semis","passes"],["TXN","Texas Instruments","Semis","passes"],["MU","Micron","Semis","passes"],["ARM","Arm Holdings","Semis","passes"],["ASML","ASML","Semi equipment","passes"],["AMAT","Applied Materials","Semi equipment","passes"],["LRCX","Lam Research","Semi equipment","passes"],["KLAC","KLA","Semi equipment","passes"],["INTC","Intel","Semis","mixed","debt rising"],["MRVL","Marvell","Semis","passes"],
+ ["AAPL","Apple","Tech","passes"],["MSFT","Microsoft","Tech","passes"],["GOOGL","Alphabet","Tech","passes"],["META","Meta Platforms","Tech","passes"],["ADBE","Adobe","Software","passes"],["CRM","Salesforce","Software","passes"],["ORCL","Oracle","Software","mixed","debt/mcap near limit"],["NOW","ServiceNow","Software","passes"],["CRWD","CrowdStrike","Software","passes"],["PANW","Palo Alto Networks","Software","passes"],["NET","Cloudflare","Software","passes"],["DDOG","Datadog","Software","passes"],["SNOW","Snowflake","Software","passes"],["PLTR","Palantir","Software","mixed","defense revenue — scholars differ"],["ANET","Arista Networks","Networking","passes"],["CSCO","Cisco","Networking","passes"],["SHOP","Shopify","E-commerce","passes"],["ABNB","Airbnb","Travel","passes"],["UBER","Uber","Mobility","mixed","interest income from cash pile"],["TSLA","Tesla","Autos","passes"],
+ ["LLY","Eli Lilly","Pharma","passes"],["NVO","Novo Nordisk","Pharma","passes"],["ISRG","Intuitive Surgical","Med devices","passes"],["JNJ","Johnson & Johnson","Pharma","passes"],["MRK","Merck","Pharma","passes"],["ABBV","AbbVie","Pharma","mixed","debt/mcap"],["AMGN","Amgen","Biotech","mixed","debt/mcap"],["GILD","Gilead","Biotech","passes"],["PFE","Pfizer","Pharma","passes"],["TEM","Tempus AI","Health AI","passes"],["HIMS","Hims & Hers","Health","passes"],
+ ["XOM","Exxon Mobil","Energy","passes"],["CVX","Chevron","Energy","passes"],["COP","ConocoPhillips","Energy","passes"],["OXY","Occidental","Energy","mixed","debt/mcap"],["SLB","Schlumberger","Oil services","passes"],["XLE","Energy Select ETF","Energy ETF","mixed","ETF holds some non-compliant names"],
+ ["FCX","Freeport-McMoRan","Copper","passes"],["NEM","Newmont","Gold miner","passes"],["GLD","SPDR Gold","Gold","passes","physical gold — spot-settled"],["SLV","iShares Silver","Silver","passes","physical silver — spot-settled"],["CAT","Caterpillar","Industrial","mixed","finance arm (Cat Financial) — scholars differ"],["DE","Deere","Industrial","mixed","finance arm"],["GE","GE Aerospace","Aerospace","passes"],["UPS","UPS","Logistics","passes"],["FDX","FedEx","Logistics","passes"],["VRT","Vertiv","Data-center power","passes"],["CEG","Constellation Energy","Nuclear power","mixed","utility debt"],["VST","Vistra","Power","mixed","utility debt"],["ENPH","Enphase","Solar","passes"],["FSLR","First Solar","Solar","passes"],
+ ["PG","Procter & Gamble","Staples","passes"],["COST","Costco","Retail","mixed","alcohol/tobacco sales under 5% — most screens pass"],["WMT","Walmart","Retail","mixed","alcohol/tobacco sales — most screens pass"],["HD","Home Depot","Retail","passes"],["LOW","Lowe's","Retail","passes"],["NKE","Nike","Apparel","passes"],["LULU","Lululemon","Apparel","passes"],["TJX","TJX","Retail","passes"],["CMG","Chipotle","Restaurants","passes"],["ELF","e.l.f. Beauty","Beauty","passes"],["CELH","Celsius","Beverages","passes"],["KO","Coca-Cola","Beverages","passes"],["PEP","PepsiCo","Beverages","mixed","debt/mcap"],
+ ["RKLB","Rocket Lab","Space","passes"],["ASTS","AST SpaceMobile","Space","mixed","debt"],["IONQ","IonQ","Quantum","passes"],["RGTI","Rigetti","Quantum","passes"],["APP","AppLovin","Ad tech","passes"],["RDDT","Reddit","Social","passes"],["DUOL","Duolingo","Education","passes"],["SPOT","Spotify","Media","mixed","music content — scholars differ"],["NFLX","Netflix","Media","mixed","content — scholars differ"],["DIS","Disney","Media","fails","debt + content"],
+ ["SPUS","SP Funds S&P 500 Sharia ETF","Halal ETF","passes","screened S&P 500"],["HLAL","Wahed FTSE USA Shariah ETF","Halal ETF","passes","screened US large caps"],["SPSK","SP Funds Dow Jones Global Sukuk ETF","Halal ETF","passes","sukuk — the bond substitute"],["SPRE","SP Funds S&P Global REIT Sharia ETF","Halal ETF","passes","screened REITs"],["UMMA","Wahed Dow Jones Islamic World ETF","Halal ETF","passes","global screened"],
+ ["JPM","JPMorgan","Banks","fails","interest-based"],["BAC","Bank of America","Banks","fails","interest-based"],["GS","Goldman Sachs","Banks","fails","interest-based"],["V","Visa","Payments","mixed","most screens pass; some flag interest income"],["MA","Mastercard","Payments","mixed","most screens pass"],["HOOD","Robinhood","Brokerage","fails","margin interest"],["COIN","Coinbase","Crypto exchange","mixed","staking/interest income"],["TLT","iShares 20+ Yr Treasury","Bond ETF","fails","interest"],["DKNG","DraftKings","Gambling","fails","gambling"],["BA","Boeing","Aerospace","fails","debt/mcap"],["T","AT&T","Telecom","fails","debt/mcap"],["VZ","Verizon","Telecom","fails","debt/mcap"],["F","Ford","Autos","fails","finance arm + debt"],["GM","General Motors","Autos","fails","finance arm + debt"],["CCL","Carnival","Cruises","fails","alcohol, casino, debt"],["LMT","Lockheed Martin","Defense","mixed","weapons — scholars differ"],["RTX","RTX","Defense","mixed","weapons — scholars differ; debt"],
+];
+const HALAL_MAP = new Map(HALAL_UNIVERSE.map(r => [r[0], r]));
 function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"" };
@@ -579,7 +593,7 @@ function renderAll(){
   const d = S.chain, c = S.calc;
   document.getElementById("symName").textContent = `${S.sym}${NAMES.get(S.sym) ? " · " + NAMES.get(S.sym) : ""}`;
   document.getElementById("px").textContent = fmt(d.spot, 2);
-  { const hb = document.getElementById("halalBadge"); const hs = halalStatus(S.sym); hb.hidden = false; hb.textContent = hs.s === "excluded" ? "☪ excluded — " + hs.why : hs.s === "index" ? "☪ " + hs.why : "☪ verify — " + hs.why; hb.className = "badge " + (hs.s === "excluded" ? "dn" : hs.s === "index" ? "" : "up"); hb.style.textTransform = "none"; }
+  { const hb = document.getElementById("halalBadge"); const hs = halalStatus(S.sym); hb.hidden = false; hb.textContent = hs.s === "excluded" ? "☪ excluded — " + hs.why : hs.s === "index" ? "☪ " + hs.why : hs.s === "passes" ? "☪ halal — " + hs.why : hs.s === "mixed" ? "☪ mixed — " + hs.why : "☪ verify — " + hs.why; hb.className = "badge " + (hs.s === "excluded" ? "dn" : hs.s === "passes" ? "up" : ""); hb.style.textTransform = "none"; }
   const chg = document.getElementById("chg"); chg.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(d.changePct||0)})`; chg.className = "chg num " + (d.change>=0?"up":"dn");
   document.getElementById("asof").replaceChildren(h("span",{class:"live"}, h("i",null), S.demo ? "demo" : "live"), h("span",{id:"cd"},""), h("span",null, "chain " + new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})), h("span",{class:"badge"+(S.demo?" demo":"")}, S.demo ? "Demo data" : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
   updateAh();
@@ -651,11 +665,12 @@ function renderAlertsOld(){
   else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
 }
 function renderTabs(){
-  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["play","Playbook"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
+  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["play","Playbook"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
   document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)));
   const p = document.getElementById("panel");
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
   if (S.tab === "seeker") { p.replaceChildren(viewSeeker()); return; }
+  if (S.tab === "halal") { p.replaceChildren(viewHalal()); loadHalalQuotes(); return; }
   if (S.tab === "play") { p.replaceChildren(viewPlaybook()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
   if (S.tab === "cflow") { p.replaceChildren(viewContractFlow()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
   if (S.tab === "flow") { p.replaceChildren(viewFlow()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); else { clearTimeout(flowTimer); flowTimer = setTimeout(loadFlow, S.flowDemo ? 60000 : 10000); } return; }
@@ -840,13 +855,13 @@ function viewWatch(){
   const addIn = h("input",{placeholder:"Add ticker", maxlength:8, style:{width:"110px",background:"var(--panel2)",border:"1px solid var(--rule)",borderRadius:"8px",padding:"6px 10px",fontFamily:"var(--mono)",textTransform:"uppercase"}});
   const add = () => { const v = addIn.value.trim().toUpperCase(); if (!v) return; if (!list.includes(v)) { list.push(v); setWatch(list); } addIn.value = ""; renderTabs(); };
   addIn.addEventListener("keydown", e => { if (e.key==="Enter") add(); });
-  const tbl = h("table",{class:"data"}, h("thead",null,h("tr",null,["Ticker","☪","Spot","Chg","Regime","Put wall","Flip","Call wall","Max pain","Exp. move",""].map(x=>h("th",null,x)))), h("tbody",{id:"watchBody"}, list.map(sym => h("tr",{"data-sym":sym}, h("td",null,sym), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="verify"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="verify"?"✓?":"~"), h("td",{colSpan:8, class:"hint"},"loading…"), h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×"))))));
+  const tbl = h("table",{class:"data"}, h("thead",null,h("tr",null,["Ticker","☪","Spot","Chg","Regime","Put wall","Flip","Call wall","Max pain","Exp. move",""].map(x=>h("th",null,x)))), h("tbody",{id:"watchBody"}, list.map(sym => h("tr",{"data-sym":sym}, h("td",null,sym), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="passes"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="passes"?"✓":halalStatus(sym).s==="mixed"?"±":"~"), h("td",{colSpan:8, class:"hint"},"loading…"), h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×"))))));
   box.append(h("div",{class:"ctl"}, h("span",null,"Levels for the nearest 4 expirations, ±8% range."), h("span",{style:{flex:1}}), addIn, h("button",{class:"btn small", onclick:add},"Add"), h("button",{class:"btn small gold", onclick:()=>copyLevels(list)},"Copy for Discord")), h("div",{style:{overflow:"auto"}}, tbl));
   list.forEach(async sym => {
     const v = await fetchLevels(sym); const tr = box.querySelector(`tr[data-sym="${sym}"]`); if (!tr) return;
     const cells = v.locked ? [h("td",{colSpan:8, class:"hint"}, h("button",{class:"btn small", onclick:()=>openUpgrade(`${sym} is a Pro ticker.`)},"Pro ticker"))]
       : [h("td",null,fmt(v.spot,2)), h("td",{class:v.chg>=0?"c":"p"},pct(v.chg)), h("td",{class:v.total>0?"c":"p"}, v.total>0?"+γ pinned":"−γ trending"), h("td",null,fmt(v.pw)), h("td",null,fmt(v.flip)), h("td",null,fmt(v.cw)), h("td",null,fmt(v.pain)), h("td",null, v.em ? `±${fmt(v.em.move,1)} (${fmt(v.em.pct,2)}%)` : "—")];
-    tr.replaceChildren(h("td",null, sym, v.demo ? h("span",{class:"badge demo", style:{marginLeft:"6px"}},"demo") : null), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="verify"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="verify"?"✓?":"~"), ...cells, h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×")));
+    tr.replaceChildren(h("td",null, sym, v.demo ? h("span",{class:"badge demo", style:{marginLeft:"6px"}},"demo") : null), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="passes"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="passes"?"✓":halalStatus(sym).s==="mixed"?"±":"~"), ...cells, h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×")));
   });
   return box;
 }
@@ -1295,6 +1310,55 @@ function viewSeeker(){
   return box;
 }
 
+// ---------- Halal: screened universe, movers, purification ----------
+const HQ = { quotes:new Map(), at:0, loading:false, sector:"all", status:"passes", sort:"chg" };
+async function loadHalalQuotes(){
+  if (HQ.loading || Date.now() - HQ.at < 5*60e3) return; HQ.loading = true;
+  const syms = HALAL_UNIVERSE.filter(r => r[3] !== "fails" && !/ETF/.test(r[2])).map(r => r[0]);
+  let got = [];
+  try { const r = await fetch(`/api/quotes?symbols=${syms.join(",")}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); got = (j.quotes||[]).filter(q => q && !q.error && q.price); } } catch {}
+  if (!got.length){ // static site: Cboe intraday per symbol, in small batches so it doesn't hammer
+    for (let i = 0; i < syms.length; i += 8){ const res = await Promise.all(syms.slice(i,i+8).map(tapeFromCboe)); got.push(...res.filter(Boolean)); if (S.tab === "halal") renderTabs(); }
+  }
+  got.forEach(q => HQ.quotes.set(q.symbol, q)); HQ.at = Date.now(); HQ.loading = false;
+  if (S.tab === "halal") renderTabs();
+}
+function viewHalal(){
+  const box = h("div",null);
+  const on = halalOnly();
+  box.append(h("div",{class:"card",style:{marginBottom:"12px"}},
+    h("div",{style:{display:"flex",gap:"14px",alignItems:"center",flexWrap:"wrap"}},
+      h("div",{style:{flex:1,minWidth:"260px"}}, h("div",{style:{fontSize:"16px",fontWeight:700}}, "Halal screening"), h("p",{class:"hint",style:{margin:"4px 0 0"}}, "AAOIFI-style screens: the business must be permissible (no interest-based finance, alcohol, gambling, pork, adult content, conventional insurance); debt under 33% of market cap; interest-bearing assets under 33%; impermissible income under 5%, purified. Ratios move every quarter — this list is a starting point, not a fatwa. Verify in Zoya or Musaffa before you size.")),
+      h("button",{class:"btn "+(on?"gold":""), onclick:()=>{ try{ localStorage.setItem("kingnode:halal", on?"0":"1"); }catch{} paintHalalBtn(); renderChips(); renderAll(); }}, on ? "Halal-only mode is ON" : "Turn on halal-only mode"))));
+  // movers
+  const rows = HALAL_UNIVERSE.map(r => ({sym:r[0], name:r[1], sector:r[2], st:r[3], why:r[4]||"", q:HQ.quotes.get(r[0])})).map(r => ({...r, chg: r.q ? (r.q.price - r.q.prev)/r.q.prev*100 : null}));
+  const movers = rows.filter(r => r.st !== "fails" && r.chg != null).sort((a,b)=>b.chg-a.chg);
+  const chipRow = (title, list, cls) => h("div",{class:"card",style:{background:"var(--panel2)"}}, h("h2",null,title), list.length ? h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap"}}, list.map(r => h("button",{class:"chip",style:{border:"1px solid var(--rule2)"}, title:r.name+" · "+r.sector, onclick:()=>goSym(r.sym)}, h("b",null,r.sym), " ", h("span",{class:cls}, pct(r.chg))))) : h("p",{class:"hint",style:{margin:0}}, HQ.loading ? "Loading quotes…" : "Quotes unavailable on this host."));
+  box.append(h("div",{class:"grid2",style:{marginBottom:"12px"}}, chipRow("Halal leaders today", movers.slice(0,8), "c"), chipRow("Halal laggards today (buy-low watch)", movers.slice(-8).reverse(), "p")));
+  // ETFs
+  box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,"Screened ETFs — the index substitutes"), h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap"}}, HALAL_UNIVERSE.filter(r => r[2]==="Halal ETF").map(r => h("button",{class:"chip",style:{border:"1px solid var(--rule2)"}, title:r[4]||"", onclick:()=>goSym(r[0])}, h("b",null,r[0]), " ", h("span",{class:"hint"}, r[1])))), h("p",{class:"hint",style:{margin:"8px 0 0"}},"SPUS instead of SPY, HLAL for broad US, SPSK instead of TLT/bond funds, SPRE for real estate. Options on these are thin; they're for the equity sleeve.")));
+  // universe table with filters
+  const sectors = ["all", ...new Set(HALAL_UNIVERSE.map(r=>r[2]))];
+  const filt = rows.filter(r => (HQ.status==="all" || r.st===HQ.status) && (HQ.sector==="all" || r.sector===HQ.sector)).sort((a,b) => HQ.sort==="chg" ? ((b.chg??-999)-(a.chg??-999)) : HQ.sort==="sym" ? a.sym.localeCompare(b.sym) : a.sector.localeCompare(b.sector));
+  const stLabel = {passes:["✓ passes","c"], mixed:["± mixed",""], fails:["✕ fails","p"]};
+  box.append(h("div",{class:"card"}, h("div",{class:"ctl"}, h("span",null,`${filt.length} companies`),
+      h("label",null,"Status", h("select",{onchange:e=>{HQ.status=e.target.value; renderTabs();}}, [["passes","Passes"],["mixed","Mixed / debated"],["fails","Fails"],["all","All"]].map(([v,l])=>h("option",{value:v, selected:HQ.status===v}, l)))),
+      h("label",null,"Sector", h("select",{onchange:e=>{HQ.sector=e.target.value; renderTabs();}}, sectors.map(v=>h("option",{value:v, selected:HQ.sector===v}, v==="all"?"All sectors":v)))),
+      h("label",null,"Sort", h("select",{onchange:e=>{HQ.sort=e.target.value; renderTabs();}}, [["chg","Today's move"],["sym","Ticker"],["sector","Sector"]].map(([v,l])=>h("option",{value:v, selected:HQ.sort===v}, l))))),
+    h("div",{style:{overflow:"auto",maxHeight:"60vh"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Ticker","Company","Sector","Screen","Note","Price","Today",""].map(x=>h("th",null,x)))),
+      h("tbody",null, filt.map(r => h("tr",{style:{cursor:"pointer"}, onclick:()=>goSym(r.sym)}, h("td",{style:{fontWeight:700}},r.sym), h("td",{style:{textAlign:"left"}},r.name), h("td",{style:{textAlign:"left"}},r.sector), h("td",{class:stLabel[r.st][1]}, stLabel[r.st][0]), h("td",{style:{textAlign:"left",whiteSpace:"normal",maxWidth:"260px",color:"var(--muted)"}}, r.why), h("td",null, r.q ? fmt(r.q.price,2) : "—"), h("td",{class: r.chg==null?"":r.chg>=0?"c":"p"}, r.chg==null ? "—" : pct(r.chg)), h("td",null, h("button",{class:"btn small", onclick:ev=>{ ev.stopPropagation(); const l = getWatch(); if (!l.includes(r.sym)){ l.push(r.sym); setWatch(l); notice(`${r.sym} added to the watchlist.`); } }},"+ Watch")))))))));
+  // purification calculator
+  const pc = {shares:100, div:1.0, imp:2.0};
+  const out = h("div",{class:"num",style:{fontSize:"15px",fontWeight:600}});
+  const calc = () => { out.textContent = `Purify ${money(pc.shares*pc.div*pc.imp/100)} of ${money(pc.shares*pc.div)} in dividends`; };
+  const inp = (label, key, step) => h("label",{class:"hint",style:{display:"flex",flexDirection:"column",gap:"3px"}}, label, h("input",{type:"number", step, value:pc[key], style:{width:"110px",background:"var(--bg)",border:"1px solid var(--rule2)",borderRadius:"4px",padding:"5px 8px",color:"var(--ink)",fontFamily:"var(--mono)"}, oninput:e=>{ pc[key]=Number(e.target.value)||0; calc(); }}));
+  calc();
+  box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"Purification calculator"), h("div",{style:{display:"flex",gap:"14px",alignItems:"flex-end",flexWrap:"wrap"}}, inp("Shares","shares",1), inp("Dividend per share $","div",0.01), inp("Impermissible income %","imp",0.1), out), h("p",{class:"hint",style:{margin:"8px 0 0"}},"The impermissible-income percentage comes from the screening app's company page (interest income ÷ total revenue). Give that share of the dividend to charity.")));
+  box.append(h("p",{class:"hint",style:{marginTop:"10px"}},"Options: scholars differ on options generally; many permit buying calls/puts as the right to a permissible asset, few permit selling naked. The screen here is about the underlying company. This tab is informational, not a ruling."));
+  return box;
+}
+function paintHalalBtn(){ const b = document.getElementById("halalBtn"); if (!b) return; const on = halalOnly(); b.style.background = on ? "var(--pos)" : ""; b.style.color = on ? "#061013" : ""; b.textContent = on ? "☪ Halal only" : "☪ Halal"; }
+
 // ---------- Playbook: event-driven, flow-tailing swing setups with the sizing rules baked in ----------
 const PB_KEY = "kingnode:playbook";
 const PB_DEF = {account:25000, maxRiskPct:5, maxPositions:3, minDte:30, stopPct:20, positions:[]};
@@ -1508,8 +1572,8 @@ symIn.addEventListener("blur", () => setTimeout(() => sugEl.hidden = true, 150))
 symIn.addEventListener("focus", () => { if (symIn.value.trim() && sugItems.length) sugEl.hidden = false; });
 document.getElementById("symForm").addEventListener("submit", e => { e.preventDefault(); const v = symIn.value.trim().toUpperCase(); if (!v) return; if (sugItems.length && !NAMES.has(v) && !/^[A-Z.]{1,6}$/.test(v)){ goSym(sugItems[0].symbol); return; } goSym(v); });
 document.getElementById("refreshBtn").onclick = load;
-const halalBtn = document.getElementById("halalBtn"); const paintHalal = () => { halalBtn.style.background = halalOnly() ? "var(--pos)" : ""; halalBtn.style.color = halalOnly() ? "#061013" : ""; halalBtn.textContent = halalOnly() ? "☪ Halal only" : "☪ Halal"; };
-halalBtn.onclick = () => { try { localStorage.setItem("kingnode:halal", halalOnly() ? "0" : "1"); } catch {} paintHalal(); renderChips(); renderAll(); }; paintHalal();
+const halalBtn = document.getElementById("halalBtn");
+halalBtn.onclick = () => { S.tab = "halal"; renderTabs(); document.getElementById("tabs").scrollIntoView({behavior:"smooth", block:"start"}); }; paintHalalBtn();
 document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)} · ${new Date().toLocaleString()}`;
   const text = `🚩 **Kingnode feedback** ${note}\n${ctx}`; const how = await notify(text);
   const log = (() => { try { return JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch { return []; } })(); log.unshift({t:Date.now(), note, ctx}); try { localStorage.setItem("kingnode:flags", JSON.stringify(log.slice(0,200))); } catch {}
