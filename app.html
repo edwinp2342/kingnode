@@ -213,6 +213,7 @@ table.hsg tfoot td.pos{color:#BEF264} table.hsg tfoot td.neg{color:#EC4899}
   <div class="chips" id="chips"></div>
   <div class="right">
     <button class="btn small" id="refreshBtn">Refresh</button>
+    <button class="btn small" id="halalBtn" title="Hide tickers that fail standard halal screens">☪ Halal</button>
     <button class="btn small" id="flagBtn" title="Flag what you're looking at — sends a note with context to your Discord">⚑ Flag</button>
     <button class="btn small" id="settingsBtn" title="Settings">⚙</button>
     <button class="btn small" id="themeBtn" title="Toggle theme">☾</button>
@@ -222,6 +223,7 @@ table.hsg tfoot td.pos{color:#BEF264} table.hsg tfoot td.neg{color:#EC4899}
   <span id="symName"></span>
   <div class="quote"><span class="px num" id="px">—</span><span class="chg num" id="chg"></span></div>
   <span class="badge" id="ahq" hidden></span>
+  <span class="badge" id="halalBadge" hidden></span>
   <div class="asof" id="asof"></div>
 </div>
 <div id="tvChart"></div>
@@ -232,6 +234,7 @@ table.hsg tfoot td.pos{color:#BEF264} table.hsg tfoot td.neg{color:#EC4899}
     <div class="card" id="levelsCard"><h2>Key levels</h2><div id="regime"></div><div class="levels" id="levels"></div></div>
     <div class="card"><h2>The read</h2><div class="read" id="read"></div><div id="askBox"></div></div>
     <div class="card" id="alertsCard"><h2>Alerts</h2><div id="alerts"></div></div>
+    <div class="card"><h2>Events</h2><div id="events"></div></div>
     <div class="card"><h2>Data status</h2><div id="dstatus" class="hint"></div></div>
   </aside>
 </div>
@@ -260,6 +263,12 @@ const QUICK = ["SPX","SPY","QQQ","IWM","VIX","NVDA","TSLA","AAPL","AMZN","MSFT",
 const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Invesco Nasdaq-100 ETF"],["IWM","iShares Russell 2000 ETF"],["DIA","SPDR Dow Jones ETF"],["VIX","Cboe Volatility Index"],["NDX","Nasdaq-100 Index"],["RUT","Russell 2000 Index"],["XSP","Mini-SPX Index"],["TLT","iShares 20+ Year Treasury"],["GLD","SPDR Gold"],["SLV","iShares Silver"],["USO","United States Oil"],["UVXY","ProShares Ultra VIX"],["SQQQ","ProShares UltraPro Short QQQ"],["TQQQ","ProShares UltraPro QQQ"],["SOXL","Direxion Semiconductor Bull 3x"],["ARKK","ARK Innovation ETF"],["XLF","Financial Select Sector"],["XLE","Energy Select Sector"],["XLK","Technology Select Sector"],["XLV","Health Care Select Sector"],["XLI","Industrial Select Sector"],["XLU","Utilities Select Sector"],["XLP","Consumer Staples Select"],["XLY","Consumer Discretionary Select"],["XBI","SPDR Biotech"],["SMH","VanEck Semiconductor"],["KRE","SPDR Regional Banking"],["HYG","iShares High Yield Corporate"],["EEM","iShares Emerging Markets"],["FXI","iShares China Large-Cap"],["BITO","ProShares Bitcoin Strategy"],["IBIT","iShares Bitcoin Trust"],
 ["AAPL","Apple"],["MSFT","Microsoft"],["NVDA","NVIDIA"],["AMZN","Amazon"],["GOOGL","Alphabet A"],["GOOG","Alphabet C"],["META","Meta Platforms"],["TSLA","Tesla"],["BRK.B","Berkshire Hathaway B"],["AVGO","Broadcom"],["LLY","Eli Lilly"],["JPM","JPMorgan Chase"],["V","Visa"],["MA","Mastercard"],["UNH","UnitedHealth"],["XOM","Exxon Mobil"],["COST","Costco"],["WMT","Walmart"],["HD","Home Depot"],["PG","Procter & Gamble"],["JNJ","Johnson & Johnson"],["NFLX","Netflix"],["ORCL","Oracle"],["CRM","Salesforce"],["ADBE","Adobe"],["AMD","Advanced Micro Devices"],["INTC","Intel"],["QCOM","Qualcomm"],["TXN","Texas Instruments"],["MU","Micron"],["ARM","Arm Holdings"],["TSM","Taiwan Semiconductor"],["ASML","ASML Holding"],["SMCI","Super Micro Computer"],["MRVL","Marvell"],["LRCX","Lam Research"],["AMAT","Applied Materials"],["KLAC","KLA"],["ANET","Arista Networks"],["PLTR","Palantir"],["SNOW","Snowflake"],["CRWD","CrowdStrike"],["PANW","Palo Alto Networks"],["NOW","ServiceNow"],["SHOP","Shopify"],["UBER","Uber"],["ABNB","Airbnb"],["COIN","Coinbase"],["MSTR","MicroStrategy"],["HOOD","Robinhood"],["SOFI","SoFi"],["SQ","Block"],["PYPL","PayPal"],["AFRM","Affirm"],["RBLX","Roblox"],["DKNG","DraftKings"],["BA","Boeing"],["CAT","Caterpillar"],["DE","Deere"],["GE","GE Aerospace"],["RTX","RTX"],["LMT","Lockheed Martin"],["NOC","Northrop Grumman"],["GS","Goldman Sachs"],["MS","Morgan Stanley"],["BAC","Bank of America"],["C","Citigroup"],["WFC","Wells Fargo"],["SCHW","Charles Schwab"],["AXP","American Express"],["BLK","BlackRock"],["KO","Coca-Cola"],["PEP","PepsiCo"],["MCD","McDonald's"],["SBUX","Starbucks"],["NKE","Nike"],["DIS","Disney"],["CMCSA","Comcast"],["T","AT&T"],["VZ","Verizon"],["TMUS","T-Mobile"],["PFE","Pfizer"],["MRK","Merck"],["ABBV","AbbVie"],["AMGN","Amgen"],["GILD","Gilead"],["BMY","Bristol Myers Squibb"],["MRNA","Moderna"],["NVO","Novo Nordisk"],["ISRG","Intuitive Surgical"],["CVS","CVS Health"],["CVX","Chevron"],["COP","ConocoPhillips"],["OXY","Occidental"],["SLB","Schlumberger"],["FCX","Freeport-McMoRan"],["NEM","Newmont"],["F","Ford"],["GM","General Motors"],["RIVN","Rivian"],["LCID","Lucid"],["NIO","NIO"],["BABA","Alibaba"],["PDD","PDD Holdings"],["JD","JD.com"],["MELI","MercadoLibre"],["SE","Sea Limited"],["SPOT","Spotify"],["ROKU","Roku"],["TTD","The Trade Desk"],["ZM","Zoom"],["DDOG","Datadog"],["NET","Cloudflare"],["MDB","MongoDB"],["ZS","Zscaler"],["OKTA","Okta"],["TEAM","Atlassian"],["WDAY","Workday"],["INTU","Intuit"],["ADP","ADP"],["IBM","IBM"],["CSCO","Cisco"],["DELL","Dell"],["HPQ","HP"],["UPS","UPS"],["FDX","FedEx"],["DAL","Delta Air Lines"],["UAL","United Airlines"],["AAL","American Airlines"],["LUV","Southwest"],["CCL","Carnival"],["RCL","Royal Caribbean"],["MAR","Marriott"],["LOW","Lowe's"],["TGT","Target"],["TJX","TJX"],["LULU","Lululemon"],["CMG","Chipotle"],["ELF","e.l.f. Beauty"],["CELH","Celsius"],["ENPH","Enphase"],["FSLR","First Solar"],["PLUG","Plug Power"],["GME","GameStop"],["AMC","AMC Entertainment"],["MARA","MARA Holdings"],["RIOT","Riot Platforms"],["CLSK","CleanSpark"],["IONQ","IonQ"],["RGTI","Rigetti"],["QUBT","Quantum Computing"],["APP","AppLovin"],["VRT","Vertiv"],["CEG","Constellation Energy"],["VST","Vistra"],["NRG","NRG Energy"],["OKLO","Oklo"],["SMR","NuScale"],["RKLB","Rocket Lab"],["ASTS","AST SpaceMobile"],["LUNR","Intuitive Machines"],["HIMS","Hims & Hers"],["TEM","Tempus AI"],["RDDT","Reddit"],["DUOL","Duolingo"],["CAVA","Cava"],["SBET","SharpLink Gaming"],["CRCL","Circle"],["CRWV","CoreWeave"],["NBIS","Nebius"],["ORCL","Oracle"]];
 const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
+// Halal screen: only the clear exclusions are listed (interest-based business, gambling, alcohol-heavy, bond funds).
+// Everything else shows "verify" — ratios (debt, interest income) drift quarter to quarter, so confirm in Zoya/Musaffa before sizing.
+const HALAL_EXCLUDED = { TLT:"bond fund — interest", HYG:"bond fund — interest", JPM:"bank", BAC:"bank", C:"bank", WFC:"bank", GS:"investment bank", MS:"investment bank", SCHW:"brokerage — interest income", AXP:"lender", BLK:"asset manager — bond/interest products", XLF:"financials ETF", KRE:"bank ETF", HOOD:"brokerage — margin interest", SOFI:"lender", AFRM:"lender", SQ:"lending arm", PYPL:"lending/credit", COIN:"interest + staking income (debated)", DKNG:"gambling", CCL:"cruises — alcohol/casino", RCL:"cruises — alcohol/casino", BITO:"derivatives fund (debated)", UVXY:"derivatives fund (debated)", SQQQ:"leveraged derivatives fund (debated)", TQQQ:"leveraged derivatives fund (debated)", SOXL:"leveraged derivatives fund (debated)" };
+const HALAL_INDEX = { SPX:"index — mixed constituents", SPY:"broad ETF — holds banks/alcohol", QQQ:"broad ETF — mixed", IWM:"broad ETF — bank-heavy", DIA:"broad ETF — mixed", NDX:"index — mixed", RUT:"index — bank-heavy", XSP:"index — mixed", VIX:"volatility derivative" };
+function halalStatus(sym){ if (HALAL_EXCLUDED[sym]) return {s:"excluded", why:HALAL_EXCLUDED[sym]}; if (HALAL_INDEX[sym]) return {s:"index", why:HALAL_INDEX[sym]}; return {s:"verify", why:"business screens clean; confirm ratios in Zoya"}; }
+function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
@@ -534,6 +543,19 @@ function checkAlerts(){
   }
 }
 
+const EV_KEY = "kingnode:events";
+function getEvents(){ try { return JSON.parse(localStorage.getItem(EV_KEY)||"[]"); } catch { return []; } }
+function setEvents(l){ try { localStorage.setItem(EV_KEY, JSON.stringify(l)); } catch {} }
+function autoEvents(){ const out = []; const now = new Date(); for (let m = 0; m < 3; m++){ const y = now.getFullYear(), mo = now.getMonth()+m; const d1 = new Date(y, mo, 1); const firstFri = new Date(y, mo, 1 + ((5 - d1.getDay() + 7) % 7)); const thirdFri = new Date(firstFri); thirdFri.setDate(firstFri.getDate()+14); out.push({name:"Jobs report (NFP)", date:firstFri.toISOString().slice(0,10), auto:true}, {name:"Monthly opex", date:thirdFri.toISOString().slice(0,10), auto:true}); } return out; }
+function renderEvents(){
+  const el = document.getElementById("events"); if (!el) return; el.replaceChildren();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const all = [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= -1).sort((a,b)=>a.days-b.days).slice(0,7);
+  const isFri = today.getDay() === 5;
+  if (isFri) el.append(h("div",{class:"notice", style:{marginBottom:"8px", color:"var(--gold)"}},"Friday: short-dated premium pays for the weekend. Theta × 3 on anything you hold past the close."));
+  el.append(h("div",{style:{display:"grid",gap:"2px"}}, ...all.map(e => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"4px 0",borderBottom:"1px solid var(--rule)",fontSize:"12.5px"}}, h("span",null, e.name, e.auto ? h("small",{class:"hint"}," auto") : null), h("span",{class:"num", style:{color: e.days <= 1 ? "var(--neg)" : e.days <= 5 ? "var(--gold)" : "var(--muted)"}}, e.days === 0 ? "today" : e.days === 1 ? "tomorrow" : e.days < 0 ? "yesterday" : `in ${e.days}d`)))));
+  el.append(h("div",{class:"actions",style:{marginTop:"8px"}}, h("button",{class:"btn small", onclick:()=>{ const name = prompt("Event (e.g. CPI, FOMC, NVDA earnings):"); if (!name) return; const date = prompt("Date (YYYY-MM-DD):"); if (!/^\d{4}-\d{2}-\d{2}$/.test(date||"")) return; setEvents([...getEvents(), {name, date}]); renderEvents(); }},"+ Add event"), getEvents().length ? h("button",{class:"btn small", onclick:()=>{ const l = getEvents(); const pick = prompt("Remove which? " + l.map((e,i)=>`${i+1}) ${e.name} ${e.date}`).join("  ")); const i = Number(pick)-1; if (l[i]){ l.splice(i,1); setEvents(l); renderEvents(); } }},"Remove") : null));
+}
 function renderStatus(){
   const el = document.getElementById("dstatus"); if (!el) return;
   const row = (k,v,ok) => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"3px 0"}}, h("span",null,k), h("span",{class:ok===true?"c":ok===false?"p":"", style:{fontFamily:"var(--mono)"}}, v));
@@ -551,12 +573,13 @@ function renderStatus(){
 // ---------- render ----------
 function notice(msg, err){ const p = document.getElementById("panel"); const n = h("div",{class:"notice"+(err?" err":"")}, msg); p.prepend(n); setTimeout(()=>n.remove(), 6000); }
 function renderChips(){
-  document.getElementById("chips").replaceChildren(...QUICK.map(s => h("button",{class:"chip", "aria-pressed":String(s===S.sym), title:NAMES.get(s)||"", onclick:()=>goSym(s)}, s)));
+  document.getElementById("chips").replaceChildren(...QUICK.filter(s => !halalOnly() || halalStatus(s).s !== "excluded").map(s => h("button",{class:"chip", "aria-pressed":String(s===S.sym), title:NAMES.get(s)||"", onclick:()=>goSym(s)}, s)));
 }
 function renderAll(){
   const d = S.chain, c = S.calc;
   document.getElementById("symName").textContent = `${S.sym}${NAMES.get(S.sym) ? " · " + NAMES.get(S.sym) : ""}`;
   document.getElementById("px").textContent = fmt(d.spot, 2);
+  { const hb = document.getElementById("halalBadge"); const hs = halalStatus(S.sym); hb.hidden = false; hb.textContent = hs.s === "excluded" ? "☪ excluded — " + hs.why : hs.s === "index" ? "☪ " + hs.why : "☪ verify — " + hs.why; hb.className = "badge " + (hs.s === "excluded" ? "dn" : hs.s === "index" ? "" : "up"); hb.style.textTransform = "none"; }
   const chg = document.getElementById("chg"); chg.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(d.changePct||0)})`; chg.className = "chg num " + (d.change>=0?"up":"dn");
   document.getElementById("asof").replaceChildren(h("span",{class:"live"}, h("i",null), S.demo ? "demo" : "live"), h("span",{id:"cd"},""), h("span",null, "chain " + new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})), h("span",{class:"badge"+(S.demo?" demo":"")}, S.demo ? "Demo data" : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
   updateAh();
@@ -570,6 +593,7 @@ function renderAll(){
   document.getElementById("read").replaceChildren(...readText().map(t => h("p",null,t)));
   renderAsk();
   renderAlerts();
+  renderEvents();
   renderStatus();
   renderTabs();
 }
@@ -816,13 +840,13 @@ function viewWatch(){
   const addIn = h("input",{placeholder:"Add ticker", maxlength:8, style:{width:"110px",background:"var(--panel2)",border:"1px solid var(--rule)",borderRadius:"8px",padding:"6px 10px",fontFamily:"var(--mono)",textTransform:"uppercase"}});
   const add = () => { const v = addIn.value.trim().toUpperCase(); if (!v) return; if (!list.includes(v)) { list.push(v); setWatch(list); } addIn.value = ""; renderTabs(); };
   addIn.addEventListener("keydown", e => { if (e.key==="Enter") add(); });
-  const tbl = h("table",{class:"data"}, h("thead",null,h("tr",null,["Ticker","Spot","Chg","Regime","Put wall","Flip","Call wall","Max pain","Exp. move",""].map(x=>h("th",null,x)))), h("tbody",{id:"watchBody"}, list.map(sym => h("tr",{"data-sym":sym}, h("td",null,sym), h("td",{colSpan:8, class:"hint"},"loading…"), h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×"))))));
+  const tbl = h("table",{class:"data"}, h("thead",null,h("tr",null,["Ticker","☪","Spot","Chg","Regime","Put wall","Flip","Call wall","Max pain","Exp. move",""].map(x=>h("th",null,x)))), h("tbody",{id:"watchBody"}, list.map(sym => h("tr",{"data-sym":sym}, h("td",null,sym), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="verify"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="verify"?"✓?":"~"), h("td",{colSpan:8, class:"hint"},"loading…"), h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×"))))));
   box.append(h("div",{class:"ctl"}, h("span",null,"Levels for the nearest 4 expirations, ±8% range."), h("span",{style:{flex:1}}), addIn, h("button",{class:"btn small", onclick:add},"Add"), h("button",{class:"btn small gold", onclick:()=>copyLevels(list)},"Copy for Discord")), h("div",{style:{overflow:"auto"}}, tbl));
   list.forEach(async sym => {
     const v = await fetchLevels(sym); const tr = box.querySelector(`tr[data-sym="${sym}"]`); if (!tr) return;
     const cells = v.locked ? [h("td",{colSpan:8, class:"hint"}, h("button",{class:"btn small", onclick:()=>openUpgrade(`${sym} is a Pro ticker.`)},"Pro ticker"))]
       : [h("td",null,fmt(v.spot,2)), h("td",{class:v.chg>=0?"c":"p"},pct(v.chg)), h("td",{class:v.total>0?"c":"p"}, v.total>0?"+γ pinned":"−γ trending"), h("td",null,fmt(v.pw)), h("td",null,fmt(v.flip)), h("td",null,fmt(v.cw)), h("td",null,fmt(v.pain)), h("td",null, v.em ? `±${fmt(v.em.move,1)} (${fmt(v.em.pct,2)}%)` : "—")];
-    tr.replaceChildren(h("td",null, sym, v.demo ? h("span",{class:"badge demo", style:{marginLeft:"6px"}},"demo") : null), ...cells, h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×")));
+    tr.replaceChildren(h("td",null, sym, v.demo ? h("span",{class:"badge demo", style:{marginLeft:"6px"}},"demo") : null), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="verify"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="verify"?"✓?":"~"), ...cells, h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×")));
   });
   return box;
 }
@@ -1312,12 +1336,12 @@ function viewPlaybook(){
   if (S.plan) box.append(S.plan);
   // positions
   box.append(h("div",{class:"card"}, h("h2",null,"Positions (your three-position limit)"),
-    open.length ? h("div",{style:{overflow:"auto"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Contract","Entry","Mark","P&L","Qty","Δ","Θ/day","Breakeven","+1% today","flat 3d","−1% today","Stop","Invalidation","Target","DTE",""].map(x=>h("th",null,x)))),
+    open.length ? h("div",{style:{overflow:"auto"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Contract","Entry","Mark","P&L","Qty","Δ","Θ/day","Weekend","Breakeven","+1% today","flat 3d","−1% today","Stop","Invalidation","Target","DTE",""].map(x=>h("th",null,x)))),
       h("tbody",null, open.map(p => { const live = p.sym === S.sym ? (c.allContracts||[]).find(y => y.exp===p.exp && y.K===p.K && y.type===p.cp) : null; const mark = live?.mid ?? null; const pl = mark != null ? (mark/p.entry-1)*100 : null;
         const T0 = Math.max(0.5, dte(p.exp))/365, iv = live?.iv || 0.2, base = live ? bsPrice(c.spot, p.K, T0, iv, p.cp) : 0, ratio = live && base ? mark/base : 1;
         const sc = (pxPct, days) => live ? bsPrice(c.spot*(1+pxPct/100), p.K, Math.max(0,T0-days/365), iv, p.cp)*ratio : null; const sv = v => v == null ? "—" : `${fmt(v,2)} (${(v/p.entry-1)>=0?"+":""}${fmt((v/p.entry-1)*100,0)}%)`;
         const theta = live ? (bsPrice(c.spot, p.K, Math.max(0,T0-1/365), iv, p.cp) - base)*ratio : null;
-        return h("tr",null, h("td",{class:p.cp==="C"?"c":"p"},`${p.sym} ${fmt(p.K)} ${p.cp} ${p.exp}`), h("td",null,fmt(p.entry,2)), h("td",null, mark != null ? fmt(mark,2) : h("span",{class:"hint"},"switch ticker")), h("td",{class:pl==null?"":pl>=0?"c":"p", style:{fontWeight:600}}, pl == null ? "—" : `${pl>=0?"+":""}${fmt(pl,1)}%`), h("td",null,p.qty), h("td",null, live ? fmt(live.delta,2) : "—"), h("td",{class:"p"}, theta != null ? fmt(theta,2) : "—"), h("td",null, fmt(p.cp==="C" ? p.K+p.entry : p.K-p.entry,2)),
+        return h("tr",null, h("td",{class:p.cp==="C"?"c":"p"},`${p.sym} ${fmt(p.K)} ${p.cp} ${p.exp}`), h("td",null,fmt(p.entry,2)), h("td",null, mark != null ? fmt(mark,2) : h("span",{class:"hint"},"switch ticker")), h("td",{class:pl==null?"":pl>=0?"c":"p", style:{fontWeight:600}}, pl == null ? "—" : `${pl>=0?"+":""}${fmt(pl,1)}%`), h("td",null,p.qty), h("td",null, live ? fmt(live.delta,2) : "—"), h("td",{class:"p"}, theta != null ? fmt(theta,2) : "—"), h("td",{class:"p", title:"Theta × 3 nights, as % of the current mark"}, theta != null && mark ? `${fmt(theta*3*p.qty*100,0)} (${fmt(theta*3/mark*100,0)}%)` : "—"), h("td",null, fmt(p.cp==="C" ? p.K+p.entry : p.K-p.entry,2)),
           h("td",{class:"c"},sv(sc(1,0))), h("td",null,sv(sc(0,3))), h("td",{class:"p"},sv(sc(-1,0))), h("td",null,fmt(p.entry*(1-pb.stopPct/100),2)), h("td",null,p.inval ? fmt(p.inval) : "—"), h("td",null,fmt(p.target)), h("td",{class:dte(p.exp)<21?"p":""},dte(p.exp)), h("td",null,h("button",{class:"btn small", onclick:()=>{ p.closed = Date.now(); setPb(pb); renderTabs(); }},"Close"))); }))))
     : h("p",{class:"hint",style:{margin:0}},"No open positions. Plan one from the candidates above, or add one you already hold."),
     h("div",{class:"actions"}, h("button",{class:"btn small", onclick:()=>{ const K = Number(prompt(`Strike for ${S.sym}:`)); if (!K) return; const cp = (prompt("Call or put? (C/P)","C")||"C").toUpperCase().startsWith("P") ? "P" : "C"; const exp = prompt("Expiration (YYYY-MM-DD):", S.allExps[0]||""); if (!exp) return; const entry = Number(prompt("Entry price per contract:")); const qty = Number(prompt("Contracts:","1")); if (!entry || !qty) return; pb.positions.push({sym:S.sym, exp, K, cp, entry, qty, target:null, inval:null, thesis:"Added manually", opened:Date.now()}); setPb(pb); renderTabs(); }},"+ Add a position I already hold")),
@@ -1476,7 +1500,7 @@ const symIn = document.getElementById("symIn"), sugEl = document.getElementById(
 let sugItems = [], sugIdx = -1, sugTimer = null;
 function goSym(v){ v = v.toUpperCase().replace(/[^A-Z.]/g,""); if (!v) return; sugEl.hidden = true; S.sym = v; symIn.value = v; S.exps = []; renderChips(); load(); }
 function showSug(items){ sugItems = items; sugIdx = -1; sugEl.replaceChildren(...items.map((it,i) => h("button",{type:"button", role:"option", onmousedown:e=>{ e.preventDefault(); goSym(it.symbol); }}, h("span",null, h("b",null,it.symbol), h("small",null,it.type||"")), h("span",null,it.name)))); sugEl.hidden = !items.length; }
-function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:""}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:""}); if (out.length > 30) break; } return out.slice(0,8); }
+function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (halalOnly() && halalStatus(sym).s === "excluded") continue; if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:""}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:""}); if (out.length > 30) break; } return out.slice(0,8); }
 symIn.addEventListener("input", () => { const q = symIn.value.trim(); clearTimeout(sugTimer); if (!q){ sugEl.hidden = true; return; } showSug(localSearch(q));
   sugTimer = setTimeout(async () => { try { const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`); const j = await r.json(); if (j.results?.length && symIn.value.trim() === q){ const seen = new Set(); showSug([...localSearch(q), ...j.results].filter(x => !seen.has(x.symbol) && seen.add(x.symbol)).slice(0,8)); } } catch {} }, 250); });
 symIn.addEventListener("keydown", e => { if (sugEl.hidden) return; if (e.key === "ArrowDown"){ e.preventDefault(); sugIdx = Math.min(sugItems.length-1, sugIdx+1); } else if (e.key === "ArrowUp"){ e.preventDefault(); sugIdx = Math.max(0, sugIdx-1); } else if (e.key === "Enter" && sugIdx >= 0){ e.preventDefault(); goSym(sugItems[sugIdx].symbol); return; } else if (e.key === "Escape"){ sugEl.hidden = true; return; } [...sugEl.children].forEach((b,i) => b.setAttribute("aria-selected", String(i===sugIdx))); });
@@ -1484,6 +1508,8 @@ symIn.addEventListener("blur", () => setTimeout(() => sugEl.hidden = true, 150))
 symIn.addEventListener("focus", () => { if (symIn.value.trim() && sugItems.length) sugEl.hidden = false; });
 document.getElementById("symForm").addEventListener("submit", e => { e.preventDefault(); const v = symIn.value.trim().toUpperCase(); if (!v) return; if (sugItems.length && !NAMES.has(v) && !/^[A-Z.]{1,6}$/.test(v)){ goSym(sugItems[0].symbol); return; } goSym(v); });
 document.getElementById("refreshBtn").onclick = load;
+const halalBtn = document.getElementById("halalBtn"); const paintHalal = () => { halalBtn.style.background = halalOnly() ? "var(--pos)" : ""; halalBtn.style.color = halalOnly() ? "#061013" : ""; halalBtn.textContent = halalOnly() ? "☪ Halal only" : "☪ Halal"; };
+halalBtn.onclick = () => { try { localStorage.setItem("kingnode:halal", halalOnly() ? "0" : "1"); } catch {} paintHalal(); renderChips(); renderAll(); }; paintHalal();
 document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)} · ${new Date().toLocaleString()}`;
   const text = `🚩 **Kingnode feedback** ${note}\n${ctx}`; const how = await notify(text);
   const log = (() => { try { return JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch { return []; } })(); log.unshift({t:Date.now(), note, ctx}); try { localStorage.setItem("kingnode:flags", JSON.stringify(log.slice(0,200))); } catch {}
