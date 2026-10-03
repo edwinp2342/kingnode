@@ -9,7 +9,8 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="icon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Kingnode">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2220%22 fill=%22%23131722%22/><path d=%22M15 62c12-14 24-14 36 0s24 14 36 0%22 stroke=%22%232962FF%22 stroke-width=%2210%22 fill=%22none%22 stroke-linecap=%22round%22/></svg>">
 <style>
 :root{
@@ -202,6 +203,8 @@ table.hsg tfoot td.pos{color:#BEF264} table.hsg tfoot td.neg{color:#EC4899}
 .sk-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; align-items:center}
 .sk-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
 @media (max-width:980px){ .sk-body{flex-direction:column} .ladder{width:100%} }
+.chartctl-mobile{margin:6px 0} .chartctl-mobile summary{cursor:pointer; color:var(--muted); font-size:12px; padding:4px 0}
+@media (max-width:700px){ .sk-head{flex-wrap:wrap; gap:6px} .sk-title{display:none} .tvfb svg{max-height:none !important} #tvChart{height:auto; min-height:0} .symrow{gap:8px} #symName{font-size:13px} .quote .px{font-size:18px} }
 @media (max-width:980px){ .work{grid-template-columns:1fr} .main{border-right:0} .chips{max-width:100%} #tvChart{height:52vh} .grid2{grid-template-columns:1fr} .sym input{width:200px} .sug{min-width:280px} #tvQuote{min-width:200px} .setgrid,.plans2{grid-template-columns:1fr} }
 </style>
 </head>
@@ -923,6 +926,10 @@ function isRegular(t){ const et = new Date(new Date(t).toLocaleString("en-US",{t
 function ema(vals, n){ const k = 2/(n+1); const out = new Array(vals.length).fill(null); let e = null; for (let i = 0; i < vals.length; i++){ e = e == null ? vals[i] : vals[i]*k + e*(1-k); if (i >= n-1) out[i] = e; } return out; }
 function vwap(bars){ const out = []; let pv = 0, v = 0, day = null; for (const b of bars){ const dd = new Date(b[0]).toDateString(); if (dd !== day){ day = dd; pv = 0; v = 0; } const tp = (b[2]+b[3]+b[4])/3; pv += tp*b[5]; v += b[5]; out.push(v ? pv/v : tp); } return out; }
 function chartControls(){
+  if (window.innerWidth < 700){ const d = h("details",{class:"chartctl-mobile"}, h("summary",null,"Chart options")); d.append(chartControlsInner()); return d; }
+  return chartControlsInner();
+}
+function chartControlsInner(){
   const st = S.set, again = (k, v, reload) => { st[k] = v; saveSettings(); if (reload) loadBars(); else { renderTabs(); const fb = document.querySelector("#tvChart .tvfb"); if (fb) tvFallback(fb.querySelector(".hint")?.textContent || ""); } };
   const grp = (key, opts, reload) => h("div",{class:"grp"}, opts.map(o => h("button",{type:"button","aria-pressed":String(st[key]===o), onclick:()=>again(key, o, reload)}, o)));
   const chk = (key, label) => h("label",null, h("input",{type:"checkbox", checked:!!st[key], onchange:e=>again(key, e.target.checked)}), label);
@@ -947,7 +954,8 @@ function viewChart(){
   const closes = all.map(b=>b[4]);
   const emas = st.showEma ? st.ema.map(n => ema(closes, n)) : [];
   const vw = st.showVwap && st.interval !== "1d" ? vwap(all) : null;
-  const RH = st.showRsi ? 80 : 0, W = 1100, H = 460 + RH, VH = st.showVolume ? 70 : 0, pad = {l:64, r:118, t:12, b:24 + VH + RH};
+  const phone = window.innerWidth < 700;
+  const RH = st.showRsi ? 80 : 0, W = phone ? 640 : 1100, H = (phone ? 560 : 460) + RH, VH = st.showVolume ? 70 : 0, pad = {l:phone ? 48 : 64, r:phone ? 96 : 118, t:12, b:24 + VH + RH};
   const lows = bars.map(b=>b[3]), highs = bars.map(b=>b[2]);
   const bLo = Math.min(...lows), bHi = Math.max(...highs), span = Math.max(bHi-bLo, c.spot*0.004);
   const near = x => x && x > bLo - span*0.6 && x < bHi + span*0.6; // only stretch the scale for levels near the price action
