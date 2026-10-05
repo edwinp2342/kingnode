@@ -42,7 +42,7 @@ a{color:var(--blue)}
 .bar{display:flex; align-items:center; gap:10px; padding:6px 12px; border-bottom:1px solid var(--rule); background:var(--bg); flex-wrap:wrap}
 .logo{font-weight:700; display:flex; align-items:center; gap:8px; text-decoration:none; color:var(--ink); font-size:15px; margin-right:4px}
 .logo svg{width:26px; height:26px; border-radius:6px}
-.logo .wm{font-weight:800; letter-spacing:.12em; font-size:14px} .logo .wm span{color:#8ED4BC}
+.logo .wm{font-weight:800; letter-spacing:.12em; font-size:14px} .logo .wm span{color:#9ADCC6}
 .sym{display:flex; align-items:center; gap:6px}
 .search{position:relative}
 .sym input{width:280px; background:var(--panel); border:1px solid var(--rule2); border-radius:4px; padding:7px 10px; font-family:var(--mono); font-weight:600}
@@ -223,7 +223,7 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
 <body>
 <div class="tape" id="tape" aria-label="Index tape"><div class="tape-in" id="tapeIn"></div></div>
 <header class="bar">
-  <a class="logo" href="./"><svg viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="lg-bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ED4BC"/><stop offset="1" stop-color="#174F4B"/></linearGradient></defs><rect width="256" height="256" rx="56" fill="#0B0F14"/><rect x="66" y="134" width="28" height="56" rx="6" fill="url(#lg-bar)"/><rect x="114" y="94" width="28" height="96" rx="6" fill="url(#lg-bar)"/><rect x="162" y="134" width="28" height="56" rx="6" fill="url(#lg-bar)"/><rect x="54" y="190" width="148" height="8" rx="4" fill="#F5B942"/><circle cx="128" cy="78" r="15" fill="#F0B41E" stroke="#0B0F14" stroke-width="3"/><circle cx="80" cy="120" r="6" fill="#F5B942"/><circle cx="176" cy="120" r="6" fill="#F5B942"/></svg><span class="wm">KING<span>NODE</span></span></a>
+  <a class="logo" href="./"><svg viewBox="0 0 256 256" aria-hidden="true"><defs><linearGradient id="lg-bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9ADCC6"/><stop offset="1" stop-color="#14413F"/></linearGradient></defs><rect width="256" height="256" rx="56" fill="#0B0F14"/><path d="M66 190 V140 L80 124 L94 140 V190 Z" fill="url(#lg-bar)"/><path d="M114 190 V102 L128 86 L142 102 V190 Z" fill="url(#lg-bar)"/><path d="M162 190 V140 L176 124 L190 140 V190 Z" fill="url(#lg-bar)"/><rect x="50" y="192" width="156" height="7" rx="3.5" fill="#F5B942"/><circle cx="128" cy="68" r="14" fill="#F5B942" stroke="#0B0F14" stroke-width="2.5"/><circle cx="80" cy="112" r="5" fill="#F5B942"/><circle cx="176" cy="112" r="5" fill="#F5B942"/></svg><span class="wm">KING<span>NODE</span></span></a>
   <form class="sym" id="symForm" autocomplete="off"><div class="search"><input id="symIn" value="SPX" aria-label="Search ticker or company" placeholder="Search ticker or company  /" maxlength="30"><div class="sug" id="sug" hidden></div></div><button class="btn small" type="submit">Go</button></form>
   <div class="chips" id="chips"></div>
   <div class="right">
