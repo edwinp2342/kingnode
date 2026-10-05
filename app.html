@@ -191,15 +191,15 @@ table.hsg th.stk,table.hsg td.stk{position:sticky; left:0; z-index:2; background
 table.hsg th.stk{z-index:4}
 table.hsg td{height:22px; min-width:104px; text-align:right; padding:0 10px; position:relative; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.35)}
 table.hsg td.c:hover{outline:1px solid #fff; outline-offset:-1px}
-table.hsg td.king{box-shadow:inset 0 0 0 2px var(--gold); font-weight:700}
-table.hsg td.shortn{box-shadow:inset 0 0 0 2px #EC4899}
-table.hsg .star{position:absolute; left:6px; top:3px; color:var(--gold); font-size:11px}
-table.hsg tr.spot td{box-shadow:inset 0 2px 0 #fff, inset 0 -2px 0 #fff}
+table.hsg td.king{box-shadow:inset 0 0 0 1.5px var(--gold); font-weight:700}
+table.hsg td.shortn{box-shadow:inset 0 0 0 1.5px #AA8CD2}
+table.hsg .star{position:absolute; left:6px; top:3px; color:var(--gold); font-size:10px}
+table.hsg tr.spot td{box-shadow:inset 0 1.5px 0 rgba(255,255,255,.85), inset 0 -1.5px 0 rgba(255,255,255,.85)}
+table.hsg tfoot td.pos{color:#78C4AA} table.hsg tfoot td.neg{color:#AA8CD2}
 table.hsg tr.spot td.stk{color:#fff}
 table.hsg th.net,table.hsg td.net{position:sticky; right:0; z-index:2; border-left:2px solid var(--rule2); font-weight:700}
 table.hsg th.net{z-index:4}
 table.hsg tfoot td{position:sticky; bottom:0; z-index:3; background:var(--bg); color:var(--muted); font-weight:600; border-top:1px solid var(--rule2)}
-table.hsg tfoot td.pos{color:#BEF264} table.hsg tfoot td.neg{color:#EC4899}
 .qhead{display:flex; gap:18px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px}
 .qtitle{font-size:20px; font-weight:700; letter-spacing:-.01em}
 .qkpis{display:flex; gap:10px; flex-wrap:wrap}
@@ -1163,10 +1163,12 @@ function synthSeeker(c){
       return [s.K, Math.round(b.gex/1e5*w), Math.round(b.vex/1e4*(0.8+0.3*Math.sin(ph*5+wob[si]))), Math.round(b.dex/1e6*(0.9+0.2*Math.cos(ph*3+wob[si])))]; }) }); }
   return out;
 }
-function seekerColor(v){ // v in [-1,1] → rgba; teal-green for positive, magenta-red for negative, near-black at zero
-  const a = Math.min(1, Math.abs(v)), e = Math.pow(a, 0.55);
-  if (v >= 0) return [Math.round(14 + 20*e), Math.round(40 + 190*e), Math.round(60 + 140*e), 255];
-  return [Math.round(40 + 215*e), Math.round(22 + 60*e), Math.round(50 + 90*e), 255];
+function seekerColor(v){ // v in [-1,1] → rgba; same muted scale as the grid: teal→mint for dealers long, indigo→lavender for dealers short
+  const a = Math.min(1, Math.abs(v)), e = Math.pow(a, 0.6);
+  const mix = (c1, c2, f) => c1.map((x,i) => Math.round(x + (c2[i]-x)*f));
+  const col = v >= 0 ? (e < 0.55 ? mix([11,15,20],[22,78,74],e/0.55) : mix([22,78,74],[120,196,170],(e-0.55)/0.45))
+                     : (e < 0.55 ? mix([11,13,22],[48,52,110],e/0.55) : mix([48,52,110],[170,140,210],(e-0.55)/0.45));
+  return [col[0], col[1], col[2], 255];
 }
 function etTime(t){ return new Date(t).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZone:"America/New_York"}); }
 const SK = { scrub:null, full:false, scope:"sel", cache:null };
@@ -1264,18 +1266,18 @@ function viewSeekerSession(){
   ladder(null); if (SK.scrub != null && SK.scrub < cols) drawOverlay(SK.scrub);
   box.append(h("div",{class:"sk-body"}, h("div",{class:"heat", style:{padding:"4px", overflow:"auto", flex:"none"}}, wrap), ladderEl));
   // legend under the map, one line
-  box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"#2DD4BF"}}), isDelta ? "strengthening" : "dealers long — support, pins"), h("span",null, h("i",{style:{background:"#F472B6"}}), isDelta ? "unwinding" : "dealers short — accelerates"), h("span",null, h("i",{style:{background:"#fff"}}), "price"), h("span",null,"♛ king node"), h("span",{class:"hint"},"hover for size · click a column to pin a time · times in ET")));
+  box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"#78C4AA"}}), isDelta ? "strengthening" : "dealers long — support, pins"), h("span",null, h("i",{style:{background:"#AA8CD2"}}), isDelta ? "unwinding" : "dealers short — accelerates"), h("span",null, h("i",{style:{background:"#fff"}}), "price"), h("span",null,"♛ king node"), h("span",{class:"hint"},"hover for size · click a column to pin a time · times in ET")));
   return box;
 }
 function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r); g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h); g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r); g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath(); }
 
 // ---------- Heatseeker grid: strike × expiration, every cell labeled, king node starred ----------
 const HSG = { mode:"gex", step:"auto", view:"grid", net:true, exps:8 };
-function gridColor(t){ // t in [-1,1]. positive: deep teal → teal → lime. negative: midnight → indigo → magenta. zero = near-black.
-  const a = Math.min(1, Math.abs(t)), e = Math.pow(a, 0.55);
+function gridColor(t){ // t in [-1,1]. Muted institutional scale: dealers long = slate → teal → mint; dealers short = slate → indigo → lavender. zero = panel black.
+  const a = Math.min(1, Math.abs(t)), e = Math.pow(a, 0.6);
   const mix = (c1, c2, f) => c1.map((v,i) => Math.round(v + (c2[i]-v)*f));
-  const col = t >= 0 ? (e < 0.5 ? mix([10,20,24],[20,120,110],e/0.5) : mix([20,120,110],[190,242,100],(e-0.5)/0.5))
-                     : (e < 0.5 ? mix([12,10,24],[76,29,149],e/0.5) : mix([76,29,149],[236,72,153],(e-0.5)/0.5));
+  const col = t >= 0 ? (e < 0.55 ? mix([11,15,20],[22,78,74],e/0.55) : mix([22,78,74],[120,196,170],(e-0.55)/0.45))
+                     : (e < 0.55 ? mix([11,13,22],[48,52,110],e/0.55) : mix([48,52,110],[170,140,210],(e-0.55)/0.45));
   return `rgb(${col.join(",")})`;
 }
 function viewSeeker(){
@@ -1318,16 +1320,16 @@ function viewSeeker(){
     h("tbody",null, ...rowsK.map(b => h("tr",{class: b===spotRow ? "spot" : ""},
       h("td",{class:"stk"}, fmt(b, step < 1 ? 2 : 0)),
       ...exps.map(e => { const v = val(e,b), o = cell.get(`${e}|${b}`); const isKing = king && king.e===e && king.b===b, isShort = shortN && shortN.e===e && shortN.b===b;
-        return h("td",{class:"c"+(isKing?" king":"")+(isShort?" shortn":""), style:{background:gridColor(v/vmax), color: Math.abs(v)/vmax > 0.55 ? "#061013" : "#D1D4DC"},
+        return h("td",{class:"c"+(isKing?" king":"")+(isShort?" shortn":""), style:{background:gridColor(v/vmax), color: Math.abs(v)/vmax > 0.75 ? "#0B0F14" : "#D6DAE0"},
           onmouseenter:ev=>{ if(!o){ tip.style.display="none"; return; } tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; tip.textContent = `${fmt(b)} · ${e}\n${mode.toUpperCase()} ${money(v)}\ncalls OI ${fmt(o.cOI)} vol ${fmt(o.cVol)}\nputs  OI ${fmt(o.pOI)} vol ${fmt(o.pVol)}`; },
           onmousemove:ev=>{ tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; }, onmouseleave:()=>tip.style.display="none",
           onclick:()=>{ S.inspect = {exp:e, K:b}; S.tab = "heat"; renderTabs(); document.querySelector(".insp")?.scrollIntoView({behavior:"smooth", block:"nearest"}); }},
           fmtv(v), isKing ? h("span",{class:"star"},"★") : null); }),
-      HSG.net ? h("td",{class:"net", style:{background:gridColor(rowNet(b)/netMax), color: Math.abs(rowNet(b))/netMax > 0.55 ? "#061013" : "#D1D4DC"}}, fmtv(rowNet(b))) : null))),
+      HSG.net ? h("td",{class:"net", style:{background:gridColor(rowNet(b)/netMax), color: Math.abs(rowNet(b))/netMax > 0.75 ? "#0B0F14" : "#D6DAE0"}}, fmtv(rowNet(b))) : null))),
     h("tfoot",null, h("tr",null, th("Σ","stk"), ...exps.map(e => { const t = rowsK.reduce((a,b)=>a+val(e,b),0); return h("td",{class:"sum "+(t>=0?"pos":"neg")}, fmtv(t)); }), HSG.net ? h("td",{class:"sum "+(calc.total>=0?"pos":"neg")}, fmtv(rowsK.reduce((a,b)=>a+rowNet(b),0))) : null)));
   box.append(h("div",{class:"hsg-wrap"}, table));
   const kingTxt = king ? `★ King node ${fmt(king.b)} · ${king.e} · ${money(king.v)}` : "";
-  box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"linear-gradient(90deg,#4C1D95,#EC4899)"}}), "dealers short — moves accelerate"), h("span",null, h("i",{style:{background:"linear-gradient(90deg,#14786E,#BEF264)"}}), "dealers long — support / pin"), h("span",{style:{color:"var(--gold)",fontWeight:600}}, kingTxt), h("span",{class:"hint"},`spot ${fmt(spot,2)} row outlined · Net = across ${exps.length} expiries · click a cell for the contracts`)));
+  box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"linear-gradient(90deg,#30346E,#AA8CD2)"}}), "dealers short — moves accelerate"), h("span",null, h("i",{style:{background:"linear-gradient(90deg,#164E4A,#78C4AA)"}}), "dealers long — support / pin"), h("span",{style:{color:"var(--gold)",fontWeight:600}}, kingTxt), h("span",{class:"hint"},`spot ${fmt(spot,2)} row outlined · Net = across ${exps.length} expiries · click a cell for the contracts`)));
   return box;
 }
 
