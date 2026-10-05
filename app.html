@@ -200,6 +200,17 @@ table.hsg th.net,table.hsg td.net{position:sticky; right:0; z-index:2; border-le
 table.hsg th.net{z-index:4}
 table.hsg tfoot td{position:sticky; bottom:0; z-index:3; background:var(--bg); color:var(--muted); font-weight:600; border-top:1px solid var(--rule2)}
 table.hsg tfoot td.pos{color:#BEF264} table.hsg tfoot td.neg{color:#EC4899}
+.qhead{display:flex; gap:18px; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; margin-bottom:12px}
+.qtitle{font-size:20px; font-weight:700; letter-spacing:-.01em}
+.qkpis{display:flex; gap:10px; flex-wrap:wrap}
+.qk{border:1px solid var(--rule); border-radius:6px; padding:8px 12px; min-width:130px; background:var(--panel)}
+.qv{font-size:18px; font-weight:700; margin:2px 0}
+.qterm{border:1px solid var(--rule); border-radius:6px; padding:6px 10px; min-width:92px; text-align:center; background:var(--panel2)}
+table.qtab td,table.qtab th{font-size:11.5px; padding:5px 7px}
+table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 var(--gold)}
+.qcard{border-color:var(--gold); margin-top:12px}
+.qlegs{display:grid; gap:3px}
+.qh3{font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.05em; text-transform:uppercase; margin:0 0 6px}
 .sk-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; align-items:center}
 .sk-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
 @media (max-width:980px){ .sk-body{flex-direction:column} .ladder{width:100%} }
@@ -467,7 +478,7 @@ function computeFrom(d, expsSel, range, model){
   const contracts = [], allContracts = [];
   for (const r of d.rows){
     const [exp, type, K, oi, vol, iv, gamma, delta, bid, ask, last] = r;
-    allContracts.push({exp, type, K, oi, vol, iv, delta, mid:(bid+ask)/2 || last});
+    allContracts.push({exp, type, K, oi, vol, iv, delta, bid, ask, mid:(bid+ask)/2 || last});
     if (!expsSel.includes(exp)) continue;
     // Standard dealer model: dealers are long calls (positive gamma) and short puts (negative gamma).
     // "Net short" model treats dealers as short everything customers bought: both signs negative → magnitude only.
@@ -668,12 +679,13 @@ function renderAlertsOld(){
   else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
 }
 function renderTabs(){
-  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["play","Playbook"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
+  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["play","Playbook"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
   document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)));
   const p = document.getElementById("panel");
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
   if (S.tab === "seeker") { p.replaceChildren(viewSeeker()); return; }
   if (S.tab === "halal") { p.replaceChildren(viewHalal()); loadHalalQuotes(); return; }
+  if (S.tab === "quant") { p.replaceChildren(viewQuant()); if (!S.bars) loadBars(); return; }
   if (S.tab === "play") { p.replaceChildren(viewPlaybook()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
   if (S.tab === "cflow") { p.replaceChildren(viewContractFlow()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
   if (S.tab === "flow") { p.replaceChildren(viewFlow()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); else { clearTimeout(flowTimer); flowTimer = setTimeout(loadFlow, S.flowDemo ? 60000 : 10000); } return; }
@@ -903,7 +915,7 @@ async function loadBars(){
   if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; }
   else { S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; }
   updateAh(); renderStatus();
-  if (S.tab === "chart") renderTabs();
+  if (S.tab === "chart" || S.tab === "quant") renderTabs();
   const fb = document.querySelector("#tvChart .tvfb"); if (fb){ const msg = fb.querySelector(".hint")?.textContent || ""; tvFallback(msg); }
 }
 function synthBars(spot, iv){
@@ -1316,6 +1328,202 @@ function viewSeeker(){
   const kingTxt = king ? `★ King node ${fmt(king.b)} · ${king.e} · ${money(king.v)}` : "";
   box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"linear-gradient(90deg,#4C1D95,#EC4899)"}}), "dealers short — moves accelerate"), h("span",null, h("i",{style:{background:"linear-gradient(90deg,#14786E,#BEF264)"}}), "dealers long — support / pin"), h("span",{style:{color:"var(--gold)",fontWeight:600}}, kingTxt), h("span",{class:"hint"},`spot ${fmt(spot,2)} row outlined · Net = across ${exps.length} expiries · click a cell for the contracts`)));
   return box;
+}
+
+// =====================================================================================================
+// QUANT DESK — market-maker style pricing: realized vs implied vol, probability of profit, expected value,
+// Monte Carlo with your exit rules, and a ranked list of structures. The edge is the same one a desk looks for:
+// buy what the market overprices in probability terms and sell what it underprices, then size by the edge.
+// =====================================================================================================
+const QD = { view:"bull", horizon:10, stop:20, target:60, minPop:30, maxSpread:12, minDte:7, maxDte:60, structures:{call:true,put:true,debit:true,credit:true}, sel:null, mc:new Map(), seed:17 };
+const N = x => 0.5*(1+erf(x/Math.SQRT2));
+const Nd2 = (S0, K, T, sig) => { const sq = sig*Math.sqrt(Math.max(T,1e-6)); return N((Math.log(S0/K) - 0.5*sig*sig*T)/sq); };
+function realizedVol(bars){
+  if (!bars || bars.length < 30) return null;
+  // group by session → daily closes; if fewer than 12 sessions, fall back to intraday returns scaled to annual
+  const byDay = new Map(); for (const b of bars){ byDay.set(new Date(b[0]).toDateString(), b[4]); }
+  const closes = [...byDay.values()];
+  if (closes.length >= 12){ const r = closes.slice(1).map((c,i)=>Math.log(c/closes[i])); const n = Math.min(20, r.length); const rr = r.slice(-n); const m = rr.reduce((a,b)=>a+b,0)/n; const v = rr.reduce((a,b)=>a+(b-m)**2,0)/(n-1); return {rv:Math.sqrt(v*252), n, basis:`${n} sessions, close-to-close`}; }
+  const mins = (bars[1][0]-bars[0][0])/60000 || 5, per = 390/mins; const r = bars.slice(1).map((b,i)=>Math.log(b[4]/bars[i][4])).filter(isFinite); const n = Math.min(400, r.length); const rr = r.slice(-n); const m = rr.reduce((a,b)=>a+b,0)/n; const v = rr.reduce((a,b)=>a+(b-m)**2,0)/(n-1); return {rv:Math.sqrt(v*per*252), n, basis:`${n} intraday bars, scaled`};
+}
+function volSurface(){
+  const c = S.calc, spot = c.spot; const byExp = new Map();
+  for (const x of c.allContracts){ if (!x.iv || x.iv <= 0 || x.iv > 5) continue; const e = byExp.get(x.exp) || {exp:x.exp, dte:dte(x.exp), atm:null, atmDist:Infinity, p25:null, c25:null, p25d:1, c25d:1};
+    const d = Math.abs(x.K - spot); if (d < e.atmDist){ e.atmDist = d; e.atm = x.iv; }
+    if (x.type==="P" && Math.abs(Math.abs(x.delta)-0.25) < e.p25d){ e.p25d = Math.abs(Math.abs(x.delta)-0.25); e.p25 = x.iv; }
+    if (x.type==="C" && Math.abs(x.delta-0.25) < e.c25d){ e.c25d = Math.abs(x.delta-0.25); e.c25 = x.iv; }
+    byExp.set(x.exp, e); }
+  return [...byExp.values()].sort((a,b)=>a.dte-b.dte);
+}
+function ivAt(days){ const vs = volSurface().filter(v => v.atm); if (!vs.length) return 0.2; let best = vs[0]; for (const v of vs) if (Math.abs(v.dte-days) < Math.abs(best.dte-days)) best = v; return best.atm; }
+// candidate structures
+function quantCandidates(){
+  const c = S.calc, spot = c.spot, bull = QD.view === "bull", bear = QD.view === "bear";
+  const cs = c.allContracts.filter(x => { const d = dte(x.exp); return d >= QD.minDte && d <= QD.maxDte && x.oi >= 50 && x.mid > 0.05 && Math.abs(x.K/spot-1) <= 0.15; });
+  const byKey = new Map(cs.map(x => [`${x.exp}|${x.type}|${x.K}`, x]));
+  const out = [];
+  const liq = x => (x.ask - x.bid) / (x.mid || 1);
+  const push = o => { if (o.spreadPct <= QD.maxSpread/100) out.push(o); };
+  for (const x of cs){
+    const T = Math.max(1, dte(x.exp))/365;
+    if (QD.structures.call && x.type==="C" && bull && x.K >= spot*0.97 && x.K <= spot*1.08){ push({kind:"Long call", legs:[{...x, side:+1}], debit:x.mid, maxLoss:x.mid, maxGain:Infinity, be:x.K + x.mid, spreadPct:liq(x), exp:x.exp, T, dir:+1, K:x.K}); }
+    if (QD.structures.put && x.type==="P" && bear && x.K <= spot*1.03 && x.K >= spot*0.92){ push({kind:"Long put", legs:[{...x, side:+1}], debit:x.mid, maxLoss:x.mid, maxGain:x.K - x.mid, be:x.K - x.mid, spreadPct:liq(x), exp:x.exp, T, dir:-1, K:x.K}); }
+    if (QD.structures.debit && bull && x.type==="C" && x.K >= spot*0.98 && x.K <= spot*1.05){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="C").map(y=>y.K))].sort((a,b)=>a-b); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|C|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05) continue; push({kind:"Call debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(K2-x.K)-debit, be:x.K+debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:+1, K:x.K, K2}); } }
+    if (QD.structures.debit && bear && x.type==="P" && x.K <= spot*1.02 && x.K >= spot*0.95){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="P").map(y=>y.K))].sort((a,b)=>b-a); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|P|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05) continue; push({kind:"Put debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(x.K-K2)-debit, be:x.K-debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:-1, K:x.K, K2}); } }
+    if (QD.structures.credit && (bull || QD.view==="neutral") && x.type==="P" && x.K <= spot*0.99 && x.K >= spot*0.90){ for (const w of [1,2]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="P").map(y=>y.K))].sort((a,b)=>b-a); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|P|${K2}`); if (!y) continue; const credit = x.mid - y.mid, width = x.K - K2; if (credit <= 0.05 || credit >= width) continue; push({kind:"Put credit spread", legs:[{...x, side:-1},{...y, side:+1}], debit:-credit, maxLoss:width-credit, maxGain:credit, be:x.K-credit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:+1, K:x.K, K2, credit:true}); } }
+    if (QD.structures.credit && (bear || QD.view==="neutral") && x.type==="C" && x.K >= spot*1.01 && x.K <= spot*1.10){ for (const w of [1,2]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="C").map(y=>y.K))].sort((a,b)=>a-b); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|C|${K2}`); if (!y) continue; const credit = x.mid - y.mid, width = K2 - x.K; if (credit <= 0.05 || credit >= width) continue; push({kind:"Call credit spread", legs:[{...x, side:-1},{...y, side:+1}], debit:-credit, maxLoss:width-credit, maxGain:credit, be:x.K+credit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:-1, K:x.K, K2, credit:true}); } }
+  }
+  return out;
+}
+// structure value at a given underlying/time (BS with each leg's own IV)
+function structValue(o, S0, tYears, ivShift=0){ return o.legs.reduce((a,l) => a + l.side * bsPrice(S0, l.K, Math.max(0, tYears), Math.max(0.02, (l.iv||0.2) + ivShift), l.type), 0); }
+function payoffAtExpiry(o, S0){ return o.legs.reduce((a,l) => a + l.side * Math.max(0, l.type==="C" ? S0-l.K : l.K-S0), 0) - o.debit; }
+// analytic metrics under two measures: implied (what the market prices) and realized (what the stock has been doing)
+function analytic(o, rv){
+  const c = S.calc, S0 = c.spot, T = o.T, ivs = o.legs[0].iv || 0.2;
+  const pProfitExp = sig => { // P(payoff at expiry > 0) under lognormal, drift 0
+    const sq = sig*Math.sqrt(T); if (o.kind.includes("credit")){ return o.dir > 0 ? Nd2(S0, o.be, T, sig) : 1 - Nd2(S0, o.be, T, sig); } return o.dir > 0 ? Nd2(S0, o.be, T, sig) : 1 - Nd2(S0, o.be, T, sig); };
+  const pItm = sig => o.dir > 0 ? Nd2(S0, o.K, T, sig) : 1 - Nd2(S0, o.K, T, sig);
+  // expected value at expiry by numeric integration under RV lognormal
+  const ev = sig => { const n = 240, sq = sig*Math.sqrt(T); let e = 0; for (let i = 0; i < n; i++){ const z = -4 + 8*(i+0.5)/n; const w = Math.exp(-z*z/2)/Math.sqrt(2*Math.PI)*(8/n); const ST = S0*Math.exp(-0.5*sig*sig*T + sq*z); e += w*payoffAtExpiry(o, ST); } return e; };
+  return { pItmIV:pItm(ivs), pItmRV:pItm(rv), popIV:pProfitExp(ivs), popRV:pProfitExp(rv), evIV:ev(ivs), evRV:ev(rv) };
+}
+// Monte Carlo with your rules: stop at −stop% / target at +target% of the debit, exit at horizon otherwise. Student-t(4) shocks for fat tails.
+function monteCarlo(o, rv, paths=3000){
+  const c = S.calc, S0 = c.spot, H = Math.min(QD.horizon, dte(o.exp)), steps = H, dt = 1/252, sig = rv;
+  let seed = QD.seed + Math.round(o.K*7 + (o.K2||0)*3 + o.legs.length); const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  const gauss = () => { const u = Math.max(1e-9, rnd()), v = rnd(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); };
+  const tdraw = () => { const z = gauss(); const chi = (gauss()**2 + gauss()**2 + gauss()**2 + gauss()**2)/4; return z/Math.sqrt(chi) * Math.sqrt(2/4); }; // t(4) scaled to unit variance
+  const risk = o.credit ? o.maxLoss : o.debit; const stopLvl = -QD.stop/100*risk, tgtLvl = QD.target/100*risk;
+  const v0 = structValue(o, S0, o.T); // anchor to the model's own t=0 value so a model/market gap doesn't show up as instant P&L
+  let hitT = 0, hitS = 0, profH = 0, sumPnl = 0, sumT = 0; const pnls = [];
+  for (let p = 0; p < paths; p++){
+    let St = S0, pnl = 0, done = false;
+    for (let d = 1; d <= steps; d++){
+      St *= Math.exp(-0.5*sig*sig*dt + sig*Math.sqrt(dt)*tdraw());
+      const val = structValue(o, St, o.T - d*dt); pnl = val - v0;
+      if (pnl >= tgtLvl){ hitT++; sumT += d; done = true; break; }
+      if (pnl <= stopLvl){ hitS++; sumT += d; done = true; break; }
+    }
+    if (!done){ sumT += steps; if (pnl > 0) profH++; }
+    sumPnl += Math.max(stopLvl, Math.min(tgtLvl, pnl)); pnls.push(pnl);
+  }
+  pnls.sort((a,b)=>a-b); const q = f => pnls[Math.floor(f*(pnls.length-1))];
+  return { pTarget:hitT/paths, pStop:hitS/paths, pProfit:(hitT+profH)/paths, ev:sumPnl/paths, avgDays:sumT/paths, p10:q(.1), p50:q(.5), p90:q(.9), horizon:H, risk };
+}
+function rankQuant(rvInfo){
+  const rv = rvInfo?.rv || ivAt(30)*0.9; const cands = quantCandidates(); const c = S.calc;
+  const flowLean = (() => { const tr = (S.flow?.trades||[]).filter(t=>t.u===S.sym); const b = tr.filter(t=>(t.cp==="C"&&t.side==="A")||(t.cp==="P"&&t.side==="B")).reduce((a,t)=>a+t.prem,0), s = tr.filter(t=>(t.cp==="P"&&t.side==="A")||(t.cp==="C"&&t.side==="B")).reduce((a,t)=>a+t.prem,0); return (b-s)/((b+s)||1); })();
+  const rows = cands.map(o => { const a = analytic(o, rv); const risk = o.credit ? o.maxLoss : o.debit; const evr = a.evRV/risk;
+    const posAlign = o.dir > 0 ? (c.spot > (c.flip||0) ? 1 : 0) + (c.callWall && o.K <= c.callWall.K ? 1 : 0) : (c.spot < (c.flip||Infinity) ? 1 : 0) + (c.putWall && o.K >= c.putWall.K ? 1 : 0);
+    const edge = a.evRV - a.evIV; // what realized vol says vs what implied prices → the mispricing a desk harvests
+    const score = evr*40 + a.popRV*30 + posAlign*6 + (o.dir*flowLean)*8 - o.spreadPct*60 + Math.min(6, Math.log10(1+(o.legs[0].oi||0)));
+    return {...o, ...a, risk, evr, edge, posAlign, flowLean, score, rv}; })
+    .filter(r => r.popRV*100 >= QD.minPop).sort((a,b)=>b.score-a.score);
+  return rows.slice(0, 40);
+}
+function viewQuant(){
+  const c = S.calc, box = h("div",null); if (!c) return box;
+  const rvInfo = realizedVol(S.bars), rv = rvInfo?.rv || null, vs = volSurface(), iv30 = ivAt(30), vrp = rv != null ? iv30 - rv : null;
+  const near = vs.find(v => v.dte >= 20) || vs[0]; const skew = near && near.p25 && near.c25 ? (near.p25 - near.c25)*100 : null;
+  const hdr = (k,v,sub,cls) => h("div",{class:"qk"}, h("div",{class:"hint"},k), h("div",{class:"num qv "+(cls||"")},v), sub ? h("div",{class:"hint",style:{fontSize:"11px"}},sub) : null);
+  box.append(h("div",{class:"qhead"},
+    h("div",null, h("div",{class:"qtitle"},"Quant desk"), h("div",{class:"hint"},`${S.sym} · ${fmt(c.spot,2)} · pricing the chain the way a market maker does: what the market implies vs what the tape has done, probability by two measures, expected value per dollar of risk, then your exit rules simulated.`)),
+    h("div",{class:"qkpis"},
+      hdr("IV (30d ATM)", fmt(iv30*100,1)+"%", "what the market charges"),
+      hdr("Realized vol", rv != null ? fmt(rv*100,1)+"%" : "—", rvInfo ? rvInfo.basis : "needs bars", ""),
+      hdr("Vol risk premium", vrp != null ? (vrp>=0?"+":"")+fmt(vrp*100,1)+" pts" : "—", vrp == null ? "" : vrp > 0.03 ? "options rich → sellers' edge" : vrp < -0.02 ? "options cheap → buyers' edge" : "fair", vrp == null ? "" : vrp > 0.03 ? "p" : vrp < -0.02 ? "c" : ""),
+      hdr("25Δ skew", skew != null ? (skew>=0?"+":"")+fmt(skew,1)+" pts" : "—", skew == null ? "" : skew > 3 ? "puts bid — downside feared" : skew < 0 ? "calls bid — upside chased" : "balanced", skew == null ? "" : skew > 3 ? "p" : skew < 0 ? "c" : ""),
+      hdr("Regime", c.total > 0 ? "+γ pinned" : "−γ trending", c.total > 0 ? "mean reversion favoured" : "breakouts follow through", c.total > 0 ? "c" : "p"))));
+  // term structure strip
+  if (vs.length) box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,"Implied vol term structure (ATM)"), h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap"}}, vs.slice(0,10).map(v => h("div",{class:"qterm", title:`${v.exp} · 25Δ put ${v.p25?fmt(v.p25*100,1):"—"} / call ${v.c25?fmt(v.c25*100,1):"—"}`}, h("div",{class:"hint"},`${v.exp.slice(5)} · ${v.dte}d`), h("div",{class:"num",style:{fontWeight:600}}, v.atm ? fmt(v.atm*100,1)+"%" : "—"), h("div",{class:"hint",style:{fontSize:"10.5px"}}, v.p25&&v.c25 ? `skew ${((v.p25-v.c25)*100>=0?"+":"")}${fmt((v.p25-v.c25)*100,1)}` : "")))),
+    h("p",{class:"hint",style:{margin:"8px 0 0"}}, vs.length > 1 && vs[0].atm && vs[vs.length-1].atm ? (vs[0].atm > vs[vs.length-1].atm*1.1 ? "Front-end vol is elevated relative to the back: an event or a scare is priced near-term. Short-dated premium is expensive; the back is where you buy time." : "Term structure is normal (upward): no near-term event premium. Buying the front is not being overcharged.") : "")));
+  // inputs
+  const num = (label, key, min, max, step) => h("label",{class:"hint",style:{display:"flex",flexDirection:"column",gap:"3px"}}, label, h("input",{type:"number", min, max, step, value:QD[key], style:{width:"92px",background:"var(--bg)",border:"1px solid var(--rule2)",borderRadius:"4px",padding:"5px 8px",color:"var(--ink)",fontFamily:"var(--mono)"}, onchange:e=>{ QD[key]=Number(e.target.value); QD.mc.clear(); renderTabs(); }}));
+  const chk = (label, key) => h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:QD.structures[key], onchange:e=>{ QD.structures[key]=e.target.checked; renderTabs(); }}), label);
+  box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("div",{style:{display:"flex",gap:"14px",alignItems:"flex-end",flexWrap:"wrap"}},
+    h("div",{class:"grp",style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["bull","Bullish"],["bear","Bearish"],["neutral","Neutral"]].map(([v,l])=>h("button",{type:"button", style:{border:0,background:QD.view===v?"var(--panel2)":"transparent",color:QD.view===v?"var(--ink)":"var(--muted)",padding:"7px 12px",cursor:"pointer",fontWeight:600}, onclick:()=>{QD.view=v; QD.mc.clear(); QD.sel=null; renderTabs();}}, l))),
+    num("Horizon (days)","horizon",1,120,1), num("Stop % of risk","stop",5,100,5), num("Target % of risk","target",10,300,10), num("Min P(profit) %","minPop",0,90,5), num("Max spread %","maxSpread",2,40,1), num("Min DTE","minDte",0,365,1), num("Max DTE","maxDte",1,730,1),
+    h("div",{style:{display:"flex",gap:"10px",flexWrap:"wrap"}}, chk("Long calls","call"), chk("Long puts","put"), chk("Debit spreads","debit"), chk("Credit spreads","credit")))));
+  if (rv == null) box.append(h("div",{class:"notice"},"Realized vol needs price bars. Loading…"));
+  const rows = rankQuant(rvInfo);
+  const legTxt = o => o.legs.map(l => `${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join(" / ") + ` ${o.exp.slice(5)} (${dte(o.exp)}d)`;
+  box.append(h("div",{class:"card"}, h("h2",null,`Ranked structures — ${QD.view} · ${rows.length} pass the filters`),
+    rows.length ? h("div",{style:{overflow:"auto",maxHeight:"46vh"}}, h("table",{class:"data qtab"}, h("thead",null,h("tr",null,["#","Structure","Legs","Cost","Max loss","Max gain","Breakeven","P(ITM) IV","P(ITM) RV","P(profit) RV","EV (RV)","EV / risk","Edge vs IV","Spread","Pos.","Score"].map(x=>h("th",null,x)))),
+      h("tbody",null, rows.map((r,i) => h("tr",{class: QD.sel===i?"sel":"", style:{cursor:"pointer"}, onclick:()=>{ QD.sel = i; renderTabs(); setTimeout(()=>document.querySelector(".qcard")?.scrollIntoView({behavior:"smooth",block:"start"}), 50); }},
+        h("td",null,i+1), h("td",{style:{textAlign:"left",fontWeight:600}},r.kind), h("td",{style:{textAlign:"left"}},legTxt(r)), h("td",null,(r.credit?"+":"")+fmt(Math.abs(r.debit),2)), h("td",{class:"p"},fmt(r.maxLoss,2)), h("td",{class:"c"}, isFinite(r.maxGain)?fmt(r.maxGain,2):"∞"), h("td",null,fmt(r.be,2)),
+        h("td",null,fmt(r.pItmIV*100,0)+"%"), h("td",null,fmt(r.pItmRV*100,0)+"%"), h("td",{class:r.popRV>=0.5?"c":""},fmt(r.popRV*100,0)+"%"), h("td",{class:r.evRV>=0?"c":"p"},(r.evRV>=0?"+":"")+fmt(r.evRV,2)), h("td",{class:r.evr>=0?"c":"p",style:{fontWeight:600}},(r.evr>=0?"+":"")+fmt(r.evr*100,0)+"%"), h("td",{class:r.edge>=0?"c":"p"},(r.edge>=0?"+":"")+fmt(r.edge,2)), h("td",{class:r.spreadPct>0.08?"p":""},fmt(r.spreadPct*100,0)+"%"), h("td",null,"★".repeat(r.posAlign)), h("td",{class:"num",style:{fontWeight:700}},fmt(r.score,0)))))))
+    : h("p",{class:"hint",style:{margin:0}},"Nothing passes. Loosen min P(profit) or max spread, or widen the DTE window."),
+    h("p",{class:"hint",style:{margin:"8px 0 0"}},"P(ITM) IV = what the options market prices (N(d₂)). P(ITM) RV = the same probability using the stock's realized vol instead. EV (RV) = expected payoff at expiry under realized vol, per contract. Edge vs IV = EV under realized minus EV under implied: positive means the market is charging less than the stock's behaviour justifies. Pos. = agreement with walls/flip. Not a forecast — a pricing comparison.")));
+  // selected trade card
+  if (QD.sel != null && rows[QD.sel]) box.append(quantCard(rows[QD.sel], rv));
+  box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"How this works (and what it isn't)"),
+    h("div",{class:"grid2"}, h("div",null, h("p",{style:{margin:"0 0 8px"}},h("b",null,"The desk's edge, simplified.")," Market makers like Citadel Securities and Jane Street don't predict direction. They price every option against a model, quote around it, hedge the delta, and collect the difference between what the market pays and what the risk is worth. The one piece of that you can use as a directional trader is the pricing comparison: ",h("b",null,"is this contract cheap or expensive relative to how the stock actually moves?")," That's the IV-vs-realized column, the Edge column, and the two probabilities side by side."),
+      h("p",{style:{margin:"0 0 8px"}},h("b",null,"Probabilities.")," P(ITM) and P(profit) come from the lognormal model (Black-Scholes world) with zero drift: the implied version uses the option's own IV, the realized version uses the stock's recent realized vol. When realized is below implied, long premium is being overcharged and the RV probability of profit is lower than the IV one makes it look; the reverse when realized is above."),
+      h("p",{style:{margin:0}},h("b",null,"Monte Carlo.")," 3,000 price paths with fat-tailed (Student-t) daily shocks at realized vol, repricing the structure every day, applying your stop and target. It reports how often you hit the target before the stop, how often the position is green at the horizon, and the expected P&L with your rules — which is the number that matters, not the expiry payoff.")),
+     h("div",null, h("p",{style:{margin:"0 0 8px"}},h("b",null,"Sizing.")," Kelly fraction = EV ÷ (risk × variance proxy), shown halved (half-Kelly), capped at your max risk. Desks run a fraction of Kelly because the model is always a little wrong."),
+      h("p",{style:{margin:"0 0 8px"}},h("b",null,"What it isn't.")," No model of order flow, no microstructure, no latency, no inventory — the things that are the actual business of those firms. It also assumes IV stays put; earnings and FOMC break that (use the IV-shift slider on the card). Treat the output as a filter that removes bad-priced trades, not a machine that finds good ones."),
+      h("p",{style:{margin:0,color:"var(--muted)"}},"Not investment advice. Probabilities are model outputs on delayed data.")))));
+  return box;
+}
+function quantCard(o, rv){
+  const c = S.calc, S0 = c.spot; const key = `${o.kind}|${o.exp}|${o.K}|${o.K2||""}|${QD.horizon}|${QD.stop}|${QD.target}`;
+  let mc = QD.mc.get(key); if (!mc){ mc = monteCarlo(o, rv || ivAt(30)*0.9); QD.mc.set(key, mc); }
+  const pb = getPb(), risk$ = pb.account*pb.maxRiskPct/100, perContract = o.risk*100; const stopPerContract = perContract*QD.stop/100;
+  const qty = Math.max(1, Math.floor(risk$ / stopPerContract));
+  const variance = Math.max(1e-6, ((mc.p90 - mc.p10)/2.56)**2); const kelly = Math.max(0, Math.min(0.25, (mc.ev/perContract*100) / (variance/(perContract*perContract/10000)) )); // crude; halved below
+  const halfKelly = kelly/2; const kellyQty = Math.max(0, Math.floor(pb.account*halfKelly / perContract));
+  // payoff diagram
+  const W = 760, H = 260, pad = {l:56,r:16,t:16,b:28}; const lo = S0*0.85, hi = S0*1.15; const xs = []; for (let i = 0; i <= 120; i++) xs.push(lo + (hi-lo)*i/120);
+  const v0 = structValue(o, S0, o.T);
+  const yExp = xs.map(x => payoffAtExpiry(o, x)), yNow = xs.map(x => structValue(o, x, Math.max(0, o.T - Math.min(QD.horizon, dte(o.exp))/365)) - v0);
+  const yMin = Math.min(...yExp, ...yNow), yMax = Math.max(...yExp.filter(isFinite), ...yNow);
+  const X = x => pad.l + (x-lo)/(hi-lo)*(W-pad.l-pad.r), Y = y => H-pad.b - (y-yMin)/((yMax-yMin)||1)*(H-pad.t-pad.b);
+  const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", style:"display:block"});
+  svg.append(svgEl("rect",{x:pad.l,y:pad.t,width:W-pad.l-pad.r,height:H-pad.t-pad.b,fill:"var(--panel)"}));
+  svg.append(svgEl("line",{x1:pad.l,y1:Y(0),x2:W-pad.r,y2:Y(0),stroke:"var(--rule2)"}));
+  // profit/loss fill at expiry
+  const area = xs.map((x,i)=>`${X(x)},${Y(yExp[i])}`).join(" "); svg.append(svgEl("polyline",{points:area, fill:"none", stroke:"#5EEAD4", "stroke-width":2}));
+  svg.append(svgEl("polyline",{points:xs.map((x,i)=>`${X(x)},${Y(yNow[i])}`).join(" "), fill:"none", stroke:"#F5B942", "stroke-width":1.6, "stroke-dasharray":"5 4"}));
+  const vline = (x, col, lbl) => { if (x < lo || x > hi) return; svg.append(svgEl("line",{x1:X(x),y1:pad.t,x2:X(x),y2:H-pad.b,stroke:col,"stroke-dasharray":"3 3"})); const t = svgEl("text",{x:X(x)+3,y:pad.t+11}); t.textContent = lbl; t.style.fill = col; svg.append(t); };
+  vline(S0, "#fff", `spot ${fmt(S0,2)}`); vline(o.be, "#F97066", `BE ${fmt(o.be,2)}`); if (c.callWall) vline(c.callWall.K, "rgba(94,234,212,.7)", "CW"); if (c.putWall) vline(c.putWall.K, "rgba(252,165,165,.7)", "PW");
+  [yMin, 0, yMax].forEach(v => { const t = svgEl("text",{x:pad.l-6,y:Y(v)+4,"text-anchor":"end"}); t.textContent = fmt(v,2); svg.append(t); });
+  [lo, S0, hi].forEach(v => { const t = svgEl("text",{x:X(v),y:H-8,"text-anchor":"middle"}); t.textContent = fmt(v,0); svg.append(t); });
+  // probability cone
+  const sig = rv || ivAt(30); const Hd = Math.min(QD.horizon, dte(o.exp)); const W2 = 760, H2 = 220, p2 = {l:56,r:16,t:14,b:26};
+  const cone = svgEl("svg",{viewBox:`0 0 ${W2} ${H2}`, width:"100%", style:"display:block"});
+  const bands = [[1,"rgba(45,212,191,.18)"],[2,"rgba(45,212,191,.08)"]]; const yLo = S0*Math.exp(-2*sig*Math.sqrt(Hd/252))*0.99, yHi = S0*Math.exp(2*sig*Math.sqrt(Hd/252))*1.01;
+  const X2 = d => p2.l + d/Hd*(W2-p2.l-p2.r), Y2 = v => H2-p2.b - (v-yLo)/((yHi-yLo)||1)*(H2-p2.t-p2.b);
+  for (const [k,col] of bands.reverse()){ const up = [], dn = []; for (let d = 0; d <= Hd; d++){ const s = sig*Math.sqrt(d/252); up.push(`${X2(d)},${Y2(S0*Math.exp(k*s))}`); dn.unshift(`${X2(d)},${Y2(S0*Math.exp(-k*s))}`); } cone.append(svgEl("polygon",{points:[...up,...dn].join(" "), fill:col})); }
+  cone.append(svgEl("line",{x1:p2.l,y1:Y2(S0),x2:W2-p2.r,y2:Y2(S0),stroke:"#fff","stroke-width":1}));
+  const hline = (v, col, lbl) => { if (v < yLo || v > yHi) return; cone.append(svgEl("line",{x1:p2.l,y1:Y2(v),x2:W2-p2.r,y2:Y2(v),stroke:col,"stroke-dasharray":"4 3"})); const t = svgEl("text",{x:W2-p2.r-2,y:Y2(v)-3,"text-anchor":"end"}); t.textContent = `${lbl} ${fmt(v,2)}`; t.style.fill = col; cone.append(t); };
+  hline(o.K, "#F5B942", "strike"); hline(o.be, "#F97066", "breakeven"); if (o.K2) hline(o.K2, "#C084FC", "short strike");
+  [0, Math.round(Hd/2), Hd].forEach(d => { const t = svgEl("text",{x:X2(d),y:H2-8,"text-anchor":"middle"}); t.textContent = d === 0 ? "today" : `+${d}d`; cone.append(t); });
+  [yLo, S0, yHi].forEach(v => { const t = svgEl("text",{x:p2.l-6,y:Y2(v)+4,"text-anchor":"end"}); t.textContent = fmt(v,0); cone.append(t); });
+  const kv = (k,v,cls) => h("div",null, h("span",null,k), h("span",{class:cls||""},v));
+  const ivShiftBox = h("div",{class:"hint"},"");
+  const shiftInput = h("input",{type:"range", min:-20, max:20, step:1, value:0, style:{width:"180px"}, oninput:e=>{ const sh = Number(e.target.value)/100; const v = structValue(o, S0, Math.max(0, o.T - Hd/365), sh) - v0; ivShiftBox.textContent = `IV ${sh>=0?"+":""}${Number(e.target.value)} pts, flat price at +${Hd}d → P&L ${v>=0?"+":""}${fmt(v,2)} (${fmt(v/o.risk*100,0)}% of risk)`; }});
+  const legs = o.legs.map(l => `${l.side>0?"Buy":"Sell"} ${S.sym} ${o.exp} ${fmt(l.K)} ${l.type==="C"?"Call":"Put"} @ ${fmt(l.mid,2)} (δ ${fmt(l.delta,2)}, IV ${fmt((l.iv||0)*100,1)}%, OI ${fmt(l.oi)})`);
+  return h("div",{class:"card qcard"}, h("h2",null,"Trade card"),
+    h("div",{class:"qlegs"}, h("div",{style:{fontSize:"16px",fontWeight:700}}, `${o.kind} · ${S.sym} ${o.exp} · ${dte(o.exp)} DTE`), ...legs.map(t => h("div",{class:"num",style:{fontSize:"12.5px"}}, t))),
+    h("div",{class:"grid2",style:{marginTop:"12px"}},
+      h("div",null, h("h3",{class:"qh3"},"Payoff — expiry (solid) vs at +" + Hd + "d (dashed)"), svg),
+      h("div",null, h("h3",{class:"qh3"},`Probability cone at realized vol (${fmt(sig*100,1)}%) — 1σ and 2σ`), cone)),
+    h("div",{class:"grid2",style:{marginTop:"12px"}},
+      h("div",{class:"kv"}, kv("Cost / risk per contract", `${fmt(Math.abs(o.debit),2)} → ${money(perContract)}`), kv("Max loss", money(o.maxLoss*100), "p"), kv("Max gain", isFinite(o.maxGain)?money(o.maxGain*100):"unlimited", "c"), kv("Breakeven", fmt(o.be,2)), kv("P(ITM) implied / realized", `${fmt(o.pItmIV*100,0)}% / ${fmt(o.pItmRV*100,0)}%`), kv("P(profit at expiry) realized", fmt(o.popRV*100,0)+"%", o.popRV>=0.5?"c":""), kv("EV at expiry (realized)", (o.evRV>=0?"+":"")+fmt(o.evRV,2)+" / contract", o.evRV>=0?"c":"p"), kv("Edge vs implied", (o.edge>=0?"+":"")+fmt(o.edge,2), o.edge>=0?"c":"p")),
+      h("div",{class:"kv"}, kv(`MC: hit +${QD.target}% target before stop`, fmt(mc.pTarget*100,0)+"%", "c"), kv(`MC: hit −${QD.stop}% stop first`, fmt(mc.pStop*100,0)+"%", "p"), kv(`MC: green at +${mc.horizon}d (any)`, fmt(mc.pProfit*100,0)+"%", mc.pProfit>=0.5?"c":""), kv("MC: expected P&L with your rules", (mc.ev>=0?"+":"")+fmt(mc.ev,2)+" / contract", mc.ev>=0?"c":"p"), kv("MC: P&L p10 / p50 / p90", `${fmt(mc.p10,2)} / ${fmt(mc.p50,2)} / ${fmt(mc.p90,2)}`), kv("MC: avg days in trade", fmt(mc.avgDays,1)), kv(`Size at ${pb.maxRiskPct}% risk, ${QD.stop}% stop`, `${qty} contracts (${money(qty*perContract)} premium)`), kv("Half-Kelly size", `${kellyQty} contracts (${fmt(halfKelly*100,1)}% of account)`, kellyQty>0?"c":"p"))),
+    h("div",{style:{marginTop:"12px",display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap"}}, h("span",{class:"hint"},"What if IV moves?"), shiftInput, ivShiftBox),
+    h("p",{style:{margin:"12px 0 0"}}, quantNarrative(o, mc, rv)),
+    h("div",{class:"actions"}, h("button",{class:"btn gold", onclick:()=>{ const pb2 = getPb(); if (pb2.positions.filter(p=>!p.closed).length >= pb2.maxPositions){ notice("Position limit reached.", true); return; } const l = o.legs[0]; pb2.positions.push({sym:S.sym, exp:o.exp, K:l.K, cp:l.type, entry:Math.abs(o.debit), qty, target: o.dir>0 ? (c.callWall?.K||null) : (c.putWall?.K||null), inval: o.dir>0 ? (c.flip||c.putWall?.K||null) : (c.flip||c.callWall?.K||null), thesis:`${o.kind} from the Quant desk: P(profit) ${fmt(o.popRV*100,0)}%, MC target-first ${fmt(mc.pTarget*100,0)}%, EV ${fmt(mc.ev,2)}/contract with ${QD.stop}% stop / ${QD.target}% target.`, opened:Date.now()}); setPb(pb2); notice("Added to Playbook positions."); }},"Add to positions"), h("button",{class:"btn", onclick:()=>{ S.inspect = {exp:o.exp, K:o.K}; S.tab = "heat"; renderTabs(); }},"Open in inspector"), h("span",{class:"hint"},"Delayed data · model output · not advice")));
+}
+function quantNarrative(o, mc, rv){
+  const c = S.calc; const cheap = o.edge > 0; const parts = [];
+  parts.push(`${o.kind} on ${S.sym}: the market prices a ${fmt(o.pItmIV*100,0)}% chance of finishing in the money; the stock's realized vol says ${fmt(o.pItmRV*100,0)}%.`);
+  parts.push(cheap ? `Implied is below realized here, so you're paying less than the movement justifies — that's the kind of mispricing a desk buys.` : `Implied is above realized, so you're paying for more movement than the stock has delivered; the edge is on the seller's side unless a catalyst changes the vol.`);
+  parts.push(`With your rules (stop ${QD.stop}%, target ${QD.target}%, ${mc.horizon}-day horizon) the simulation hits the target first ${fmt(mc.pTarget*100,0)}% of the time and the stop first ${fmt(mc.pStop*100,0)}%, for an expected ${mc.ev>=0?"gain":"loss"} of ${fmt(Math.abs(mc.ev),2)} per contract.`);
+  if (o.posAlign >= 2) parts.push(`Positioning agrees: spot is on the right side of the flip and the strike sits inside the wall.`); else if (o.posAlign === 0) parts.push(`Positioning disagrees: dealers are leaning against this direction at these strikes, so expect the move to be ground out, not gapped.`);
+  if (o.spreadPct > 0.08) parts.push(`Watch the fill — the market is ${fmt(o.spreadPct*100,0)}% wide, which is a real tax on a trade this size.`);
+  return parts.join(" ");
 }
 
 // ---------- Halal: screened universe, movers, purification ----------
