@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 160" width="760" height="160">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#121821"/><stop offset="1" stop-color="#05070A"/></linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8ED4BC"/><stop offset="1" stop-color="#174F4B"/></linearGradient>
+    <radialGradient id="node" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#FFE39A"/><stop offset="1" stop-color="#E0A100"/></radialGradient>
+  </defs>
+  <g transform="translate(8,8) scale(0.5625)">
+    <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+    <rect x="0.5" y="0.5" width="255" height="255" rx="56" fill="none" stroke="#1E2630"/>
+    <rect x="66" y="134" width="28" height="56" rx="6" fill="url(#bar)"/>
+    <rect x="114" y="94" width="28" height="96" rx="6" fill="url(#bar)"/>
+    <rect x="162" y="134" width="28" height="56" rx="6" fill="url(#bar)"/>
+    <rect x="54" y="190" width="148" height="8" rx="4" fill="#F5B942"/>
+    <circle cx="128" cy="78" r="15" fill="url(#node)"/><circle cx="128" cy="78" r="15" fill="none" stroke="#0B0F14" stroke-width="3"/>
+    <circle cx="80" cy="120" r="6" fill="#F5B942" opacity="0.85"/><circle cx="176" cy="120" r="6" fill="#F5B942" opacity="0.85"/>
+  </g>
+  <text x="180" y="92" font-family="Inter, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="64" font-weight="800" letter-spacing="6" fill="#E6E8EC">KING<tspan fill="#8ED4BC">NODE</tspan></text>
+  <text x="184" y="126" font-family="Inter, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="17" font-weight="500" letter-spacing="7" fill="#7B8594">THE LEVEL DEALERS DEFEND</text>
+</svg>
