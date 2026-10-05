@@ -679,12 +679,13 @@ function renderAlertsOld(){
   else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
 }
 function renderTabs(){
-  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["play","Playbook"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
+  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["ideas","Ideas"],["play","Playbook"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
   document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)));
   const p = document.getElementById("panel");
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
   if (S.tab === "seeker") { p.replaceChildren(viewSeeker()); return; }
   if (S.tab === "halal") { p.replaceChildren(viewHalal()); loadHalalQuotes(); return; }
+  if (S.tab === "ideas") { p.replaceChildren(viewIdeas()); return; }
   if (S.tab === "quant") { p.replaceChildren(viewQuant()); if (!S.bars) loadBars(); return; }
   if (S.tab === "play") { p.replaceChildren(viewPlaybook()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
   if (S.tab === "cflow") { p.replaceChildren(viewContractFlow()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
@@ -1524,6 +1525,121 @@ function quantNarrative(o, mc, rv){
   if (o.posAlign >= 2) parts.push(`Positioning agrees: spot is on the right side of the flip and the strike sits inside the wall.`); else if (o.posAlign === 0) parts.push(`Positioning disagrees: dealers are leaning against this direction at these strikes, so expect the move to be ground out, not gapped.`);
   if (o.spreadPct > 0.08) parts.push(`Watch the fill — the market is ${fmt(o.spreadPct*100,0)}% wide, which is a real tax on a trade this size.`);
   return parts.join(" ");
+}
+
+// =====================================================================================================
+// IDEAS — the cross-ticker engine. Scans a universe, pulls each chain + bars, and turns positioning, trend,
+// momentum and vol pricing into a Buy / Trim / Avoid call for the stock, plus the best-priced option structure
+// from the Quant desk for the same view. Halal-aware.
+// =====================================================================================================
+const ID = { universe:"quick", running:false, results:new Map(), at:0, progress:"", halal:false, onlySignals:true };
+const IDEA_UNIVERSES = {
+  quick: () => [...new Set(["SPX","SPY","QQQ","IWM",...QUICK.filter(s=>s!=="VIX")])],
+  halal: () => HALAL_UNIVERSE.filter(r => r[3] !== "fails" && r[2] !== "Halal ETF" && !["GLD","SLV","XLE"].includes(r[0])).map(r => r[0]).slice(0, 36),
+  watch: () => getWatch(),
+};
+function withCalc(calc, bars, fn){ const sc = S.calc, sb = S.bars, ss = S.sym; S.calc = calc; S.bars = bars; S.sym = calc.symbol || ss; try { return fn(); } finally { S.calc = sc; S.bars = sb; S.sym = ss; } }
+async function fetchChainAny(sym){
+  try { let r = await fetch(`/api/chain?symbol=${encodeURIComponent(sym)}`).catch(()=>null); if (!r || r.status === 404 || (r.headers.get("content-type")||"").includes("text/html")) r = await cboeDirect(sym); if (r && r.ok){ const j = await r.json(); if (j.rows?.length) return j; } } catch {}
+  return null;
+}
+async function fetchBarsAny(sym){
+  try { const r = await fetch(`/api/bars?symbol=${sym}&interval=1d&range=6mo`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) return j.bars; } } catch {}
+  const got = await cboeBars(sym, "1d", "6mo"); return got?.bars || null;
+}
+function emaArr(v, n){ return ema(v, n); }
+function analyzeTicker(sym, chain, daily){
+  const exps = [...new Set(chain.rows.map(r=>r[0]))].sort().slice(0, 6);
+  const calc = computeFrom({...chain, symbol:sym}, exps, 8, S.set.model); calc.symbol = sym;
+  const spot = calc.spot; const closes = daily ? daily.map(b=>b[4]) : [];
+  const e21 = closes.length > 25 ? emaArr(closes,21).at(-1) : null, e50 = closes.length > 55 ? emaArr(closes,50).at(-1) : null;
+  const r14 = closes.length > 16 ? rsi(closes,14).at(-1) : null;
+  const chg1 = closes.length > 1 ? closes.at(-1)/closes.at(-2)-1 : (chain.changePct||0)/100, chg5 = closes.length > 6 ? closes.at(-1)/closes.at(-6)-1 : null, chg20 = closes.length > 21 ? closes.at(-1)/closes.at(-21)-1 : null;
+  const rvInfo = daily && daily.length > 12 ? realizedVol(daily) : null; const rv = rvInfo?.rv || null;
+  const iv30 = withCalc(calc, daily, () => ivAt(30)); const vrp = rv != null ? iv30 - rv : null;
+  const aboveFlip = calc.flip ? spot > calc.flip : null; const posG = calc.total > 0;
+  const cw = calc.callWall?.K, pw = calc.putWall?.K; const toCW = cw ? cw/spot-1 : null, toPW = pw ? 1-pw/spot : null;
+  const trendUp = e21 && e50 ? (spot > e21 && e21 > e50) : (chg20 != null ? chg20 > 0 : null);
+  const trendDown = e21 && e50 ? (spot < e21 && e21 < e50) : (chg20 != null ? chg20 < 0 : null);
+  const pullback = e21 ? Math.abs(spot/e21-1) < 0.015 : false; const extended = e21 ? spot/e21-1 > 0.04 : chg5 != null && chg5 > 0.06;
+  const reasons = []; let signal = "Watch", score = 0, view = "neutral";
+  // --- equity rules ---
+  if (trendUp){ score += 25; reasons.push("uptrend (price > 21 EMA > 50 EMA)"); view = "bull"; }
+  if (trendDown){ score -= 25; reasons.push("downtrend (price < 21 EMA < 50 EMA)"); view = "bear"; }
+  if (aboveFlip === true){ score += 10; reasons.push(`above gamma flip ${fmt(calc.flip)}`); } else if (aboveFlip === false){ score -= 10; reasons.push(`below gamma flip ${fmt(calc.flip)}`); }
+  if (posG){ score += 5; reasons.push("dealers long gamma — dips bought"); } else { reasons.push("dealers short gamma — moves extend"); }
+  if (toPW != null && toPW < 0.02 && toPW >= 0){ score += 12; reasons.push(`put wall ${fmt(pw)} within ${fmt(toPW*100,1)}% below — support under you`); }
+  if (toCW != null && toCW < 0.01 && toCW >= 0){ score -= 10; reasons.push(`at the call wall ${fmt(cw)} — resistance`); }
+  if (pullback && trendUp){ score += 12; reasons.push("pullback to the 21 EMA in an uptrend"); }
+  if (extended){ score -= 12; reasons.push("extended above the 21 EMA — chase risk"); }
+  if (r14 != null){ if (r14 < 35){ score += 8; reasons.push(`RSI ${fmt(r14,0)} — washed out`); } else if (r14 > 72){ score -= 10; reasons.push(`RSI ${fmt(r14,0)} — overbought`); } }
+  if (chg1 > 0.04){ score -= 6; reasons.push(`+${fmt(chg1*100,1)}% today — don't chase`); } if (chg1 < -0.04 && trendUp){ score += 6; reasons.push(`${fmt(chg1*100,1)}% today inside an uptrend — buy-low candidate`); }
+  if (vrp != null){ if (vrp > 0.04) reasons.push(`options rich (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — prefer spreads / shares`); else if (vrp < -0.02) reasons.push(`options cheap (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — long premium works`); }
+  if (score >= 30) signal = "Buy"; else if (score >= 15) signal = "Accumulate"; else if (score <= -25) signal = "Avoid / short"; else if (score <= -10) signal = "Trim";
+  if (signal === "Watch" && view === "neutral") view = chg20 != null && chg20 > 0 ? "bull" : "bear";
+  // --- equity plan ---
+  const entry = signal === "Buy" || signal === "Accumulate" ? (pullback || !e21 ? spot : Math.max(e21, pw||0)) : null;
+  const stop = entry ? (pw && pw < entry ? Math.min(pw*0.995, e50 || pw*0.995) : (e50 || entry*0.95)) : null;
+  const target = entry ? (cw && cw > entry*1.01 ? cw : entry*1.06) : null;
+  // --- option structure from the quant engine ---
+  let best = null;
+  try { best = withCalc(calc, daily, () => { const saveView = QD.view; QD.view = view === "bear" ? "bear" : "bull"; const rows = rankQuant(rvInfo); QD.view = saveView; return rows[0] || null; }); } catch {}
+  return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, trendUp, trendDown, aboveFlip, posG, cw, pw, flip:calc.flip, iv30, rv, vrp, score, signal, view, reasons, entry, stop, target, best, halal:halalStatus(sym), at:Date.now() };
+}
+async function runIdeas(){
+  if (ID.running) return; ID.running = true; const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
+  let done = 0;
+  for (const sym of syms){
+    const cached = ID.results.get(sym); if (cached && Date.now() - cached.at < 10*60e3){ done++; continue; }
+    ID.progress = `${done+1}/${syms.length} · ${sym}`; if (S.tab === "ideas") renderTabs();
+    const [chain, daily] = await Promise.all([fetchChainAny(sym), fetchBarsAny(sym)]);
+    if (chain){ try { ID.results.set(sym, analyzeTicker(sym, chain, daily)); } catch(e){ console.warn("ideas", sym, e); } }
+    else if (S.demo){ try { const demo = synthChain(sym); ID.results.set(sym, {...analyzeTicker(sym, demo, synthBars(demo.spot,"1d")), demo:true}); } catch(e){ console.error("ideas demo", sym, e.message, e.stack); } }
+    done++;
+  }
+  ID.running = false; ID.progress = ""; ID.at = Date.now(); if (S.tab === "ideas") renderTabs();
+}
+function viewIdeas(){
+  const box = h("div",null);
+  const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
+  const rows = syms.map(s => ID.results.get(s)).filter(Boolean).sort((a,b)=>Math.abs(b.score)-Math.abs(a.score));
+  const shown = rows.filter(r => !ID.onlySignals || r.signal !== "Watch");
+  box.append(h("div",{class:"qhead"}, h("div",null, h("div",{class:"qtitle"},"Ideas — what to buy, trim, and avoid"), h("div",{class:"hint"},"Scans the universe, pulls every chain and six months of bars, and scores each name on trend, pullback, dealer positioning (flip, walls, gamma sign), momentum, RSI and vol pricing. Equities get an entry/stop/target off the levels; options get the best-priced structure from the Quant desk for the same view.")),
+    h("div",{style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}},
+      h("div",{class:"grp",style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["quick","Indices + majors"],["halal","Halal universe"],["watch","My watchlist"]].map(([v,l])=>h("button",{type:"button", style:{border:0,background:ID.universe===v?"var(--panel2)":"transparent",color:ID.universe===v?"var(--ink)":"var(--muted)",padding:"7px 12px",cursor:"pointer",fontWeight:600}, onclick:()=>{ID.universe=v; renderTabs();}}, l))),
+      h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:ID.halal, onchange:e=>{ID.halal=e.target.checked; renderTabs();}}), "☪ halal only"),
+      h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:ID.onlySignals, onchange:e=>{ID.onlySignals=e.target.checked; renderTabs();}}), "hide Watch"),
+      h("button",{class:"btn gold", disabled:ID.running, onclick:runIdeas}, ID.running ? `Scanning ${ID.progress}` : rows.length ? "Rescan" : `Scan ${syms.length} tickers`))));
+  if (!rows.length && !ID.running) box.append(h("div",{class:"empty"},"Press Scan. Each ticker is one chain pull and one bars pull; the indices-and-majors set takes about half a minute on the free feed."));
+  if (ID.running) box.append(h("div",{class:"notice"},`Scanning… ${ID.progress}`));
+  const sigCls = s => s === "Buy" ? "c" : s === "Accumulate" ? "c" : s.startsWith("Avoid") ? "p" : s === "Trim" ? "p" : "";
+  if (shown.length){
+    box.append(h("div",{class:"card"}, h("h2",null,`${shown.length} ideas · ranked by conviction · ${ID.at ? "scanned " + new Date(ID.at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`),
+      h("div",{style:{overflow:"auto"}}, h("table",{class:"data qtab"}, h("thead",null,h("tr",null,["Ticker","☪","Signal","Score","Spot","Today","5d","RSI","Regime","Flip","Put wall","Call wall","IV / RV","Equity plan","Option idea",""].map(x=>h("th",null,x)))),
+        h("tbody",null, shown.map(r => h("tr",{style:{cursor:"pointer"}, onclick:()=>goSym(r.sym)},
+          h("td",{style:{fontWeight:700,textAlign:"left"}}, r.sym, r.demo ? h("span",{class:"badge demo",style:{marginLeft:"6px"}},"demo") : null, h("div",{class:"hint",style:{fontWeight:400}}, r.name)),
+          h("td",{class: r.halal.s==="excluded"?"p":r.halal.s==="passes"?"c":"", title:r.halal.why}, r.halal.s==="excluded"?"✕":r.halal.s==="passes"?"✓":r.halal.s==="mixed"?"±":"~"),
+          h("td",{class:sigCls(r.signal), style:{fontWeight:700,textAlign:"left"}}, r.signal), h("td",{class:r.score>=0?"c":"p"}, (r.score>0?"+":"")+r.score), h("td",null,fmt(r.spot,2)), h("td",{class:r.chg1>=0?"c":"p"},pct(r.chg1*100)), h("td",{class:(r.chg5||0)>=0?"c":"p"}, r.chg5!=null?pct(r.chg5*100):"—"), h("td",{class: r.rsi>70?"p":r.rsi<35?"c":""}, r.rsi!=null?fmt(r.rsi,0):"—"),
+          h("td",{class:r.posG?"c":"p"}, r.posG ? "+γ" : "−γ"), h("td",{class: r.aboveFlip===true?"c":r.aboveFlip===false?"p":""}, r.flip?fmt(r.flip):"—"), h("td",null,r.pw?fmt(r.pw):"—"), h("td",null,r.cw?fmt(r.cw):"—"), h("td",{class: r.vrp==null?"":r.vrp>0.04?"p":r.vrp<-0.02?"c":""}, r.vrp!=null ? `${fmt(r.iv30*100,0)} / ${fmt(r.rv*100,0)}` : fmt(r.iv30*100,0)+" / —"),
+          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.entry ? `buy ~${fmt(r.entry,2)} · stop ${fmt(r.stop,2)} · tgt ${fmt(r.target,2)}` : r.signal==="Trim" || r.signal.startsWith("Avoid") ? `sell into ${r.cw?fmt(r.cw):"strength"} · reclaim ${r.flip?fmt(r.flip):"—"}` : "—"),
+          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.best ? `${r.best.kind}: ${r.best.legs.map(l=>`${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join("/")} ${r.best.exp.slice(5)} · P(profit) ${fmt(r.best.popRV*100,0)}% · EV/risk ${(r.best.evr>=0?"+":"")+fmt(r.best.evr*100,0)}%` : "—"),
+          h("td",null, h("button",{class:"btn small", onclick:ev=>{ ev.stopPropagation(); showIdea(r); }},"Why")))))))));
+  }
+  if (rows.length && !shown.length) box.append(h("div",{class:"empty"},"Everything scanned is a Watch right now — nothing extended enough to trim or set up enough to buy. Untick \"hide Watch\" to see them."));
+  if (ID.sel) box.append(ideaCard(ID.sel));
+  box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"The rules, in plain terms"),
+    h("div",{class:"grid2"}, h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Buy")," = uptrend (price above a rising 21-EMA above the 50) + sitting near the 21-EMA or just above a put wall + above the gamma flip + not extended, not overbought, not up 4% today. Those are the buy-low-in-an-uptrend conditions, with dealers positioned to buy the dip with you."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Accumulate")," = most of that, missing one piece — a starter size, add on confirmation."), h("p",{style:{margin:0}},h("b",null,"Trim")," = extended above the 21-EMA, or pinned at the call wall, or RSI over 72. Take profits into strength; dealers are selling there too.")),
+      h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Avoid / short")," = downtrend, below the flip, dealers short gamma — the tape where dips don't get bought."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Option idea")," = the Quant desk's top-ranked structure for the same direction: best EV per dollar of risk under realized vol, after the probability and spread filters. When IV is rich relative to realized, it leans to spreads; when cheap, to outright calls or puts."), h("p",{style:{margin:0,color:"var(--muted)"}},"Equity entries use the levels: entry near the 21-EMA or the put wall, stop under the put wall or the 50-EMA, target at the call wall. Not advice; a rules engine on delayed data.")))));
+  return box;
+}
+function showIdea(r){ ID.sel = r; renderTabs(); setTimeout(()=>document.querySelector(".ideacard")?.scrollIntoView({behavior:"smooth",block:"start"}), 50); }
+function ideaCard(r){
+  return h("div",{class:"card ideacard",style:{marginTop:"12px",borderColor:"var(--gold)"}}, h("h2",null,`Why ${r.sym} is a ${r.signal}`),
+    h("ul",{style:{margin:"0 0 10px",paddingLeft:"18px",lineHeight:"1.6"}}, r.reasons.map(x => h("li",null,x))),
+    h("div",{class:"grid2"}, h("div",{class:"kv"}, h("div",null,h("span",null,"Spot"),h("span",null,fmt(r.spot,2))), h("div",null,h("span",null,"21 / 50 EMA"),h("span",null,`${r.e21?fmt(r.e21,2):"—"} / ${r.e50?fmt(r.e50,2):"—"}`)), h("div",null,h("span",null,"20-day change"),h("span",{class:(r.chg20||0)>=0?"c":"p"}, r.chg20!=null?pct(r.chg20*100):"—")), h("div",null,h("span",null,"Levels (PW / flip / CW)"),h("span",null,`${r.pw?fmt(r.pw):"—"} / ${r.flip?fmt(r.flip):"—"} / ${r.cw?fmt(r.cw):"—"}`)), h("div",null,h("span",null,"IV30 / realized / VRP"),h("span",null, r.rv!=null ? `${fmt(r.iv30*100,1)}% / ${fmt(r.rv*100,1)}% / ${(r.vrp>=0?"+":"")+fmt(r.vrp*100,1)}` : fmt(r.iv30*100,1)+"% / —"))),
+      h("div",{class:"kv"}, r.entry ? [h("div",null,h("span",null,"Equity entry"),h("span",null,fmt(r.entry,2))), h("div",null,h("span",null,"Stop"),h("span",{class:"p"},fmt(r.stop,2))), h("div",null,h("span",null,"Target"),h("span",{class:"c"},fmt(r.target,2))), h("div",null,h("span",null,"Risk : reward"),h("span",null, fmt((r.target-r.entry)/(r.entry-r.stop),1)+" : 1"))] : h("div",null,h("span",null,"Equity plan"),h("span",null,"no long entry under current rules")),
+        r.best ? h("div",null,h("span",null,"Option idea"),h("span",null,`${r.best.kind} ${r.best.legs.map(l=>`${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join("/")} ${r.best.exp}`)) : null)),
+    h("div",{class:"actions"}, h("button",{class:"btn gold", onclick:()=>{ goSym(r.sym); setTimeout(()=>{ S.tab = "quant"; QD.view = r.view==="bear"?"bear":"bull"; renderTabs(); }, 900); }},"Open in Quant desk"), h("button",{class:"btn", onclick:()=>{ const l = getWatch(); if (!l.includes(r.sym)){ l.push(r.sym); setWatch(l); notice(`${r.sym} added to the watchlist.`); } }},"+ Watch"), h("span",{class:"hint"}, `☪ ${r.halal.s} — ${r.halal.why}`)));
 }
 
 // ---------- Halal: screened universe, movers, purification ----------
