@@ -498,7 +498,7 @@ async function load(){
   if (S.chain && S.chain.symbol !== data.symbol){ S.inspect = null; S.inst = null; }
   if (!demo && S.chain && !S.demo) recordDerived(S.chain, data);
   S.chain = data; S.demo = demo; S.err = "";
-  S.allExps = [...new Set(data.rows.map(r => r[0]))].sort();
+  S.allExps = liveExps([...new Set(data.rows.map(r => r[0]))].sort());
   if (!S.exps.length || !S.exps.every(e => S.allExps.includes(e))) S.exps = S.allExps.slice(0, isPro() ? S.set.expCount : Math.min(4, S.set.expCount));
   compute(); renderAll(); checkAlerts();
   if (S.bars && !S.barsDemo && S.barsMeta && S.barsMeta.sym === S.sym && Date.now() - (S.barsAt||0) > 55000) loadBars(); else mountChart();
@@ -595,7 +595,10 @@ function flowSignMap(){
   const out = new Map(); for (const [k,a] of agg){ if (a.ask + a.bid < 25000) continue; out.set(k, a.ask > a.bid ? -1 : 1); } return out;
 }
 function compute(){ if (S.set.model === "flow") S.chain.flowSign = flowSignMap(); S.calc = computeFrom(S.chain, S.exps, S.set.range, S.set.model); recordHistory(); recordTracked(); recordSeeker(); trackLevelTests(); }
+function etNowParts(){ const et = new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"})); return { ymd: `${et.getFullYear()}-${String(et.getMonth()+1).padStart(2,"0")}-${String(et.getDate()).padStart(2,"0")}`, min: et.getHours()*60+et.getMinutes() }; }
+function liveExps(exps){ const { ymd, min } = etNowParts(); return exps.filter(e => e > ymd || (e === ymd && min < 16*60)); }
 function computeFrom(d, expsSel, range, model){
+  { const live = liveExps([...new Set(d.rows.map(r=>r[0]))]); if (live.length && live.length < new Set(d.rows.map(r=>r[0])).size){ const keep = new Set(live); d = {...d, rows: d.rows.filter(r => keep.has(r[0]))}; expsSel = expsSel.filter(e => keep.has(e)); if (!expsSel.length) expsSel = live.slice(0, 4); } }
   const spot = d.spot, mult = 100 * spot * spot * 0.01; // $ gamma per 1% move
   const byCell = new Map(), byStrike = new Map(), byExp = new Map();
   const hi = spot * (1 + range/100), lo = spot * (1 - range/100);
@@ -819,19 +822,9 @@ function renderAll(){
 }
 function renderAsk(){
   const box = document.getElementById("askBox"); box.replaceChildren();
-  const inp = h("input",{placeholder: "Ask Ava: e.g. “Is 7,700 likely to hold into Friday?”", "aria-label":"Ask the desk"});
+  const inp = h("input",{placeholder: "Ask Ava: e.g. “Is 7,700 likely to hold into Friday?”", "aria-label":"Ask Ava"});
   const out = h("div",{class:"answer"});
-  const go = async () => {
-    if (requirePro("Ask the desk turns the positioning into a plain-English answer to your question.")) return;
-    const q = inp.value.trim(); if (!q) return;
-    out.textContent = "Thinking…";
-    const c = S.calc;
-    const ctx = `Ticker ${S.sym}, spot ${c.spot.toFixed(2)}, net dealer gamma ${money(c.total)} (${c.total>0?"positive":"negative"}). Call wall ${c.callWall?.K}, put wall ${c.putWall?.K}, gamma flip ${c.flip}, max pain ${c.maxPain} (${c.near}). Expected moves: ${c.em.map(e=>`${e.exp} ±${e.move.toFixed(1)} (${e.pct.toFixed(2)}%)`).join("; ")}. Top nodes: ${c.top.map(t=>`${t.K} ${t.exp} ${money(t.gex)}`).join("; ")}. Fresh positioning: ${c.fresh.slice(0,8).map(f=>`${f.K}${f.type} ${f.exp} vol ${f.vol} oi ${f.oi}`).join("; ")}. Data is 15-min delayed${S.demo?" and is DEMO data":""}.`;
-    try {
-      const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, tier:"quick", prompt:`You are an options market-structure analyst on a trading desk. Using ONLY the dealer-positioning snapshot below, answer the trader's question in under 120 words, concrete and level-specific. Note that positioning is context, not a prediction, and that this is not financial advice — one short clause, not a paragraph.\n\nSNAPSHOT\n${ctx}\n\nQUESTION\n${q}`})});
-      const txt = await r.text(); out.textContent = r.ok ? txt : "The desk isn't available right now.";
-    } catch { out.textContent = "Couldn't reach the desk."; }
-  };
+  const go = async () => { const q = inp.value.trim(); if (!q) return; out.textContent = "Ava is reading the screen…"; const a = await ediAsk(q); out.textContent = a.text; EDI.log.push({role:"user",text:q},{role:"assistant",text:a.text}); try { localStorage.setItem("kingnode:edi", JSON.stringify(EDI.log.slice(-40))); } catch {} };
   inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
   box.append(h("div",{class:"ask"}, inp, h("button",{class:"btn small", onclick:go},"Ask")), out);
 }

@@ -12,7 +12,7 @@ function grab(name) {
   let i = js.indexOf(`function ${name}(`); if (i >= 0) { let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } } return js.slice(i, j + 1); }
   i = js.indexOf(`const ${name} = `); if (i < 0) throw new Error("not found " + name); const j = js.indexOf("\n", i); return js.slice(i, j);
 }
-const src = [grab("erf"), grab("dte"), grab("computeFrom"), grab("bsPrice")].join("\n");
+const src = [grab("erf"), grab("dte"), grab("etNowParts"), grab("liveExps"), grab("computeFrom"), grab("bsPrice")].join("\n");
 const ctx = { Math, Date, Number, Map, Set, Array, Object, isFinite, console, S: { set: { freshMinVol: 500, freshRatio: 1.5 } } };
 vm.createContext(ctx); vm.runInContext(src + "\nthis.computeFrom = computeFrom; this.bsPrice = bsPrice; this.erf = erf;", ctx);
 
@@ -55,6 +55,12 @@ test("Black-Scholes sanity", () => {
   assert.ok(Math.abs(call - put) < 1e-9, "put-call parity at r=0");
   assert.ok(call > 3.9 && call < 4.1, "ATM 3-month 20% vol ≈ 3.99");
   assert.equal(ctx.bsPrice(120, 100, 0, 0.2, "C"), 20, "intrinsic at expiry");
+});
+test("expired expiries are dropped", () => {
+  const past = new Date(); past.setDate(past.getDate() - 3); const old = past.toISOString().slice(0, 10);
+  const ch = chain(); ch.rows.push([old, "C", 100, 999999, 100, 0.2, 0.05, 0.5, 1, 1.1, 1.05]);
+  const c = ctx.computeFrom(ch, [old, d(30)], 15, "standard");
+  assert.ok(!c.byExp.has(old), "an expired date never reaches the map");
 });
 test("server levels agree with the app on the walls", () => {
   const l = computeLevels(chain(), 3, 15);

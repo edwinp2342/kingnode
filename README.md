@@ -1,6 +1,10 @@
 # Kingnode
 
-A dealer-positioning and institutional-flow terminal for options traders — gamma heatmap, call/put walls, gamma flip, max pain, expected move, IV skew and fresh positioning — with a plain-English read on top. Every ticker and expiration, alerts, CSV export and "Ask the desk".
+A personal options terminal. It reads the options chain the way a dealer desk does and shows where price gets pinned (dealers long gamma) and where it accelerates (dealers short), who is positioned where (the king node), and whether the trade you want is priced fairly. Around that: a flow tape, a rules engine (Ideas, backtested), a market-maker-style pricing desk (Quant), a journal with a coach, a book with stress tests, a macro calendar with notifications, a halal screen, and Ava, a desk assistant that knows the screen.
+
+**Run it:** https://edwinp2342.github.io/kingnode/app.html (install from the browser as an app; see DESKTOP.md). Data: a GitHub Actions loop snapshots Cboe (chains, 15-min delayed) and Yahoo (bars/quotes, near real-time, pre/after-hours) about once a minute to the `data` branch; the site reads from there. Options: a Cloudflare proxy (proxy/), the desktop server (desktop/), or a vendor key for real-time (LIVE.md).
+
+**Tests:** `node --test test/` (math) and `python3 test/smoke.py` (every tab in a headless browser). CI runs the math tests on push. `node scripts/backtest.mjs` re-runs the Ideas validation.
 
 ## Files
 
