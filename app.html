@@ -367,6 +367,11 @@ async function tapeFromCboe(sym){
 async function loadTape(){
   let got = [];
   try { const r = await fetch(`/api/quotes?symbols=${TAPE.join(",")}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); got = (j.quotes||[]).filter(q => q && !q.error && q.price); } } catch {}
+  if (!got.length && (S.set.proxy||"").trim()){
+    const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",XSP:"^GSPC"};
+    const res = await Promise.all(TAPE.filter(s=>s!=="XSP").map(async sym => { try { const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=1m&range=1d&includePrePost=true`); if (!r || !r.ok) return null; const j = await r.json(); const res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) return null; const cl = res0.indicators?.quote?.[0]?.close||[], ts = res0.timestamp||[]; let last = +m.regularMarketPrice||0, lastT = (m.regularMarketTime||0)*1000; for (let i = cl.length-1; i >= 0; i--) if (cl[i] != null){ last = cl[i]; lastT = ts[i]*1000; break; } return {symbol:sym, price:+m.regularMarketPrice||last, prev:+(m.chartPreviousClose ?? m.previousClose ?? last), last, state:m.marketState||null, t:lastT, src:"proxy"}; } catch { return null; } }));
+    got = res.filter(Boolean); const spx = got.find(q=>q.symbol==="SPX"); if (spx) got.push({...spx, symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10});
+  }
   if (!got.length){ const snap = await snapshotJson("quotes.json", 10); if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot"})); }
   if (!got.length){
     const syms = TAPE.filter(s => s !== "XSP");
@@ -396,7 +401,8 @@ function renderTape(){
   const once = items.map(chip), twice = items.map(chip);
   el.className = "tape-in anim"; el.replaceChildren(...once, ...twice);
 }
-setInterval(() => { if (document.visibilityState === "visible") loadTape(); }, 30000);
+setInterval(() => { if (document.visibilityState === "visible" && (S.set.proxy||"").trim()) loadTape(); }, 10000);
+setInterval(() => { if (document.visibilityState === "visible" && !(S.set.proxy||"").trim()) loadTape(); }, 30000);
 
 // ---------- main chart host (built-in) ----------
 function mountChart(){ const host = document.getElementById("tvChart"); if (!host) return; host.replaceChildren(h("div",{class:"tvfb"}, viewChart())); if (!S.bars) loadBars(); }
@@ -408,7 +414,9 @@ async function load(){
   let data = null, demo = false;
   try {
     let r = await fetch(`/api/chain?symbol=${encodeURIComponent(sym)}${S.token ? "&token=" + encodeURIComponent(S.token) : ""}`).catch(() => null);
-    if (!r || r.status === 404 || (r.headers.get("content-type")||"").includes("text/html")) { const snap = await snapshotJson(`${sym}.json`, 40); r = snap ? { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => ({...snap, source: (snap.source||"cboe") + " · snapshot"}) } : await cboeDirect(sym); }
+    if (!r || r.status === 404 || (r.headers.get("content-type")||"").includes("text/html")) {
+      if ((S.set.proxy||"").trim()) r = await cboeDirect(sym);
+      if (!r || !r.ok){ const snap = await snapshotJson(`${sym}.json`, 40); r = snap ? { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => ({...snap, source: (snap.source||"cboe") + " · snapshot"}) } : await cboeDirect(sym); } }
     if (!r.ok) throw 0;
     data = await r.json();
     if (!data.rows || !data.rows.length) throw 0;
@@ -979,6 +987,7 @@ async function loadBars(){
   const ext = S.set.extended && iv !== "1d";
   let got = null;
   try { const r = await fetch(`/api/bars?symbol=${sym}&interval=${iv}&range=${rg}&extended=${ext?1:0}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) got = j; } } catch {}
+  if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
   if (!got){ const snap = await snapshotJson(iv === "1d" ? `${sym}-daily.json` : `${sym}-bars.json`, iv === "1d" ? 24*60 : 20); if (snap && snap.bars?.length){ let bars = snap.bars; if (iv !== "1d" && iv !== "5m"){ const mins = {"1m":5,"15m":15,"30m":30,"1h":60}[iv]||5; if (mins > 5){ const out = []; let cur = null; for (const b of bars){ const bk = Math.floor(b[0]/(mins*60000))*mins*60000; if (!cur || cur[0] !== bk){ cur = [bk,b[1],b[2],b[3],b[4],b[5]]; out.push(cur); } else { cur[2]=Math.max(cur[2],b[2]); cur[3]=Math.min(cur[3],b[3]); cur[4]=b[4]; cur[5]+=b[5]; } } bars = out; } } got = { bars, source:"snapshot", session:snap.session||null }; } }
   if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
   if (!got) got = await cboeBars(sym, iv, rg);
