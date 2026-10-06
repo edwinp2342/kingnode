@@ -249,12 +249,13 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
 .jc-m{border:1px solid var(--rule); background:transparent; border-radius:4px; padding:4px 2px; cursor:pointer; text-align:center; font-size:11px}
 .jc-m.cur{border-color:var(--gold)}
 @media (max-width:700px){ .jc-months{grid-template-columns:repeat(6,1fr)} .jc-cell{min-height:46px; padding:3px} .jc-p{font-size:10.5px} }
+body:not(.showhelp) .helptext{display:none !important}
 .layopt{display:flex !important; flex-direction:row !important; justify-content:flex-start !important; align-items:center !important; gap:8px; font-size:13px; padding:4px 0}
 .sk-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; align-items:center}
 .sk-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
 @media (max-width:980px){ .sk-body{flex-direction:column} .ladder{width:100%} }
 .chartctl-mobile{margin:6px 0} .chartctl-mobile summary{cursor:pointer; color:var(--muted); font-size:12px; padding:4px 0}
-@media (max-width:700px){ .sk-head{flex-wrap:wrap; gap:6px} .sk-title{display:none} .tvfb svg{max-height:none !important} #tvChart{height:auto; min-height:0} .symrow{gap:8px} #symName{font-size:13px} .quote .px{font-size:18px} }
+@media (max-width:700px){ .sk-head{flex-wrap:wrap; gap:6px} .sk-title{display:none} .tvfb svg{max-height:none !important} #tvChart{height:auto; min-height:0} .symrow{gap:8px} #symName{font-size:13px} .quote .px{font-size:18px} table.hsg td{min-width:74px; font-size:10.5px; padding:0 6px} .qkpis{width:100%} .qk{min-width:0; flex:1 1 40%} .grid2{grid-template-columns:1fr} .data{font-size:11px} .card{padding:10px} .tabs-secondary .tab{padding:5px 9px; font-size:12px} .tab-g{padding:8px 10px 10px; font-size:11px} }
 @media (max-width:980px){ .work{grid-template-columns:1fr} .main{border-right:0} .chips{max-width:100%} #tvChart{height:52vh} .grid2{grid-template-columns:1fr} .sym input{width:200px} .sug{min-width:280px} #tvQuote{min-width:200px} .setgrid,.plans2{grid-template-columns:1fr} }
 </style>
 </head>
@@ -293,6 +294,16 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
   </aside>
 </div>
 <div class="tip" id="tip"></div>
+<dialog id="startDlg"><div class="dlg"><h2>Start here</h2>
+<p>Kingnode reads the options chain the way a dealer desk does and shows you where price gets pinned and where it accelerates.</p>
+<ol style="line-height:1.7;padding-left:20px;margin:8px 0 12px">
+<li><b>Pick a ticker</b> (top bar or the quick list). The chart shows the walls and flip; the right rail reads them for you.</li>
+<li><b>Map → Heatseeker</b>: the grid is strike × expiration, the ladder on the right says buy / sell / don't fade per level. ★ is the king node.</li>
+<li><b>Trade → Playbook</b>: your rules (risk %, stop %, DTE) and your positions. <b>Desk → Journal</b> logs every trade with the chain attached and coaches you from the data.</li>
+<li>Hide anything you don't use with <b>Customize</b>. Turn explanations off with <b>Help</b> once you know the screens.</li>
+</ol>
+<p class="hint">Data is 15-minute delayed on the free feed. Ideas and the Quant desk are labeled LABS: useful, measured where possible, not proven. Nothing here is advice.</p>
+<div class="actions"><button class="btn gold" id="startDone" type="button">Got it</button></div></div></dialog>
 <dialog id="layDlg"><div class="dlg"><h2>Customize Kingnode</h2><p class="hint">Hide what you don't use. Everything can be turned back on here.</p><div id="layBody"></div><div class="actions"><button class="btn gold" id="layDone" type="button">Done</button> <button class="btn" id="layReset" type="button">Show everything</button></div></div></dialog>
 <dialog id="setDlg"><form method="dialog" id="setForm">
   <h2>Settings</h2>
@@ -301,7 +312,7 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
     <label>Refresh every (sec)<input name="refreshSec" type="number" min="15" max="600"></label>
     <label>Expirations shown by default<input name="expCount" type="number" min="1" max="20"></label>
     <label>Strike range ±%<input name="range" type="number" min="1" max="40" step="0.5"></label>
-    <label>Dealer model<select name="model"><option value="standard">Long calls / short puts</option><option value="short">Short everything (magnitude)</option></select></label>
+    <label>Dealer model<select name="model"><option value="standard">Long calls / short puts (standard)</option><option value="flow">Flow-inferred (tape decides each contract)</option><option value="short">Short everything (magnitude)</option></select></label>
     <label>Alert distance (% from level)<input name="alertPct" type="number" min="0.05" max="2" step="0.05"></label>
     <label>Fresh positioning: min vol/OI<input name="freshRatio" type="number" min="0.5" max="20" step="0.1"></label>
     <label>Fresh positioning: min volume<input name="freshMinVol" type="number" min="0" max="100000"></label>
@@ -347,6 +358,11 @@ const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(
   set:loadSettings(), sym:"SPX", chain:null, bars:null, barsMeta:null, barsDemo:false, demo:false, err:"", tab:"seeker", hview:"net", inspect:null, exps:[], allExps:[], plan:null, token:"", exp:0, timer:null, lastAlert:{}, calc:null };
 
 // ---------- helpers ----------
+// localStorage guard: on quota errors, drop old derived tapes, Heatseeker days and chain snapshots, then retry once.
+(function(){ const orig = Storage.prototype.setItem; Storage.prototype.setItem = function(k, v){ try { return orig.call(this, k, v); } catch (e) { if (!/quota/i.test(String(e))) throw e;
+  const today = new Date().toISOString().slice(0,10); const drop = []; for (let i = 0; i < this.length; i++){ const key = this.key(i); if (/^kingnode:(dflow|seeker|hist|prevchain):/.test(key) && !key.includes(today)) drop.push(key); }
+  drop.forEach(d => this.removeItem(d));
+  try { return orig.call(this, k, v); } catch { console.warn("storage full, dropped", k); } } }; })();
 function h(tag, attrs, ...kids){
   const el = document.createElement(tag);
   if (attrs) for (const [k,v] of Object.entries(attrs)){
@@ -545,7 +561,12 @@ function synthChain(sym){
 function erf(x){ const s = Math.sign(x); x = Math.abs(x); const t = 1/(1+0.3275911*x); const y = 1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x); return s*y; }
 
 // ---------- math ----------
-function compute(){ S.calc = computeFrom(S.chain, S.exps, S.set.range, S.set.model); recordHistory(); recordTracked(); recordSeeker(); trackLevelTests(); }
+function flowSignMap(){
+  const tr = (S.flow?.trades||[]).filter(t => t.u === S.sym); if (!tr.length) return null;
+  const agg = new Map(); for (const t of tr){ const k = `${t.exp}|${t.cp}|${t.K}`; const a = agg.get(k) || {ask:0, bid:0}; if (t.side === "A") a.ask += t.prem; else if (t.side === "B") a.bid += t.prem; agg.set(k, a); }
+  const out = new Map(); for (const [k,a] of agg){ if (a.ask + a.bid < 25000) continue; out.set(k, a.ask > a.bid ? -1 : 1); } return out;
+}
+function compute(){ if (S.set.model === "flow") S.chain.flowSign = flowSignMap(); S.calc = computeFrom(S.chain, S.exps, S.set.range, S.set.model); recordHistory(); recordTracked(); recordSeeker(); trackLevelTests(); }
 function computeFrom(d, expsSel, range, model){
   const spot = d.spot, mult = 100 * spot * spot * 0.01; // $ gamma per 1% move
   const byCell = new Map(), byStrike = new Map(), byExp = new Map();
@@ -557,7 +578,9 @@ function computeFrom(d, expsSel, range, model){
     if (!expsSel.includes(exp)) continue;
     // Standard dealer model: dealers are long calls (positive gamma) and short puts (negative gamma).
     // "Net short" model treats dealers as short everything customers bought: both signs negative → magnitude only.
-    const sign = model === "standard" ? (type === "C" ? 1 : -1) : -1;
+    // "flow" model infers inventory from the tape: contracts customers net-bought at the ask → dealers short (−); net-sold → dealers long (+); no prints → standard.
+    const fs = model === "flow" && d.flowSign ? d.flowSign.get(`${exp}|${type}|${K}`) : undefined;
+    const sign = fs !== undefined ? fs : model === "standard" || model === "flow" ? (type === "C" ? 1 : -1) : -1;
     const gex = sign * gamma * oi * mult;
     // Vanna (dDelta/dVol) and dealer delta from Black-Scholes with r=0, using the quoted IV.
     const T = Math.max(0.5, dte(exp)) / 365, sig = iv > 0 ? iv : 0.2, sq = sig * Math.sqrt(T);
@@ -582,8 +605,10 @@ function computeFrom(d, expsSel, range, model){
   const callWall = strikes.reduce((a,s)=> s.K > spot*1.002 && s.cG > (a?.cG||0) ? s : a, null);
   const putWall = strikes.reduce((a,s)=> s.K < spot*0.998 && s.pG > (a?.pG||0) ? s : a, null);
   // Gamma flip: strike where cumulative net GEX (from the low end) changes sign, nearest to spot.
-  let cum = 0, flip = null, best = Infinity, prev = null;
-  for (const s of strikes){ cum += s.gex; if (prev !== null && Math.sign(cum) !== Math.sign(prev) && prev !== 0){ if (Math.abs(s.K - spot) < best){ best = Math.abs(s.K-spot); flip = s.K; } } prev = cum; }
+  let cum = 0, flip = null, best = Infinity, prev = null, prevK = null, crossings = 0, flipConf = "none";
+  for (const s of strikes){ cum += s.gex; if (prev !== null && Math.sign(cum) !== Math.sign(prev) && prev !== 0){ const f = prevK + (s.K - prevK) * (Math.abs(prev) / (Math.abs(prev) + Math.abs(cum) || 1)); // linear zero crossing
+      if (Math.abs(f - spot) / spot < 0.06) crossings++; if (Math.abs(f - spot) < best){ best = Math.abs(f - spot); flip = +f.toFixed(2); } } prev = cum; prevK = s.K; }
+  if (flip != null){ const mag = Math.abs(cum) / Math.max(1, strikes.reduce((a,x)=>a+Math.abs(x.gex),0)); flipConf = crossings > 1 ? "low — several zero crossings near spot" : mag < 0.05 ? "low — net gamma is nearly flat" : "ok"; }
   // Max pain for nearest expiry
   const near = expsSel[0];
   const nearC = contracts.filter(c => c.exp === near);
@@ -603,7 +628,7 @@ function computeFrom(d, expsSel, range, model){
   const top = cells.slice(0, 5);
   // Fresh positioning: volume vs OI
   const fresh = contracts.filter(c => c.vol >= S.set.freshMinVol && c.oi > 0 && c.vol/c.oi >= S.set.freshRatio).map(c => ({...c, ratio:c.vol/c.oi, notional:c.vol*c.mid*100})).sort((a,b)=>b.notional-a.notional).slice(0, 40);
-  return { spot, strikes, byCell, byExp, allContracts, total, totalVex, totalDex, vexPeak, callWall, putWall, flip, maxPain, near, em, top, fresh, contracts, maxAbs: Math.max(1, ...cells.map(c=>Math.abs(c.gex))) };
+  return { spot, strikes, byCell, byExp, allContracts, total, totalVex, totalDex, vexPeak, callWall, putWall, flip, flipConf, maxPain, near, em, top, fresh, contracts, maxAbs: Math.max(1, ...cells.map(c=>Math.abs(c.gex))) };
 }
 
 // ---------- intraday history of the levels (per ticker, per day, in this browser) ----------
@@ -751,8 +776,8 @@ function renderAll(){
   document.getElementById("regime").replaceChildren(
     h("div",{class:"regime "+(c.total>0?"pos":"neg")}, h("b",null, c.total > 0 ? "Positive gamma — dampened" : "Negative gamma — amplified"), h("span",{class:"hint"}, "GEX ", money(c.total), " per 1% move")),
     h("div",{class:"regime "+(c.totalVex>0?"pos":"neg")}, h("b",null, c.totalVex > 0 ? "Positive vanna — vol down lifts price" : "Negative vanna — vol down pressures price"), h("span",{class:"hint"}, "VEX ", money(c.totalVex), " per 1 vol pt", c.vexPeak ? ` · peak at ${fmt(c.vexPeak.K)}` : "")));
-  const HELP = {"Call wall":"Strike above spot with the most call gamma. Dealers sell into rallies here, so it tends to cap price. A break above can squeeze.","Put wall":"Strike below spot with the most put gamma. First real support; losing it tends to accelerate selling.","Gamma flip":"Where net dealer gamma changes sign. Above it, hedging dampens moves; below it, hedging amplifies them.","Max pain":"Strike where the most options expire worthless for the nearest expiration. Price often drifts toward it into expiry.","Vanna peak":"Strike where vanna exposure is largest. When IV drops, dealer hedging near this strike moves price most — the classic post-event 'vanna rally' level.","Charm into close":"Estimated dealer delta that must be bought or sold as one day of time passes on the 0–3 DTE expiries. Positive = buying pressure into the close (the 3:30 ramp mechanism).","Walls held this month":"Every time spot came within 0.15% of a wall while the tab was open, the app recorded whether it held (moved 0.4% away) or broke (0.3% through).","Chain spot":"The underlying price the options data was priced against (15-min delayed on the free feed).","Expected move":"What the ATM straddle says the market is pricing for the nearest expiration, as ± points."};
-  const L = [["Chain spot", c.spot, S.demo ? "demo" : "options data, delayed"],["Call wall", c.callWall?.K, c.callWall ? money(c.callWall.cG) + " call gamma" : ""],["Put wall", c.putWall?.K, c.putWall ? money(c.putWall.pG) + " put gamma" : ""],["Gamma flip", c.flip, "regime changes here"],["Vanna peak", c.vexPeak?.K, c.vexPeak ? money(c.vexPeak.vex) + " VEX" : ""],["Max pain", c.maxPain, c.near],["Expected move", c.em[0] ? "±" + fmt(c.em[0].move,1) : null, c.em[0] ? `${fmt(c.em[0].pct,2)}% into ${c.em[0].exp}` : ""]];
+  const HELP = {"Call wall":"Strike above spot with the most call gamma. Dealers sell into rallies here, so it tends to cap price. A break above can squeeze.","Put wall":"Strike below spot with the most put gamma. First real support; losing it tends to accelerate selling.","Gamma flip":"Where net dealer gamma changes sign. Above it, hedging dampens moves; below it, hedging amplifies them.","Max pain":"Strike where the most options expire worthless for the nearest expiration. Price often drifts toward it into expiry.","Vanna peak":"Strike where vanna exposure is largest. When IV drops, dealer hedging near this strike moves price most — the classic post-event 'vanna rally' level.","Dealer model":"How the app decides which side dealers are on. Standard assumes dealers are long calls and short puts (customers sell covered calls, buy protective puts). Flow-inferred uses the tape: where customers net-bought a contract at the ask, dealers are short it. The model is the biggest assumption in positioning analysis; the two will disagree on put-heavy chains.","Charm into close":"Estimated dealer delta that must be bought or sold as one day of time passes on the 0–3 DTE expiries. Positive = buying pressure into the close (the 3:30 ramp mechanism).","Walls held this month":"Every time spot came within 0.15% of a wall while the tab was open, the app recorded whether it held (moved 0.4% away) or broke (0.3% through).","Chain spot":"The underlying price the options data was priced against (15-min delayed on the free feed).","Expected move":"What the ATM straddle says the market is pricing for the nearest expiration, as ± points."};
+  const L = [["Chain spot", c.spot, S.demo ? "demo" : "options data, delayed"],["Call wall", c.callWall?.K, c.callWall ? money(c.callWall.cG) + " call gamma" : ""],["Put wall", c.putWall?.K, c.putWall ? money(c.putWall.pG) + " put gamma" : ""],["Gamma flip", c.flip, c.flipConf && c.flipConf !== "ok" ? "confidence " + c.flipConf : "regime changes here"],["Dealer model", S.set.model === "flow" ? "flow-inferred" : S.set.model === "standard" ? "standard" : "short-all", S.set.model === "flow" ? `${(S.chain.flowSign?.size||0)} contracts inferred from the tape, rest standard` : "assumed, not estimated — switch to flow-inferred in ⚙ once the tape has prints"],["Vanna peak", c.vexPeak?.K, c.vexPeak ? money(c.vexPeak.vex) + " VEX" : ""],["Max pain", c.maxPain, c.near],["Expected move", c.em[0] ? "±" + fmt(c.em[0].move,1) : null, c.em[0] ? `${fmt(c.em[0].pct,2)}% into ${c.em[0].exp}` : ""]];
   const lt = getLT(), hf = hedgeFlows();
   L.push(["Charm into close", money(hf.charm), hf.charm >= 0 ? "dealers buy delta as the day decays (0–3 DTE)" : "dealers sell delta as the day decays (0–3 DTE)"]);
   if (lt.cw.t || lt.pw.t) L.push(["Walls held this month", `${lt.pw.h}/${lt.pw.t} put · ${lt.cw.h}/${lt.cw.t} call`, "tests recorded while the tab was open"]);
@@ -824,9 +849,10 @@ function renderTabs(){
   const groups = TAB_GROUPS.map(g => ({...g, tabs: g.tabs.filter(id => T.some(([x]) => x === id))})).filter(g => g.tabs.length);
   const tabsEl = document.getElementById("tabs");
   tabsEl.replaceChildren(
-    h("div",{class:"tabs-primary"}, ...groups.map(g => h("button",{class:"tab-g", role:"tab", "aria-selected":String(g.name===curGroup), onclick:()=>{ if (g.name !== curGroup){ S.tab = g.tabs[0]; renderTabs(); } }}, g.name)), h("button",{class:"tab-g util", title:"Choose which tabs and cards you see", onclick:openCustomize},"Customize")),
+    h("div",{class:"tabs-primary"}, h("button",{class:"tab-g util", style:{marginLeft:"0",order:"99"}, title:"Show or hide the explanations", "aria-pressed":String(document.body.classList.contains("showhelp")), onclick:()=>{ document.body.classList.toggle("showhelp"); try{ localStorage.setItem("kingnode:help", document.body.classList.contains("showhelp") ? "1" : "0"); }catch{} renderTabs(); }}, document.body.classList.contains("showhelp") ? "Help: on" : "Help"), ...groups.map(g => h("button",{class:"tab-g", role:"tab", "aria-selected":String(g.name===curGroup), onclick:()=>{ if (g.name !== curGroup){ S.tab = g.tabs[0]; renderTabs(); } }}, g.name)), h("button",{class:"tab-g util", title:"Choose which tabs and cards you see", onclick:openCustomize},"Customize")),
     h("div",{class:"tabs-secondary"}, ...(groups.find(g => g.name === curGroup)?.tabs || []).map(id => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, label[id]))));
   const p = document.getElementById("panel");
+  queueMicrotask(() => { for (const el of p.querySelectorAll("p.hint, span.hint, div.hint")) if ((el.textContent||"").length > 150) el.classList.add("helptext"); });
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
   if (S.tab === "seeker") { p.replaceChildren(viewSeeker()); return; }
   if (S.tab === "halal") { p.replaceChildren(viewHalal()); loadHalalQuotes(); return; }
@@ -1476,7 +1502,7 @@ function viewSeeker(){
     h("select",{class:"sk-sel", onchange:e=>{S.set.range=Number(e.target.value); saveSettings(); renderTabs();}}, [2,3,4,6,8,12].map(v=>h("option",{value:v, selected:S.set.range===v}, "±"+v+"%"))),
     h("select",{class:"sk-sel", onchange:e=>{HSG.exps=Number(e.target.value); renderTabs();}}, [4,6,8,10,12].map(v=>h("option",{value:v, selected:HSG.exps===v}, v+" expiries"))),
     h("span",{class:"sk-title"}, S.sym, h("span",{class:"hint"}, ` · ${ {gex:"gamma exposure, $ per 1% move",vex:"vanna exposure, $ delta per 1 vol pt",dex:"dealer delta, $"}[mode] }`)),
-    h("span",{style:{flex:1}}), S.demo ? h("span",{class:"badge demo"},"Demo data") : h("span",{class:"hint"},"chain " + new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})),
+    h("span",{style:{flex:1}}), S.demo ? h("span",{class:"badge demo"},"Demo data") : h("span",{class:"hint", title:"Open interest is settled once a day by the OCC; intraday changes you see are volume, not OI. Walls move at the open, not during the session."},"chain " + new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) + " · OI as of prior close"),
     h("button",{class:"btn small", onclick:()=>{ SK.full = !SK.full; renderTabs(); }}, SK.full ? "Exit" : "Full screen")));
   const tip = document.getElementById("tip");
   const th = (txt, cls) => h("th",{class:cls||""}, txt);
@@ -1596,7 +1622,7 @@ function viewQuant(){
   const near = vs.find(v => v.dte >= 20) || vs[0]; const skew = near && near.p25 && near.c25 ? (near.p25 - near.c25)*100 : null;
   const hdr = (k,v,sub,cls) => h("div",{class:"qk"}, h("div",{class:"hint"},k), h("div",{class:"num qv "+(cls||"")},v), sub ? h("div",{class:"hint",style:{fontSize:"11px"}},sub) : null);
   box.append(h("div",{class:"qhead"},
-    h("div",null, h("div",{class:"qtitle"},"Quant desk"), h("div",{class:"hint"},`${S.sym} · ${fmt(c.spot,2)} · pricing the chain the way a market maker does: what the market implies vs what the tape has done, probability by two measures, expected value per dollar of risk, then your exit rules simulated.`)),
+    h("div",null, h("div",{class:"qtitle"},"Quant desk ", h("span",{class:"badge",style:{verticalAlign:"middle",marginLeft:"6px"}},"LABS · model output, not validated")), h("div",{class:"hint"},`${S.sym} · ${fmt(c.spot,2)} · pricing the chain the way a market maker does: what the market implies vs what the tape has done, probability by two measures, expected value per dollar of risk, then your exit rules simulated.`)),
     h("div",{class:"qkpis"},
       hdr("IV (30d ATM)", fmt(iv30*100,1)+"%", "what the market charges"),
       hdr("Realized vol", rv != null ? fmt(rv*100,1)+"%" : "—", rvInfo ? rvInfo.basis : "needs bars", ""),
@@ -1730,7 +1756,7 @@ function analyzeTicker(sym, chain, daily){
   const cw = calc.callWall?.K, pw = calc.putWall?.K; const toCW = cw ? cw/spot-1 : null, toPW = pw ? 1-pw/spot : null;
   const trendUp = e21 && e50 ? (spot > e21 && e21 > e50) : (chg20 != null ? chg20 > 0 : null);
   const trendDown = e21 && e50 ? (spot < e21 && e21 < e50) : (chg20 != null ? chg20 < 0 : null);
-  const pullback = e21 ? Math.abs(spot/e21-1) < 0.015 : false; const extended = e21 ? spot/e21-1 > 0.04 : chg5 != null && chg5 > 0.06;
+  const pullback = e21 ? Math.abs(spot/e21-1) < 0.025 : false; const extended = e21 ? spot/e21-1 > 0.04 : chg5 != null && chg5 > 0.06; const redDay = chg1 < 0 && chg1 > -0.04;
   const reasons = []; let signal = "Watch", score = 0, view = "neutral";
   // --- equity rules ---
   if (trendUp){ score += 25; reasons.push("uptrend (price > 21 EMA > 50 EMA)"); view = "bull"; }
@@ -1739,17 +1765,18 @@ function analyzeTicker(sym, chain, daily){
   if (posG){ score += 5; reasons.push("dealers long gamma — dips bought"); } else { reasons.push("dealers short gamma — moves extend"); }
   if (toPW != null && toPW < 0.02 && toPW >= 0){ score += 12; reasons.push(`put wall ${fmt(pw)} within ${fmt(toPW*100,1)}% below — support under you`); }
   if (toCW != null && toCW < 0.01 && toCW >= 0){ score -= 10; reasons.push(`at the call wall ${fmt(cw)} — resistance`); }
-  if (pullback && trendUp){ score += 12; reasons.push("pullback to the 21 EMA in an uptrend"); }
+  if (pullback && trendUp){ score += 12; reasons.push("pullback to the 21 EMA in an uptrend"); if (redDay){ score += 10; reasons.push("red day inside the uptrend — the entry the backtest pays (buy low)"); } else { score -= 6; reasons.push("green day — backtest says wait for a red one"); } }
+  if (r14 != null && r14 >= 55 && trendUp && pullback){ score -= 8; reasons.push(`RSI ${fmt(r14,0)} — not reset enough (backtest wants < 55)`); }
   if (extended){ score -= 12; reasons.push("extended above the 21 EMA — chase risk"); }
   if (r14 != null){ if (r14 < 35){ score += 8; reasons.push(`RSI ${fmt(r14,0)} — washed out`); } else if (r14 > 72){ score -= 10; reasons.push(`RSI ${fmt(r14,0)} — overbought`); } }
   if (chg1 > 0.04){ score -= 6; reasons.push(`+${fmt(chg1*100,1)}% today — don't chase`); } if (chg1 < -0.04 && trendUp){ score += 6; reasons.push(`${fmt(chg1*100,1)}% today inside an uptrend — buy-low candidate`); }
   if (vrp != null){ if (vrp > 0.04) reasons.push(`options rich (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — prefer spreads / shares`); else if (vrp < -0.02) reasons.push(`options cheap (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — long premium works`); }
-  if (score >= 30) signal = "Buy"; else if (score >= 15) signal = "Accumulate"; else if (score <= -25) signal = "Avoid / short"; else if (score <= -10) signal = "Trim";
+  if (score >= 30) signal = "Buy"; else if (score >= 15) signal = "Accumulate"; else if (score <= -25) signal = "Avoid / short"; else if (score <= -10) signal = "Extended";
   if (signal === "Watch" && view === "neutral") view = chg20 != null && chg20 > 0 ? "bull" : "bear";
   // --- equity plan ---
   const entry = signal === "Buy" || signal === "Accumulate" ? (pullback || !e21 ? spot : Math.max(e21, pw||0)) : null;
-  const stop = entry ? (pw && pw < entry ? Math.min(pw*0.995, e50 || pw*0.995) : (e50 || entry*0.95)) : null;
-  const target = entry ? (cw && cw > entry*1.01 ? cw : entry*1.06) : null;
+  const stop = entry ? Math.min(e50 || entry*0.94, entry*0.94, pw && pw < entry ? pw*0.995 : Infinity) : null;
+  const target = entry ? (cw && cw > entry*1.01 ? Math.min(cw, entry*1.08) : entry*1.08) : null;
   // --- option structure from the quant engine ---
   let best = null;
   try { best = withCalc(calc, daily, () => { const saveView = QD.view; QD.view = view === "bear" ? "bear" : "bull"; const rows = rankQuant(rvInfo); QD.view = saveView; return rows[0] || null; }); } catch {}
@@ -1773,15 +1800,16 @@ function viewIdeas(){
   const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
   const rows = syms.map(s => ID.results.get(s)).filter(Boolean).sort((a,b)=>Math.abs(b.score)-Math.abs(a.score));
   const shown = rows.filter(r => !ID.onlySignals || r.signal !== "Watch");
-  box.append(h("div",{class:"qhead"}, h("div",null, h("div",{class:"qtitle"},"Ideas — what to buy, trim, and avoid"), h("div",{class:"hint"},"Scans the universe, pulls every chain and six months of bars, and scores each name on trend, pullback, dealer positioning (flip, walls, gamma sign), momentum, RSI and vol pricing. Equities get an entry/stop/target off the levels; options get the best-priced structure from the Quant desk for the same view.")),
+  box.append(h("div",{class:"qhead"}, h("div",null, h("div",{class:"qtitle"},"Ideas — what to buy, trim, and avoid ", h("span",{class:"badge",style:{verticalAlign:"middle",marginLeft:"6px"}},"LABS · backtested rules below")), h("div",{class:"hint"},"Scans the universe, pulls every chain and six months of bars, and scores each name on trend, pullback, dealer positioning (flip, walls, gamma sign), momentum, RSI and vol pricing. Equities get an entry/stop/target off the levels; options get the best-priced structure from the Quant desk for the same view.")),
     h("div",{style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}},
       h("div",{class:"grp",style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["quick","Indices + majors"],["halal","Halal universe"],["watch","My watchlist"]].map(([v,l])=>h("button",{type:"button", style:{border:0,background:ID.universe===v?"var(--panel2)":"transparent",color:ID.universe===v?"var(--ink)":"var(--muted)",padding:"7px 12px",cursor:"pointer",fontWeight:600}, onclick:()=>{ID.universe=v; renderTabs();}}, l))),
       h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:ID.halal, onchange:e=>{ID.halal=e.target.checked; renderTabs();}}), "☪ halal only"),
       h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:ID.onlySignals, onchange:e=>{ID.onlySignals=e.target.checked; renderTabs();}}), "hide Watch"),
       h("button",{class:"btn gold", disabled:ID.running, onclick:runIdeas}, ID.running ? `Scanning ${ID.progress}` : rows.length ? "Rescan" : `Scan ${syms.length} tickers`))));
+  box.append(backtestCard());
   if (!rows.length && !ID.running) box.append(h("div",{class:"empty"},"Press Scan. Each ticker is one chain pull and one bars pull; the indices-and-majors set takes about half a minute on the free feed."));
   if (ID.running) box.append(h("div",{class:"notice"},`Scanning… ${ID.progress}`));
-  const sigCls = s => s === "Buy" ? "c" : s === "Accumulate" ? "c" : s.startsWith("Avoid") ? "p" : s === "Trim" ? "p" : "";
+  const sigCls = s => s === "Buy" ? "c" : s === "Accumulate" ? "c" : s.startsWith("Avoid") ? "p" : s === "Extended" ? "p" : "";
   if (shown.length){
     box.append(h("div",{class:"card"}, h("h2",null,`${shown.length} ideas · ranked by conviction · ${ID.at ? "scanned " + new Date(ID.at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`),
       h("div",{style:{overflow:"auto"}}, h("table",{class:"data qtab"}, h("thead",null,h("tr",null,["Ticker","☪","Signal","Score","Spot","Today","5d","RSI","Regime","Flip","Put wall","Call wall","IV / RV","Equity plan","Option idea",""].map(x=>h("th",null,x)))),
@@ -1790,16 +1818,27 @@ function viewIdeas(){
           h("td",{class: r.halal.s==="excluded"?"p":r.halal.s==="passes"?"c":"", title:r.halal.why}, r.halal.s==="excluded"?"✕":r.halal.s==="passes"?"✓":r.halal.s==="mixed"?"±":"~"),
           h("td",{class:sigCls(r.signal), style:{fontWeight:700,textAlign:"left"}}, r.signal), h("td",{class:r.score>=0?"c":"p"}, (r.score>0?"+":"")+r.score), h("td",null,fmt(r.spot,2)), h("td",{class:r.chg1>=0?"c":"p"},pct(r.chg1*100)), h("td",{class:(r.chg5||0)>=0?"c":"p"}, r.chg5!=null?pct(r.chg5*100):"—"), h("td",{class: r.rsi>70?"p":r.rsi<35?"c":""}, r.rsi!=null?fmt(r.rsi,0):"—"),
           h("td",{class:r.posG?"c":"p"}, r.posG ? "+γ" : "−γ"), h("td",{class: r.aboveFlip===true?"c":r.aboveFlip===false?"p":""}, r.flip?fmt(r.flip):"—"), h("td",null,r.pw?fmt(r.pw):"—"), h("td",null,r.cw?fmt(r.cw):"—"), h("td",{class: r.vrp==null?"":r.vrp>0.04?"p":r.vrp<-0.02?"c":""}, r.vrp!=null ? `${fmt(r.iv30*100,0)} / ${fmt(r.rv*100,0)}` : fmt(r.iv30*100,0)+" / —"),
-          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.entry ? `buy ~${fmt(r.entry,2)} · stop ${fmt(r.stop,2)} · tgt ${fmt(r.target,2)}` : r.signal==="Trim" || r.signal.startsWith("Avoid") ? `sell into ${r.cw?fmt(r.cw):"strength"} · reclaim ${r.flip?fmt(r.flip):"—"}` : "—"),
+          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.entry ? `buy ~${fmt(r.entry,2)} · stop ${fmt(r.stop,2)} · tgt ${fmt(r.target,2)}` : r.signal==="Extended" || r.signal.startsWith("Avoid") ? `sell into ${r.cw?fmt(r.cw):"strength"} · reclaim ${r.flip?fmt(r.flip):"—"}` : "—"),
           h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.best ? `${r.best.kind}: ${r.best.legs.map(l=>`${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join("/")} ${r.best.exp.slice(5)} · P(profit) ${fmt(r.best.popRV*100,0)}% · EV/risk ${(r.best.evr>=0?"+":"")+fmt(r.best.evr*100,0)}%` : "—"),
           h("td",null, h("button",{class:"btn small", onclick:ev=>{ ev.stopPropagation(); showIdea(r); }},"Why")))))))));
   }
   if (rows.length && !shown.length) box.append(h("div",{class:"empty"},"Everything scanned is a Watch right now — nothing extended enough to trim or set up enough to buy. Untick \"hide Watch\" to see them."));
   if (ID.sel) box.append(ideaCard(ID.sel));
   box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"The rules, in plain terms"),
-    h("div",{class:"grid2"}, h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Buy")," = uptrend (price above a rising 21-EMA above the 50) + sitting near the 21-EMA or just above a put wall + above the gamma flip + not extended, not overbought, not up 4% today. Those are the buy-low-in-an-uptrend conditions, with dealers positioned to buy the dip with you."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Accumulate")," = most of that, missing one piece — a starter size, add on confirmation."), h("p",{style:{margin:0}},h("b",null,"Trim")," = extended above the 21-EMA, or pinned at the call wall, or RSI over 72. Take profits into strength; dealers are selling there too.")),
+    h("div",{class:"grid2"}, h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Buy")," = uptrend (price above a rising 21-EMA above the 50) + within 2.5% of the 21-EMA + a red day (buy low) + RSI under 55 + above the gamma flip or above a put wall. The backtest card shows what that rule did."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Accumulate")," = most of that, missing one piece — a starter size, add on confirmation."), h("p",{style:{margin:0}},h("b",null,"Extended")," = more than 4% above the 21-EMA, at the call wall, or RSI over 72. Information only: the backtest found no edge in selling it.")),
       h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Avoid / short")," = downtrend, below the flip, dealers short gamma — the tape where dips don't get bought."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Option idea")," = the Quant desk's top-ranked structure for the same direction: best EV per dollar of risk under realized vol, after the probability and spread filters. When IV is rich relative to realized, it leans to spreads; when cheap, to outright calls or puts."), h("p",{style:{margin:0,color:"var(--muted)"}},"Equity entries use the levels: entry near the 21-EMA or the put wall, stop under the put wall or the 50-EMA, target at the call wall. Not advice; a rules engine on delayed data.")))));
   return box;
+}
+const BT = { data:null, tried:false };
+function backtestCard(){
+  if (!BT.tried){ BT.tried = true; fetch("data-static/backtest.json").then(r => r.ok ? r.json() : null).then(j => { BT.data = j; if (S.tab === "ideas") renderTabs(); }).catch(()=>{}); }
+  const b = BT.data; if (!b) return h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,"Backtest"), h("p",{class:"hint",style:{margin:0}},"Loading the validation numbers…"));
+  const c = b.chosen.summary, base = b.baseline.summary;
+  const pctf = v => v == null ? "—" : (v*100).toFixed(1) + "%";
+  return h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,`Backtest — the Buy rule on ${c.symbols} tickers, ${b.period}`),
+    h("div",{class:"grid2"}, h("div",{class:"kv"}, h("div",null,h("span",null,"Trades"),h("span",null,c.n)), h("div",null,h("span",null,"Win rate"),h("span",{class:c.winRate>=0.5?"c":""},pctf(c.winRate))), h("div",null,h("span",null,"Avg per trade"),h("span",{class:c.avgRet>0?"c":"p"},pctf(c.avgRet))), h("div",null,h("span",null,"Avg win / loss"),h("span",null,`${pctf(c.avgWin)} / ${pctf(c.avgLoss)}`)), h("div",null,h("span",null,"Profit factor"),h("span",{class:c.profitFactor>=1.3?"c":""},c.profitFactor?.toFixed(2))), h("div",null,h("span",null,"Exits (stop / target / time)"),h("span",null,`${c.byExit.stop} / ${c.byExit.target} / ${c.byExit.time}`)), h("div",null,h("span",null,"Avg days held"),h("span",null,c.avgDays?.toFixed(1)))),
+      h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"What it says."),` Buying an uptrend pullback only on a red day (RSI under 55, within 2.5% of the 21-EMA), stop 6% or the 50-EMA, target 8%, 15-day limit: ${pctf(c.winRate)} wins, ${pctf(c.avgRet)} per trade, profit factor ${c.profitFactor?.toFixed(2)}. The same entry taken on any day (the first version of these rules) made ${pctf(base.avgRet)} per trade at profit factor ${base.profitFactor?.toFixed(2)}. The red-day requirement is the edge, which is your buy-low rule measured.`), h("p",{style:{margin:0}},h("b",null,"What it doesn't say."),` The "Extended" flag has no edge: after it fires, the next five days average ${pctf(c.trimFwd5)} and are down only ${pctf(c.trimDownPct)} of the time — a coin flip. It's shown as information, not a sell signal. Positioning (walls, flip) isn't in the backtest because there's no chain history yet; it's additive, unmeasured. One year, one regime, ${c.symbols} mostly large names: treat as a sanity check, not proof.`))),
+    h("p",{class:"hint",style:{margin:"8px 0 0"}},`Re-run anytime: node scripts/backtest.mjs. Last run ${new Date(b.at).toLocaleDateString()}.`));
 }
 function showIdea(r){ ID.sel = r; renderTabs(); setTimeout(()=>document.querySelector(".ideacard")?.scrollIntoView({behavior:"smooth",block:"start"}), 50); }
 function ideaCard(r){
@@ -2329,6 +2368,8 @@ document.getElementById("settingsBtn").onclick = () => { const f = document.getE
 document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer(); S.exps = []; load(); });
 document.getElementById("exportFlags").onclick = () => { let log = []; try { log = JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch {} const txt = log.map(f => `${new Date(f.t).toLocaleString()}\n${f.note}\n${f.ctx}\n`).join("\n") || "No flags yet."; const a = h("a",{href:URL.createObjectURL(new Blob([txt],{type:"text/plain"})), download:"kingnode-flags.txt"}); document.body.append(a); a.click(); a.remove(); };
 document.getElementById("openCustomize").onclick = () => { document.getElementById("setDlg").close(); openCustomize(); };
+try { if (!localStorage.getItem("kingnode:seen")){ setTimeout(() => document.getElementById("startDlg").showModal(), 800); } } catch {}
+document.getElementById("startDone").onclick = () => { document.getElementById("startDlg").close(); try { localStorage.setItem("kingnode:seen","1"); } catch {} };
 document.getElementById("layDone").onclick = () => document.getElementById("layDlg").close();
 document.getElementById("layReset").onclick = () => { setLayout({}); applyLayout(); renderTabs(); openCustomize(); };
 document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; saveSettings(); document.getElementById("setDlg").close(); S.exps = []; load(); };
@@ -2336,6 +2377,7 @@ document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTARE
 document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
+try { if (localStorage.getItem("kingnode:help") === "1" || !localStorage.getItem("kingnode:seen")) document.body.classList.add("showhelp"); } catch {}
 window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; applyLayout(); renderChips(); renderPlan(); loadTape();
 { try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});

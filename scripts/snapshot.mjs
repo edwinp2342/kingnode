@@ -53,8 +53,16 @@ async function cycle(n) {
     }
   }
   fs.writeFileSync("data/index.json", JSON.stringify({ at: Date.now(), cycle: n, ok, fail }));
+  await watchdog(n, ok, fail);
   console.log(`cycle ${n} · ${((Date.now() - t0) / 1000).toFixed(1)}s · quotes ${quotes.length} · chains ${ok.length}${fail.length ? " · fail " + fail.join(" ") : ""}`);
   if (PUSH) push();
+}
+let badStreak = 0;
+async function watchdog(n, ok, fail) {
+  const hook = process.env.DISCORD_WEBHOOK; const chainCycle = n % 3 === 0;
+  const spxDown = chainCycle && !ok.includes("SPX"); const manyFails = fail.length > 12;
+  if (spxDown || manyFails) badStreak++; else badStreak = 0;
+  if (badStreak === 2 && hook) { try { await fetch(hook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: `⚠️ Kingnode feed: ${spxDown ? "SPX chain failed twice in a row" : fail.length + " fetch failures"} (cycle ${n}). ${fail.slice(0, 6).join(" ")}` }) }); } catch {} }
 }
 function push() {
   try {

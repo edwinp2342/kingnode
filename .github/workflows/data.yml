@@ -21,4 +21,5 @@ jobs:
           PUSH: "1"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}   # optional: feed watchdog alerts (add the secret in repo settings)
         run: node scripts/snapshot.mjs
