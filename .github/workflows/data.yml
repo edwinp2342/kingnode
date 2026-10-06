@@ -1,7 +1,7 @@
 name: market data feed
 on:
   schedule:
-    - cron: "0 8-23 * * 1-5"   # a new 58-minute loop every hour, 4:00 AM–7:59 PM ET (daylight time) — pre-market through after-hours
+    - cron: "0 8-23 * * 1-5"   # hourly starts, each a 5.5-hour loop; a new start cancels the old one, so GitHub's schedule delays can't leave a gap
   workflow_dispatch:
 permissions:
   contents: write
@@ -9,14 +9,14 @@ concurrency: { group: data-feed, cancel-in-progress: true }
 jobs:
   feed:
     runs-on: ubuntu-latest
-    timeout-minutes: 62
+    timeout-minutes: 345
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
       - name: snapshot loop (~1 min cadence, pushes each cycle)
         env:
-          LOOP_MINUTES: "58"
+          LOOP_MINUTES: "330"
           EVERY_SEC: "60"
           PUSH: "1"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
