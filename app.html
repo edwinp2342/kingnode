@@ -376,19 +376,23 @@ async function loadTape(){
   if (!got.length && S.chain && S.demo){ got = TAPE.map(sym => { const sp = {SPX:7743.41, NDX:28510, RUT:2846, VIX:16.8, SPY:772.4, QQQ:642, IWM:282, DIA:471, XSP:774.3}[sym]; return {symbol:sym, price:sp, prev:sp*(1-0.0051), last:sp, t:Date.now(), demo:true}; }); }
   got.forEach(q => tapeQuotes.set(q.symbol, q)); renderTape(); renderLiveQuote();
 }
+function extState(q){ // "PRE" | "POST" | false — from the feed's marketState, else from the print's ET clock
+  const st = (q.state||"").toUpperCase(); if (st.startsWith("PRE")) return "PRE"; if (st.startsWith("POST") || st === "CLOSED") return "POST";
+  if (q.t){ const et = new Date(new Date(q.t).toLocaleString("en-US",{timeZone:"America/New_York"})); const m = et.getHours()*60+et.getMinutes(); if (m < 570) return "PRE"; if (m >= 960) return "POST"; } return false;
+}
 function renderLiveQuote(){
   const el = document.getElementById("liveq"); if (!el) return; const q = tapeQuotes.get(S.sym); if (!q || q.demo){ el.hidden = true; return; }
-  const ext = ["PRE","PREPRE","POST","POSTPOST","CLOSED"].includes(q.state||"") && q.last && Math.abs(q.last - q.price) > 1e-6;
+  const isExt = extState(q); const ext = isExt && q.last && Math.abs(q.last - q.price) > 1e-6;
   const chg = (ext ? q.last : q.price) - q.prev, pc = q.prev ? chg/q.prev*100 : 0;
-  el.textContent = `${ext ? ((q.state||"").startsWith("PRE") ? "PRE " : "AH ") : "LIVE "}${fmt(ext ? q.last : q.price, 2)}  ${chg>=0?"+":""}${fmt(chg,2)} (${pc>=0?"+":""}${fmt(pc,2)}%)${q.t ? " · " + new Date(q.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`;
+  el.textContent = `${ext ? (isExt === "PRE" ? "PRE " : "AH ") : "LIVE "}${fmt(ext ? q.last : q.price, 2)}  ${chg>=0?"+":""}${fmt(chg,2)} (${pc>=0?"+":""}${fmt(pc,2)}%)${q.t ? " · " + new Date(q.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`;
   el.className = "badge " + (chg >= 0 ? "up" : "dn"); el.style.textTransform = "none"; el.hidden = false;
 }
 function renderTape(){
   const el = document.getElementById("tapeIn"); if (!el) return;
   const items = TAPE.map(sym => tapeQuotes.get(sym)).filter(Boolean);
   if (!items.length){ el.className = "tape-in"; el.replaceChildren(h("span",{class:"tq"}, h("small",null,"loading tape…"))); return; }
-  const chip = q => { const chg = q.price - q.prev, pc = q.prev ? chg/q.prev*100 : 0, up = chg >= 0; const ext = q.last && Math.abs(q.last - q.price) > 0.0001 && ["PRE","POST","POSTPOST","PREPRE","CLOSED"].includes(q.state||"") ? q.last : null;
-    return h("span",{class:"tq", title:TAPE_NAMES[q.symbol] + (q.demo ? " · demo" : q.src ? " · " + q.src : ""), onclick:()=>goSym(q.symbol)}, h("b",null,q.symbol), h("span",{class:"p"}, fmt(q.price, q.price > 1000 ? 2 : 2)), h("span",{class:up?"c":"d"}, `${up?"+":""}${fmt(chg,2)} (${up?"+":""}${fmt(pc,2)}%)`), ext ? h("span",{class:"ext"}, (q.state||"").startsWith("PRE") ? "pre " : "ah ", fmt(ext,2)) : null, q.demo ? h("small",null,"demo") : null); };
+  const chip = q => { const chg = q.price - q.prev, pc = q.prev ? chg/q.prev*100 : 0, up = chg >= 0; const es = extState(q); const ext = q.last && Math.abs(q.last - q.price) > 0.0001 && es ? q.last : null;
+    return h("span",{class:"tq", title:TAPE_NAMES[q.symbol] + (q.demo ? " · demo" : q.src ? " · " + q.src : ""), onclick:()=>goSym(q.symbol)}, h("b",null,q.symbol), h("span",{class:"p"}, fmt(q.price, q.price > 1000 ? 2 : 2)), h("span",{class:up?"c":"d"}, `${up?"+":""}${fmt(chg,2)} (${up?"+":""}${fmt(pc,2)}%)`), ext ? h("span",{class:"ext"}, es === "PRE" ? "pre " : "ah ", fmt(ext,2)) : null, q.demo ? h("small",null,"demo") : null); };
   const once = items.map(chip), twice = items.map(chip);
   el.className = "tape-in anim"; el.replaceChildren(...once, ...twice);
 }
