@@ -250,6 +250,18 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
 .jc-m.cur{border-color:var(--gold)}
 @media (max-width:700px){ .jc-months{grid-template-columns:repeat(6,1fr)} .jc-cell{min-height:46px; padding:3px} .jc-p{font-size:10.5px} }
 body:not(.showhelp) .helptext{display:none !important}
+.edi-fab{position:fixed; right:18px; bottom:18px; z-index:30; background:var(--gold); color:#1a1200; border:0; border-radius:999px; padding:10px 16px; font:700 13px var(--sans); box-shadow:0 6px 24px rgba(0,0,0,.5); cursor:pointer}
+.edi{position:fixed; right:18px; bottom:18px; width:min(440px, calc(100vw - 36px)); height:min(640px, calc(100vh - 36px)); z-index:31; background:var(--panel); border:1px solid var(--rule2); border-radius:12px; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.6); overflow:hidden}
+.edi[hidden],.edi-fab[hidden]{display:none !important}
+.edi-head{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--rule)}
+.edi-quick{display:flex; gap:6px; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--rule)}
+.edi-quick button{border:1px solid var(--rule2); background:transparent; color:var(--muted); border-radius:999px; padding:4px 10px; font-size:11.5px; cursor:pointer} .edi-quick button:hover{color:var(--ink); background:var(--panel2)}
+.edi-log{flex:1; overflow:auto; padding:12px; display:grid; gap:10px; align-content:start}
+.edi-msg{max-width:92%; padding:9px 12px; border-radius:10px; font-size:13px; line-height:1.5; white-space:pre-wrap}
+.edi-msg.u{justify-self:end; background:var(--panel2); color:var(--ink)} .edi-msg.a{justify-self:start; background:var(--bg); border:1px solid var(--rule)}
+.edi-msg.a b{color:var(--gold)}
+.edi-input{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--rule)} .edi-input textarea{flex:1; background:var(--bg); border:1px solid var(--rule2); border-radius:8px; color:var(--ink); padding:8px 10px; font:13px var(--sans); resize:none}
+@media (max-width:700px){ .edi{right:8px; bottom:8px; width:calc(100vw - 16px); height:calc(100vh - 16px)} .edi-fab{right:12px; bottom:12px} }
 .layopt{display:flex !important; flex-direction:row !important; justify-content:flex-start !important; align-items:center !important; gap:8px; font-size:13px; padding:4px 0}
 .sk-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; align-items:center}
 .sk-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
@@ -294,6 +306,14 @@ body:not(.showhelp) .helptext{display:none !important}
   </aside>
 </div>
 <div class="tip" id="tip"></div>
+<button id="ediBtn" class="edi-fab" title="Edi — your desk assistant">♛ Edi</button>
+<aside id="ediPanel" class="edi" hidden>
+  <div class="edi-head"><div><b>Edi</b> <span class="hint">desk assistant · knows this screen, your book, your journal and the calendar</span></div><div><button class="btn small" id="ediClear" type="button">Clear</button> <button class="btn small" id="ediClose" type="button">×</button></div></div>
+  <div class="edi-quick" id="ediQuick"></div>
+  <div class="edi-log" id="ediLog"></div>
+  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Ask Edi — e.g. “read IWM for me”, “is my book too long?”, “what do I do into CPI?”"></textarea><button class="btn gold" type="submit">Send</button></form>
+  <div class="hint" id="ediFoot" style="padding:6px 12px"></div>
+</aside>
 <dialog id="startDlg"><div class="dlg"><h2>Start here</h2>
 <p>Kingnode reads the options chain the way a dealer desk does and shows you where price gets pinned and where it accelerates.</p>
 <ol style="line-height:1.7;padding-left:20px;margin:8px 0 12px">
@@ -316,6 +336,7 @@ body:not(.showhelp) .helptext{display:none !important}
     <label>Alert distance (% from level)<input name="alertPct" type="number" min="0.05" max="2" step="0.05"></label>
     <label>Fresh positioning: min vol/OI<input name="freshRatio" type="number" min="0.5" max="20" step="0.1"></label>
     <label>Fresh positioning: min volume<input name="freshMinVol" type="number" min="0" max="100000"></label>
+    <label style="grid-column:1/-1">Anthropic API key (for Edi, your desk assistant — stored only in this browser)<input name="anthropicKey" type="password" placeholder="sk-ant-…"></label>
     <label style="grid-column:1/-1">Data proxy URL (Cloudflare Worker — makes the static site live; see proxy/ in the project)<input name="proxy" placeholder="https://kingnode-proxy.yourname.workers.dev"></label>
     <label style="grid-column:1/-1">Discord webhook URL (for ⚑ Flag and alerts — works without a server)<input name="webhook" placeholder="https://discord.com/api/webhooks/…"></label>
 
@@ -351,7 +372,7 @@ const HALAL_UNIVERSE = [
 const HALAL_MAP = new Map(HALAL_UNIVERSE.map(r => [r[0], r]));
 function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
 const DEFAULTS = { defaultSym:"SPX", refreshSec:45, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
-  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"", proxy:"" };
+  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"", proxy:"", anthropicKey:"" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
 const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(), seekerMode:"gex", seekerRange:3, flowExp:"all", cfSort:"prem", view:null, inst:null, gate:false, flow:null, flowDemo:false, flowMinPrem:50000, flowKind:"all", flowSide:"all", flowCp:"all",
@@ -798,7 +819,7 @@ function renderAll(){
 }
 function renderAsk(){
   const box = document.getElementById("askBox"); box.replaceChildren();
-  const inp = h("input",{placeholder: "Ask the desk: e.g. “Is 7,700 likely to hold into Friday?” (needs the desktop app + API key)", "aria-label":"Ask the desk"});
+  const inp = h("input",{placeholder: "Ask Edi: e.g. “Is 7,700 likely to hold into Friday?”", "aria-label":"Ask the desk"});
   const out = h("div",{class:"answer"});
   const go = async () => {
     if (requirePro("Ask the desk turns the positioning into a plain-English answer to your question.")) return;
@@ -2067,6 +2088,73 @@ function viewMacro(){
   return box;
 }
 
+// =====================================================================================================
+// EDI — the desk assistant. Context = the current screen (ticker, levels, flow lean, IV/RV), the book, the journal stats,
+// the calendar and the user's rules. Answers with Claude via the local server or the user's own key (direct from the browser);
+// without a key, answers from the app's own reads (levels, coach, book, calendar) so it is never dead.
+// =====================================================================================================
+const EDI = { open:false, log:[], busy:false };
+function ediContext(){
+  const c = S.calc, pb = getPb(), open = pb.positions.filter(p=>!p.closed), coach = coachReport(), rvInfo = realizedVol(S.bars), rv = rvInfo?.rv;
+  const tr = (S.flow?.trades||[]).filter(t=>t.u===S.sym); const b = tr.filter(t=>(t.cp==="C"&&t.side==="A")||(t.cp==="P"&&t.side==="B")).reduce((a,t)=>a+t.prem,0), sl = tr.filter(t=>(t.cp==="P"&&t.side==="A")||(t.cp==="C"&&t.side==="B")).reduce((a,t)=>a+t.prem,0);
+  const ev = [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - new Date(new Date().toDateString()))/86400000)})).filter(e => e.days >= 0 && e.days <= 10).sort((a,b)=>a.days-b.days).slice(0,8);
+  const book = bookRows().filter(r=>!r.missing); const delta = book.reduce((a,r)=>a+r.delta$,0), theta = book.reduce((a,r)=>a+r.theta$,0);
+  return {
+    now: new Date().toLocaleString("en-US",{timeZone:"America/New_York"}) + " ET", demo: S.demo, noChain: !!S.chain?.noChain,
+    ticker: { sym:S.sym, spot:c?.spot, change:S.chain?.change, regime: c ? (c.total>0?"positive gamma (pinned)":"negative gamma (trending)") : null, gex:c?.total, vex:c?.totalVex, callWall:c?.callWall?.K, putWall:c?.putWall?.K, flip:c?.flip, flipConf:c?.flipConf, maxPain:c?.maxPain, kingNode:c?.top?.[0] ? `${c.top[0].K} ${c.top[0].exp}` : null, expectedMove:c?.em?.[0] ? {move:c.em[0].move, exp:c.em[0].exp} : null, iv30:c?ivAt(30):null, rv, flowLean:(b-sl)/((b+sl)||1), flowPrints:tr.length, topFresh:(c?.fresh||[]).slice(0,5).map(f=>`${f.exp} ${f.K}${f.type} vol ${f.vol} oi ${f.oi}`), halal:halalStatus(S.sym) },
+    rules: { account:pb.account, maxRiskPct:pb.maxRiskPct, maxPositions:pb.maxPositions, minDte:pb.minDte, stopPct:pb.stopPct, style:"swing trader; 30+ DTE directional; cuts quickly when thesis breaks even if green; never lets a green contract go red; no short-dated holds over weekends; buy low / sell high; halal screen on equities only" },
+    book: { open: open.map(p => p.shares ? `${p.sym} ${p.qty} shares @ ${p.entry}` : `${p.sym} ${p.exp} ${p.K}${p.cp} ×${p.qty} @ ${p.entry} (inval ${p.inval||"—"}, tgt ${p.target||"—"}, ${dte(p.exp)}d)`), netDelta:delta, thetaPerDay:theta },
+    journal: coach.stats && coach.stats.n ? { closed:coach.stats.n, winRate:coach.stats.wr, avgWin:coach.stats.avgW, avgLoss:coach.stats.avgL, expectancy:coach.stats.expectancy, bestSetup:coach.stats.setups?.[0]?.[0], worstSetup:coach.stats.setups?.at(-1)?.[0] } : null,
+    events: ev.map(e => `${e.name} ${e.time||""} in ${e.days}d (impact ${e.impact||1})`),
+    ideasBacktest: BT.data?.chosen?.summary ? { winRate:BT.data.chosen.summary.winRate, avgRet:BT.data.chosen.summary.avgRet, profitFactor:BT.data.chosen.summary.profitFactor } : null,
+  };
+}
+const EDI_SYSTEM = `You are Edi, the desk assistant inside Kingnode, a personal options terminal. You talk like a sharp trading-desk colleague: concise, peer-level, numbers first, no hedging boilerplate. You get a JSON context with the current ticker's dealer positioning (gamma walls, flip, king node, expected move), flow lean, IV vs realized, the user's rules, open book, journal stats, upcoming events and the Ideas backtest. Use it: cite the actual levels and numbers. If the context says demo or noChain, say the levels are placeholders. Give a read, a plan with entry/invalidation/target when asked for a trade, and push back when the user is about to break their own rules (chasing, short-dated into events/weekends, oversizing). Keep answers under 180 words unless asked for depth. End with one line of risk if a trade is involved. Never claim certainty; this is positioning context on delayed data, not advice.`;
+async function ediAsk(question){
+  const ctx = ediContext(); const history = EDI.log.slice(-8).map(m => ({role:m.role, content:m.text}));
+  const key = (S.set.anthropicKey||"").trim();
+  // 1. local server (desktop) 2. direct with the user's key 3. offline read
+  try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt:`${EDI_SYSTEM}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
+  if (key){ try { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:700,system:EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx),messages:[...history,{role:"user",content:question}]})}); const j = await r.json(); if (r.ok){ return {text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), via:"key"}; } return {text:"Edi couldn't reach Claude: " + (j.error?.message||r.status) + ". Check the key in ⚙ Settings.", via:"error"}; } catch(e){ return {text:"Edi couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
+  return {text: ediOffline(question, ctx), via:"offline"};
+}
+function ediOffline(q, ctx){
+  const t = ctx.ticker, ql = q.toLowerCase(); const out = [];
+  if (/book|position|exposure|delta|theta/.test(ql)){ out.push(ctx.book.open.length ? `Book: ${ctx.book.open.length} open — ${ctx.book.open.join("; ")}. Net delta ${money(ctx.book.netDelta)}, theta ${money(ctx.book.thetaPerDay)}/day.` : "No open positions in the Playbook."); if (ctx.events.length) out.push(`Next events: ${ctx.events.slice(0,3).join(" · ")}.`); return out.join("\n"); }
+  if (/journal|coach|stats|how am i|performance/.test(ql)){ return coachReport().lines.join("\n"); }
+  if (/event|calendar|cpi|fomc|fed|jobs|earnings/.test(ql)){ return ctx.events.length ? "Upcoming: " + ctx.events.join(" · ") + (ctx.events.some(e=>/impact 3/.test(e)) ? "\nThe impact-3 ones move everything — trim short-dated paper into them." : "") : "Nothing scheduled in the next 10 days."; }
+  // default: the read on the current ticker
+  if (!t.spot) return "No chain loaded yet.";
+  out.push(`${t.sym} ${fmt(t.spot,2)} · ${t.regime}${ctx.demo ? " (placeholder levels — no chain on the free feed)" : ""}.`);
+  out.push(`Call wall ${fmt(t.callWall)} · flip ${fmt(t.flip)}${t.flipConf && t.flipConf!=="ok" ? " (confidence " + t.flipConf + ")" : ""} · put wall ${fmt(t.putWall)}${t.kingNode ? " · king node " + t.kingNode : ""}. Expected move ±${fmt(t.expectedMove?.move||0,1)}.`);
+  if (t.rv != null) out.push(`IV ${fmt(t.iv30*100,0)}% vs realized ${fmt(t.rv*100,0)}% → options ${t.iv30 - t.rv > 0.04 ? "rich: prefer spreads or shares" : t.iv30 - t.rv < -0.02 ? "cheap: long premium works" : "about fair"}.`);
+  if (t.flowPrints) out.push(`Tape lean ${t.flowLean>=0?"+":""}${fmt(t.flowLean*100,0)}% over ${t.flowPrints} prints${t.topFresh.length ? "; fresh: " + t.topFresh.slice(0,2).join(", ") : ""}.`);
+  out.push(t.spot > (t.flip||0) ? `Plan: above the flip, dips toward ${fmt(t.putWall)} get bought — that's the entry; target ${fmt(t.callWall)}; invalidation a close under the flip.` : `Plan: below the flip, moves extend — don't fade; reclaim of ${fmt(t.flip)} is the signal to get constructive.`);
+  out.push("(Offline read from the app's own math — add an Anthropic key in ⚙ Settings or run the desktop server for the full Edi.)");
+  return out.join("\n");
+}
+function ediRender(){
+  const log = document.getElementById("ediLog"); log.replaceChildren(...EDI.log.map(m => h("div",{class:"edi-msg "+(m.role==="user"?"u":"a")}, m.text)));
+  if (EDI.busy) log.append(h("div",{class:"edi-msg a hint"},"Edi is reading the screen…"));
+  log.scrollTop = log.scrollHeight;
+  const foot = document.getElementById("ediFoot"); const key = (S.set.anthropicKey||"").trim(); foot.textContent = key ? "Using your Anthropic key from this browser." : "No key set — Edi answers from the app's own math. Add an Anthropic API key in ⚙ Settings for the full assistant.";
+}
+async function ediSend(q){
+  q = (q||"").trim(); if (!q || EDI.busy) return; EDI.log.push({role:"user", text:q}); EDI.busy = true; ediRender();
+  const a = await ediAsk(q); EDI.log.push({role:"assistant", text:a.text}); EDI.busy = false; ediRender();
+  try { localStorage.setItem("kingnode:edi", JSON.stringify(EDI.log.slice(-40))); } catch {}
+}
+function ediInit(){
+  try { EDI.log = JSON.parse(localStorage.getItem("kingnode:edi")||"[]"); } catch {}
+  const panel = document.getElementById("ediPanel"), fab = document.getElementById("ediBtn");
+  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text:"I'm Edi. I can read the ticker on screen, check your book against your rules, review the journal, or walk you through what's on the calendar. What do you want?"}); ediRender(); } };
+  document.getElementById("ediClose").onclick = () => { panel.hidden = true; fab.hidden = false; };
+  document.getElementById("ediClear").onclick = () => { EDI.log = []; try { localStorage.removeItem("kingnode:edi"); } catch {} ediRender(); };
+  document.getElementById("ediForm").addEventListener("submit", e => { e.preventDefault(); const ta = document.getElementById("ediText"); const q = ta.value; ta.value = ""; ediSend(q); });
+  document.getElementById("ediText").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); document.getElementById("ediForm").requestSubmit(); } });
+  const quick = [["Read this ticker", () => `Read ${S.sym} for me: regime, levels, flow, and a plan with entry, invalidation and target.`],["Check my book", () => "Look at my open book against my rules. Anything oversized, too short-dated, or against the tape?"],["Review my journal", () => "Review my journal stats and tell me the two biggest leaks and one rule change to test."],["Today's plan", () => "Given the calendar and my book, what's the plan for today? What do I avoid?"],["Options vs shares?", () => `For ${S.sym}, given IV vs realized and the walls, should this be shares, a long option, or a spread? Pick one and say why.`]];
+  document.getElementById("ediQuick").replaceChildren(...quick.map(([l,f]) => h("button",{type:"button", onclick:()=>ediSend(f())}, l)));
+}
 // ---------- Halal: screened universe, movers, purification ----------
 const HQ = { quotes:new Map(), at:0, loading:false, sector:"all", status:"passes", sort:"chg" };
 async function loadHalalQuotes(){
@@ -2387,7 +2475,7 @@ document.getElementById("themeBtn").onclick = () => { const r = document.documen
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
 try { if (localStorage.getItem("kingnode:help") === "1" || !localStorage.getItem("kingnode:seen")) document.body.classList.add("showhelp"); } catch {}
-window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; applyLayout(); renderChips(); renderPlan(); loadTape();
+window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; applyLayout(); renderChips(); ediInit(); renderPlan(); loadTape();
 { try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
