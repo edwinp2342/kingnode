@@ -39,7 +39,5 @@
   <circle cx="80" cy="112" r="5" fill="#F5B942" opacity="0.9"/>
   <circle cx="176" cy="112" r="5" fill="#F5B942" opacity="0.9"/>
 </g>
-  <text x="186" y="94" font-family="Inter, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="66" font-weight="800" letter-spacing="5" fill="#E8EAEE">KING<tspan fill="#9ADCC6">NODE</tspan></text>
-  <rect x="190" y="106" width="36" height="3" rx="1.5" fill="#F5B942"/>
-  <text x="236" y="112" font-family="Inter, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="15" font-weight="600" letter-spacing="6.5" fill="#7B8594">THE LEVEL DEALERS DEFEND</text>
+  <text x="186" y="104" font-family="Inter, -apple-system, 'Helvetica Neue', Arial, sans-serif" font-size="66" font-weight="800" letter-spacing="5" fill="#E8EAEE">KING<tspan fill="#9ADCC6">NODE</tspan></text>
 </svg>

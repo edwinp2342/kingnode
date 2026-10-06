@@ -1,6 +1,6 @@
 # Kingnode
 
-*The level dealers defend.* A dealer-positioning and institutional-flow terminal for options traders — gamma heatmap, call/put walls, gamma flip, max pain, expected move, IV skew and fresh positioning — with a plain-English read on top. Every ticker and expiration, alerts, CSV export and "Ask the desk".
+A dealer-positioning and institutional-flow terminal for options traders — gamma heatmap, call/put walls, gamma flip, max pain, expected move, IV skew and fresh positioning — with a plain-English read on top. Every ticker and expiration, alerts, CSV export and "Ask the desk".
 
 ## Files
 
