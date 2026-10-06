@@ -35,3 +35,10 @@ Claude Code runs with your repo, your env, and your Vercel login, so it can actu
 
 ## When a provider changes a field name
 That's the most common failure. The fix is always in one file, `api/_lib/data.js`, in the provider's `*Chain()` function — the rest of the app never sees vendor field names.
+
+## 4. Alerts while the app is closed
+`desktop/alerts.mjs` polls your tickers' chains during market hours and posts to Discord when spot comes within 0.2% of a wall or the flip, or when a wall moves:
+
+    DISCORD_WEBHOOK=... node desktop/alerts.mjs SPX IWM TLT
+
+Keep it alive with pm2 (`pm2 start desktop/alerts.mjs -- SPX IWM TLT`) or a reboot cron line. Uses whatever `DATA_PROVIDER` is set in `.env.local`.
