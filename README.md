@@ -25,6 +25,10 @@ Ticker tape (TradingView) → toolbar with search and quick tickers → symbol r
 
 **TradingView widgets** load from s3.tradingview.com on your own domain. They can't load inside the claude.ai preview (its security policy blocks third-party scripts), so the preview falls back to the built-in chart automatically. TradingView's widget terms require leaving their logo/attribution visible, which the widgets do themselves.
 
+## Live data with no server: the GitHub Action feed
+
+`.github/workflows/data.yml` runs `scripts/snapshot.mjs` every 5 minutes during market hours (free on a public repo). It pulls the chain, 5-minute bars (with extended hours) and daily bars for 20 tickers plus the tape quotes, writes compact JSON, and force-pushes it to the `data` branch. The site reads `raw.githubusercontent.com/edwinp2342/kingnode/data/…`, which allows browser requests, so the static site and the phone app are live (15-minute delayed) with nothing running on your machine. Order of sources in the app: local server → snapshot feed → direct Cboe → proxy → demo. Add tickers with the `SNAPSHOT_SYMBOLS` variable in the workflow or just edit the list in `scripts/snapshot.mjs`.
+
 ## Running it live on the free feed (static site, no server)
 
 The GitHub Pages build pulls everything from Cboe's delayed feed directly in your browser: chain (OI, volume, IV, greeks), intraday and daily bars. Quote and levels are 15 minutes behind. What you get without a server:
