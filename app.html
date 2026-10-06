@@ -212,6 +212,17 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
 .qcard{border-color:var(--gold); margin-top:12px}
 .qlegs{display:grid; gap:3px}
 .qh3{font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.05em; text-transform:uppercase; margin:0 0 6px}
+.jc-head{display:grid; grid-template-columns:repeat(7,1fr); gap:4px; font-size:11px; color:var(--muted); text-align:center; margin-bottom:4px}
+.jc-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px}
+.jc-cell{min-height:58px; border:1px solid var(--rule); border-radius:4px; padding:4px 6px; background:var(--panel2); position:relative}
+.jc-cell.empty{background:transparent; border-color:transparent}
+.jc-cell.today{outline:1.5px solid var(--gold)}
+.jc-d{font-size:11px; color:var(--muted)} .jc-p{font-size:12px; font-weight:700; margin-top:2px} .jc-n{font-size:10px; color:var(--muted)}
+.jc-cell.pos .jc-p{color:#CFF5E6} .jc-cell.neg .jc-p{color:#E6D9F5}
+.jc-months{display:grid; grid-template-columns:repeat(12,1fr); gap:4px; margin-top:8px}
+.jc-m{border:1px solid var(--rule); background:transparent; border-radius:4px; padding:4px 2px; cursor:pointer; text-align:center; font-size:11px}
+.jc-m.cur{border-color:var(--gold)}
+@media (max-width:700px){ .jc-months{grid-template-columns:repeat(6,1fr)} .jc-cell{min-height:46px; padding:3px} .jc-p{font-size:10.5px} }
 .sk-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; align-items:center}
 .sk-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
 @media (max-width:980px){ .sk-body{flex-direction:column} .ladder{width:100%} }
@@ -1719,6 +1730,7 @@ function viewBook(){
 
 // ---------- Journal ----------
 function viewJournal(){
+  const money = v => (v<0?"-$":"$")+fmt(Math.abs(v),0);
   const box = h("div",null); const j = getJournal().slice().reverse(); const closed = j.filter(e=>e.closed);
   const wins = closed.filter(e=>e.pnl>0).length, gross = closed.reduce((a,e)=>a+(e.pnl||0),0), avgW = wins ? closed.filter(e=>e.pnl>0).reduce((a,e)=>a+e.pnl,0)/wins : 0, avgL = closed.length-wins ? closed.filter(e=>e.pnl<=0).reduce((a,e)=>a+e.pnl,0)/(closed.length-wins) : 0;
   const kpi = (k,v,cls) => h("div",{class:"qk"}, h("div",{class:"hint"},k), h("div",{class:"num qv "+(cls||"")},v));
@@ -1737,6 +1749,24 @@ function viewJournal(){
         const all = getJournal(); all.push(e); setJournal(all); notice("Logged."); renderTabs(); }},"Add to journal")),
     h("p",{class:"hint",style:{margin:"8px 0 0"}},"Options P&L = (exit − entry) × qty × 100; shares × qty. Leave exit blank to log an open trade and close it later from the entry. If the ticker is the one loaded, the chain snapshot is attached automatically."));
   box.append(form);
+  // P&L calendar: daily cells, monthly and yearly totals
+  const JC = (window.__jc = window.__jc || { y:new Date().getFullYear(), m:new Date().getMonth() });
+  const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+  const byDay = new Map(); for (const e of closed){ const k = dayKey(e.closed); const d = byDay.get(k) || {pnl:0, n:0, w:0}; d.pnl += e.pnl||0; d.n++; if ((e.pnl||0) > 0) d.w++; byDay.set(k, d); }
+  const monthTotal = (y,m) => { let p = 0, n = 0, w = 0; for (const [k,v] of byDay){ if (k.startsWith(`${y}-${String(m+1).padStart(2,"0")}`)){ p += v.pnl; n += v.n; w += v.w; } } return {p,n,w}; };
+  const yearTotal = y => { let p = 0, n = 0, w = 0; for (const [k,v] of byDay){ if (k.startsWith(`${y}-`)){ p += v.pnl; n += v.n; w += v.w; } } return {p,n,w}; };
+  const first = new Date(JC.y, JC.m, 1), daysIn = new Date(JC.y, JC.m+1, 0).getDate(), pad = first.getDay();
+  const mt = monthTotal(JC.y, JC.m), yt = yearTotal(JC.y); const maxAbs = Math.max(1, ...[...byDay.values()].map(v=>Math.abs(v.pnl)));
+  const cells = []; for (let i = 0; i < pad; i++) cells.push(h("div",{class:"jc-cell empty"}));
+  for (let d = 1; d <= daysIn; d++){ const k = `${JC.y}-${String(JC.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const v = byDay.get(k); const isToday = k === dayKey(Date.now());
+    cells.push(h("div",{class:"jc-cell"+(v?(v.pnl>=0?" pos":" neg"):"")+(isToday?" today":""), style: v ? {background: v.pnl >= 0 ? `rgba(120,196,170,${0.12+0.5*Math.min(1,Math.abs(v.pnl)/maxAbs)})` : `rgba(170,140,210,${0.12+0.5*Math.min(1,Math.abs(v.pnl)/maxAbs)})`} : null, title: v ? `${k}: ${money(v.pnl)} · ${v.w}/${v.n} wins` : k},
+      h("div",{class:"jc-d"}, d), v ? h("div",{class:"jc-p num"}, money(v.pnl)) : null, v ? h("div",{class:"jc-n"}, `${v.w}/${v.n}`) : null)); }
+  const monthName = first.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+  const nav = (dm) => { let m = JC.m + dm, y = JC.y; if (m < 0){ m = 11; y--; } if (m > 11){ m = 0; y++; } JC.m = m; JC.y = y; renderTabs(); };
+  box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("div",{class:"ctl",style:{marginBottom:"8px"}}, h("button",{class:"btn small", onclick:()=>nav(-1)},"‹"), h("span",{style:{fontWeight:700,fontSize:"14px",minWidth:"150px",textAlign:"center"}}, monthName), h("button",{class:"btn small", onclick:()=>nav(1)},"›"), h("button",{class:"btn small", onclick:()=>{ JC.y = new Date().getFullYear(); JC.m = new Date().getMonth(); renderTabs(); }},"Today"),
+      h("span",{style:{flex:1}}), h("span",{class:"num",style:{fontWeight:700,color:mt.p>=0?"var(--pos)":"var(--neg)"}}, `Month ${money(mt.p)}`), h("span",{class:"hint"}, mt.n ? ` · ${mt.w}/${mt.n} wins` : " · no closed trades"), h("span",{class:"num",style:{fontWeight:700,marginLeft:"14px",color:yt.p>=0?"var(--pos)":"var(--neg)"}}, `${JC.y} ${money(yt.p)}`), h("span",{class:"hint"}, yt.n ? ` · ${yt.w}/${yt.n} wins` : "")),
+    h("div",{class:"jc-head"}, ...["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>h("div",null,x))), h("div",{class:"jc-grid"}, ...cells),
+    h("div",{class:"jc-months"}, ...Array.from({length:12},(_,m)=>{ const t = monthTotal(JC.y, m); return h("button",{class:"jc-m"+(m===JC.m?" cur":""), onclick:()=>{ JC.m = m; renderTabs(); }}, h("div",{class:"hint"}, new Date(JC.y,m,1).toLocaleDateString("en-US",{month:"short"})), h("div",{class:"num",style:{fontWeight:600,color:t.n?(t.p>=0?"var(--pos)":"var(--neg)"):"var(--muted)"}}, t.n ? money(t.p) : "—")); }))));
   // weekly summary
   const byWeek = new Map(); for (const e of closed){ const d = new Date(e.closed); const wk = new Date(d); wk.setDate(d.getDate()-d.getDay()); const k = wk.toISOString().slice(0,10); const w = byWeek.get(k) || {k, n:0, pnl:0, w:0}; w.n++; w.pnl += e.pnl||0; if ((e.pnl||0) > 0) w.w++; byWeek.set(k, w); }
   if (byWeek.size) box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,"By week"), h("table",{class:"data"}, h("thead",null,h("tr",null,["Week of","Trades","Wins","P&L"].map(x=>h("th",null,x)))), h("tbody",null, [...byWeek.values()].sort((a,b)=>b.k.localeCompare(a.k)).map(w => h("tr",null, h("td",null,w.k), h("td",null,w.n), h("td",null,`${w.w}/${w.n}`), h("td",{class:w.pnl>=0?"c":"p",style:{fontWeight:600}},money(w.pnl))))))));
