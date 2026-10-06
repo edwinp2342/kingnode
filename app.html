@@ -223,6 +223,7 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
 .jc-m{border:1px solid var(--rule); background:transparent; border-radius:4px; padding:4px 2px; cursor:pointer; text-align:center; font-size:11px}
 .jc-m.cur{border-color:var(--gold)}
 @media (max-width:700px){ .jc-months{grid-template-columns:repeat(6,1fr)} .jc-cell{min-height:46px; padding:3px} .jc-p{font-size:10.5px} }
+.layopt{display:flex !important; flex-direction:row !important; justify-content:flex-start !important; align-items:center !important; gap:8px; font-size:13px; padding:4px 0}
 .sk-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:8px; align-items:center}
 .sk-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; vertical-align:-1px}
 @media (max-width:980px){ .sk-body{flex-direction:column} .ladder{width:100%} }
@@ -259,13 +260,14 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
   <section class="main"><div id="panel"></div></section>
   <aside class="rail">
     <div class="card" id="levelsCard"><h2>Key levels</h2><div id="regime"></div><div class="levels" id="levels"></div></div>
-    <div class="card"><h2>The read</h2><div class="read" id="read"></div><div id="askBox"></div></div>
+    <div class="card" id="readCard"><h2>The read</h2><div class="read" id="read"></div><div id="askBox"></div></div>
     <div class="card" id="alertsCard"><h2>Alerts</h2><div id="alerts"></div></div>
-    <div class="card"><h2>Events</h2><div id="events"></div></div>
-    <div class="card"><h2>Data status</h2><div id="dstatus" class="hint"></div></div>
+    <div class="card" id="eventsCard"><h2>Events</h2><div id="events"></div></div>
+    <div class="card" id="statusCard"><h2>Data status</h2><div id="dstatus" class="hint"></div></div>
   </aside>
 </div>
 <div class="tip" id="tip"></div>
+<dialog id="layDlg"><div class="dlg"><h2>Customize Kingnode</h2><p class="hint">Hide what you don't use. Everything can be turned back on here.</p><div id="layBody"></div><div class="actions"><button class="btn gold" id="layDone" type="button">Done</button> <button class="btn" id="layReset" type="button">Show everything</button></div></div></dialog>
 <dialog id="setDlg"><form method="dialog" id="setForm">
   <h2>Settings</h2>
   <div class="setgrid">
@@ -281,7 +283,7 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
     <label style="grid-column:1/-1">Discord webhook URL (for ⚑ Flag and alerts — works without a server)<input name="webhook" placeholder="https://discord.com/api/webhooks/…"></label>
 
   </div>
-  <div class="actions" style="justify-content:space-between"><span><button class="btn gold" type="submit">Save</button> <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></span><button class="btn small" type="button" id="exportFlags">Export my flags</button> <button class="btn small" type="button" id="resetSet">Reset to defaults</button></div>
+  <div class="actions" style="justify-content:space-between"><span><button class="btn gold" type="submit">Save</button> <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></span><button class="btn small" type="button" id="openCustomize">Customize tabs &amp; cards</button> <button class="btn small" type="button" id="exportFlags">Export my flags</button> <button class="btn small" type="button" id="resetSet">Reset to defaults</button></div>
 </form></dialog>
 
 <script>
@@ -790,8 +792,8 @@ function renderAlertsOld(){
   else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
 }
 function renderTabs(){
-  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["ideas","Ideas"],["play","Playbook"],["book","Book"],["journal","Journal"],["brief","Brief"],["calendar","Calendar"],["macro","Macro"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
-  document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)));
+  const T = LAYOUT_ITEMS.tabs.filter(([id]) => shown(id));
+  document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)), h("button",{class:"tab", title:"Choose which tabs and cards you see", style:{marginLeft:"auto",color:"var(--muted)"}, onclick:openCustomize},"⋯ Customize"));
   const p = document.getElementById("panel");
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
   if (S.tab === "seeker") { p.replaceChildren(viewSeeker()); return; }
@@ -2043,6 +2045,27 @@ function chainSnapshot(){ const c = S.calc; if (!c) return null; const tr = (S.f
 function journalOpen(pos){ const j = getJournal(); j.push({ id: pos.id || (pos.id = uidj()), opened:Date.now(), sym:pos.sym, contract:`${pos.sym} ${pos.exp} ${fmt(pos.K)}${pos.cp}`, entry:pos.entry, qty:pos.qty, thesis:pos.thesis||"", snap:chainSnapshot(), notes:"" }); setJournal(j); }
 function journalClose(pos, exitPx, why){ const j = getJournal(); const e = j.find(x => x.id === pos.id); if (!e) return; e.closed = Date.now(); e.exit = exitPx; e.pnl = (exitPx - pos.entry)*pos.qty*100; e.pnlPct = (exitPx/pos.entry-1)*100; e.why = why||""; e.snapExit = chainSnapshot(); setJournal(j); }
 function uidj(){ return Math.random().toString(36).slice(2,10); }
+const LAYOUT_KEY = "kingnode:layout";
+const LAYOUT_ITEMS = {
+  tabs: [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["ideas","Ideas"],["play","Playbook"],["book","Book"],["journal","Journal"],["brief","Brief"],["calendar","Calendar"],["macro","Macro"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]],
+  rail: [["levelsCard","Key levels"],["readCard","The read"],["alertsCard","Alerts"],["eventsCard","Events"],["statusCard","Data status"]],
+  top: [["tape","Index tape"],["chart","Main chart"],["chips","Quick tickers"],["halalBtn","☪ Halal button"],["flagBtn","⚑ Flag button"]],
+};
+function getLayout(){ try { return JSON.parse(localStorage.getItem(LAYOUT_KEY)||"{}"); } catch { return {}; } }
+function setLayout(l){ try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(l)); } catch {} }
+function shown(id){ const l = getLayout(); return l[id] !== false; }
+function applyLayout(){
+  const l = getLayout();
+  for (const [id] of LAYOUT_ITEMS.top){ const el = document.getElementById(id === "chart" ? "tvChart" : id); if (el) el.style.display = l[id] === false ? "none" : ""; }
+  for (const [id] of LAYOUT_ITEMS.rail){ const el = document.getElementById(id); if (el) el.style.display = l[id] === false ? "none" : ""; }
+  if (l[S.tab] === false){ S.tab = LAYOUT_ITEMS.tabs.find(([id]) => l[id] !== false)?.[0] || "seeker"; }
+}
+function openCustomize(){
+  const l = getLayout(); const body = document.getElementById("layBody"); body.replaceChildren();
+  const group = (title, items) => h("div",{style:{marginBottom:"12px"}}, h("div",{style:{fontSize:"11px",fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".05em",margin:"0 0 6px"}}, title), h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:"6px"}}, ...items.map(([id,label]) => h("label",{class:"layopt"}, h("input",{type:"checkbox", checked:l[id]!==false, onchange:e=>{ const cur = getLayout(); cur[id] = e.target.checked; setLayout(cur); applyLayout(); renderTabs(); }}), label))));
+  body.append(group("Tabs", LAYOUT_ITEMS.tabs), group("Right rail", LAYOUT_ITEMS.rail), group("Top of screen", LAYOUT_ITEMS.top));
+  document.getElementById("layDlg").showModal();
+}
 const PB_KEY = "kingnode:playbook";
 const PB_DEF = {account:25000, maxRiskPct:5, maxPositions:3, minDte:30, stopPct:20, positions:[]};
 function getPb(){ try { return {...PB_DEF, ...JSON.parse(localStorage.getItem(PB_KEY)||"{}")}; } catch { return {...PB_DEF}; } }
@@ -2266,12 +2289,15 @@ document.getElementById("flagBtn").onclick = async () => { const note = prompt("
 document.getElementById("settingsBtn").onclick = () => { const f = document.getElementById("setForm"); for (const el of f.elements) if (el.name && S.set[el.name] != null) el.value = S.set[el.name]; document.getElementById("setDlg").showModal(); };
 document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer(); S.exps = []; load(); });
 document.getElementById("exportFlags").onclick = () => { let log = []; try { log = JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch {} const txt = log.map(f => `${new Date(f.t).toLocaleString()}\n${f.note}\n${f.ctx}\n`).join("\n") || "No flags yet."; const a = h("a",{href:URL.createObjectURL(new Blob([txt],{type:"text/plain"})), download:"kingnode-flags.txt"}); document.body.append(a); a.click(); a.remove(); };
+document.getElementById("openCustomize").onclick = () => { document.getElementById("setDlg").close(); openCustomize(); };
+document.getElementById("layDone").onclick = () => document.getElementById("layDlg").close();
+document.getElementById("layReset").onclick = () => { setLayout({}); applyLayout(); renderTabs(); openCustomize(); };
 document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; saveSettings(); document.getElementById("setDlg").close(); S.exps = []; load(); };
 document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); } });
 document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
-window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; renderPlan(); loadTape();
+window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; applyLayout(); renderPlan(); loadTape();
 { try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
