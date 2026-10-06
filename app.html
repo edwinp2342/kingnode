@@ -248,6 +248,7 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
 <div class="symrow">
   <span id="symName"></span>
   <div class="quote"><span class="px num" id="px">—</span><span class="chg num" id="chg"></span></div>
+  <span class="badge" id="liveq" hidden></span>
   <span class="badge" id="ahq" hidden></span>
   <span class="badge" id="halalBadge" hidden></span>
   <div class="asof" id="asof"></div>
@@ -310,7 +311,7 @@ const HALAL_UNIVERSE = [
 ];
 const HALAL_MAP = new Map(HALAL_UNIVERSE.map(r => [r[0], r]));
 function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
-const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
+const DEFAULTS = { defaultSym:"SPX", refreshSec:45, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"", proxy:"" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
@@ -366,25 +367,32 @@ async function tapeFromCboe(sym){
 async function loadTape(){
   let got = [];
   try { const r = await fetch(`/api/quotes?symbols=${TAPE.join(",")}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); got = (j.quotes||[]).filter(q => q && !q.error && q.price); } } catch {}
-  if (!got.length){ const snap = await snapshotJson("quotes.json", 40); if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot"})); }
+  if (!got.length){ const snap = await snapshotJson("quotes.json", 10); if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot"})); }
   if (!got.length){
     const syms = TAPE.filter(s => s !== "XSP");
     const res = await Promise.all(syms.map(tapeFromCboe)); got = res.filter(Boolean);
     const spx = got.find(q => q.symbol === "SPX"); if (spx) got.push({symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10, t:spx.t, src:"derived"});
   }
   if (!got.length && S.chain && S.demo){ got = TAPE.map(sym => { const sp = {SPX:7743.41, NDX:28510, RUT:2846, VIX:16.8, SPY:772.4, QQQ:642, IWM:282, DIA:471, XSP:774.3}[sym]; return {symbol:sym, price:sp, prev:sp*(1-0.0051), last:sp, t:Date.now(), demo:true}; }); }
-  got.forEach(q => tapeQuotes.set(q.symbol, q)); renderTape();
+  got.forEach(q => tapeQuotes.set(q.symbol, q)); renderTape(); renderLiveQuote();
+}
+function renderLiveQuote(){
+  const el = document.getElementById("liveq"); if (!el) return; const q = tapeQuotes.get(S.sym); if (!q || q.demo){ el.hidden = true; return; }
+  const ext = ["PRE","PREPRE","POST","POSTPOST","CLOSED"].includes(q.state||"") && q.last && Math.abs(q.last - q.price) > 1e-6;
+  const chg = (ext ? q.last : q.price) - q.prev, pc = q.prev ? chg/q.prev*100 : 0;
+  el.textContent = `${ext ? ((q.state||"").startsWith("PRE") ? "PRE " : "AH ") : "LIVE "}${fmt(ext ? q.last : q.price, 2)}  ${chg>=0?"+":""}${fmt(chg,2)} (${pc>=0?"+":""}${fmt(pc,2)}%)${q.t ? " · " + new Date(q.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`;
+  el.className = "badge " + (chg >= 0 ? "up" : "dn"); el.style.textTransform = "none"; el.hidden = false;
 }
 function renderTape(){
   const el = document.getElementById("tapeIn"); if (!el) return;
   const items = TAPE.map(sym => tapeQuotes.get(sym)).filter(Boolean);
   if (!items.length){ el.className = "tape-in"; el.replaceChildren(h("span",{class:"tq"}, h("small",null,"loading tape…"))); return; }
-  const chip = q => { const chg = q.price - q.prev, pc = q.prev ? chg/q.prev*100 : 0, up = chg >= 0; const ext = q.last && Math.abs(q.last - q.price) > 0.0001 && ["PRE","POST","POSTPOST","PREPRE"].includes(q.state||"") ? q.last : null;
+  const chip = q => { const chg = q.price - q.prev, pc = q.prev ? chg/q.prev*100 : 0, up = chg >= 0; const ext = q.last && Math.abs(q.last - q.price) > 0.0001 && ["PRE","POST","POSTPOST","PREPRE","CLOSED"].includes(q.state||"") ? q.last : null;
     return h("span",{class:"tq", title:TAPE_NAMES[q.symbol] + (q.demo ? " · demo" : q.src ? " · " + q.src : ""), onclick:()=>goSym(q.symbol)}, h("b",null,q.symbol), h("span",{class:"p"}, fmt(q.price, q.price > 1000 ? 2 : 2)), h("span",{class:up?"c":"d"}, `${up?"+":""}${fmt(chg,2)} (${up?"+":""}${fmt(pc,2)}%)`), ext ? h("span",{class:"ext"}, (q.state||"").startsWith("PRE") ? "pre " : "ah ", fmt(ext,2)) : null, q.demo ? h("small",null,"demo") : null); };
   const once = items.map(chip), twice = items.map(chip);
   el.className = "tape-in anim"; el.replaceChildren(...once, ...twice);
 }
-setInterval(() => { if (document.visibilityState === "visible") loadTape(); }, 60000);
+setInterval(() => { if (document.visibilityState === "visible") loadTape(); }, 30000);
 
 // ---------- main chart host (built-in) ----------
 function mountChart(){ const host = document.getElementById("tvChart"); if (!host) return; host.replaceChildren(h("div",{class:"tvfb"}, viewChart())); if (!S.bars) loadBars(); }
@@ -409,7 +417,7 @@ async function load(){
   S.allExps = [...new Set(data.rows.map(r => r[0]))].sort();
   if (!S.exps.length || !S.exps.every(e => S.allExps.includes(e))) S.exps = S.allExps.slice(0, isPro() ? S.set.expCount : Math.min(4, S.set.expCount));
   compute(); renderAll(); checkAlerts();
-  mountChart();
+  if (S.bars && !S.barsDemo && S.barsMeta && S.barsMeta.sym === S.sym && Date.now() - (S.barsAt||0) > 55000) loadBars(); else mountChart();
   if (S.tab === "chart") loadBars();
 }
 // Snapshot feed: the GitHub Action writes chains/bars/quotes to the `data` branch every 5 minutes; raw.githubusercontent allows browser reads.
@@ -654,7 +662,7 @@ function renderChips(){
 function renderAll(){
   const d = S.chain, c = S.calc;
   document.getElementById("symName").textContent = `${S.sym}${NAMES.get(S.sym) ? " · " + NAMES.get(S.sym) : ""}`;
-  document.getElementById("px").textContent = fmt(d.spot, 2);
+  document.getElementById("px").textContent = fmt(d.spot, 2); renderLiveQuote();
   { const hb = document.getElementById("halalBadge"); const hs = halalStatus(S.sym); hb.hidden = false; hb.textContent = hs.s === "excluded" ? "☪ excluded — " + hs.why : hs.s === "index" ? "☪ " + hs.why : hs.s === "passes" ? "☪ halal — " + hs.why : hs.s === "mixed" ? "☪ mixed — " + hs.why : "☪ verify — " + hs.why; hb.className = "badge " + (hs.s === "excluded" ? "dn" : hs.s === "passes" ? "up" : ""); hb.style.textTransform = "none"; }
   const chg = document.getElementById("chg"); chg.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(d.changePct||0)})`; chg.className = "chg num " + (d.change>=0?"up":"dn");
   document.getElementById("asof").replaceChildren(h("span",{class:"live"}, h("i",null), S.demo ? "demo" : "live"), h("span",{id:"cd"},""), h("span",null, "chain " + new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})), h("span",{class:"badge"+(S.demo?" demo":"")}, S.demo ? "Demo data" : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
@@ -967,10 +975,10 @@ async function loadBars(){
   const ext = S.set.extended && iv !== "1d";
   let got = null;
   try { const r = await fetch(`/api/bars?symbol=${sym}&interval=${iv}&range=${rg}&extended=${ext?1:0}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) got = j; } } catch {}
-  if (!got){ const snap = await snapshotJson(iv === "1d" ? `${sym}-daily.json` : `${sym}-bars.json`, 60); if (snap && snap.bars?.length){ let bars = snap.bars; if (iv !== "1d" && iv !== "5m"){ const mins = {"1m":5,"15m":15,"30m":30,"1h":60}[iv]||5; if (mins > 5){ const out = []; let cur = null; for (const b of bars){ const bk = Math.floor(b[0]/(mins*60000))*mins*60000; if (!cur || cur[0] !== bk){ cur = [bk,b[1],b[2],b[3],b[4],b[5]]; out.push(cur); } else { cur[2]=Math.max(cur[2],b[2]); cur[3]=Math.min(cur[3],b[3]); cur[4]=b[4]; cur[5]+=b[5]; } } bars = out; } } got = { bars, source:"snapshot", session:snap.session||null }; } }
+  if (!got){ const snap = await snapshotJson(iv === "1d" ? `${sym}-daily.json` : `${sym}-bars.json`, iv === "1d" ? 24*60 : 20); if (snap && snap.bars?.length){ let bars = snap.bars; if (iv !== "1d" && iv !== "5m"){ const mins = {"1m":5,"15m":15,"30m":30,"1h":60}[iv]||5; if (mins > 5){ const out = []; let cur = null; for (const b of bars){ const bk = Math.floor(b[0]/(mins*60000))*mins*60000; if (!cur || cur[0] !== bk){ cur = [bk,b[1],b[2],b[3],b[4],b[5]]; out.push(cur); } else { cur[2]=Math.max(cur[2],b[2]); cur[3]=Math.min(cur[3],b[3]); cur[4]=b[4]; cur[5]+=b[5]; } } bars = out; } } got = { bars, source:"snapshot", session:snap.session||null }; } }
   if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
   if (!got) got = await cboeBars(sym, iv, rg);
-  if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; }
+  if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; S.barsAt = Date.now(); }
   else { S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; }
   updateAh(); renderStatus();
   if (S.tab === "chart" || S.tab === "quant") renderTabs();

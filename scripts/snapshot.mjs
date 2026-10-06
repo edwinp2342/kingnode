@@ -1,26 +1,55 @@
-// Snapshots the chains, bars and quotes the terminal needs and writes them to ./data as compact JSON.
-// Run by .github/workflows/data.yml every 5 minutes during market hours (free on a public repo), pushed to the `data` branch,
-// read by the site from raw.githubusercontent.com — which allows browser requests. No server, no proxy, no laptop.
+// Snapshots the chains, bars and quotes the terminal needs and writes them to ./data as compact JSON, then pushes.
+// Runs as a loop inside one GitHub Actions job (LOOP_MINUTES), so the feed refreshes about every minute for free:
+//   quotes + bars (Yahoo, near real-time incl. pre/after-hours) every cycle; chains (Cboe, 15-min delayed) every 3rd cycle.
 import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import fs from "node:fs";
+import { execSync } from "node:child_process";
 
 const SYMS = (process.env.SNAPSHOT_SYMBOLS || "SPX,SPY,QQQ,IWM,VIX,NDX,RUT,DIA,TLT,NVDA,TSLA,AAPL,AMZN,MSFT,META,GOOGL,AMD,TSM,GLD,SLV").split(",").map(s => s.trim()).filter(Boolean);
 const TAPE = ["SPX","NDX","RUT","VIX","SPY","QQQ","IWM","DIA"];
+const YAHOO = { SPX:"^GSPC", NDX:"^NDX", RUT:"^RUT", VIX:"^VIX", DJX:"^DJI", XSP:"^GSPC" };
+const LOOP_MIN = Number(process.env.LOOP_MINUTES || 0), EVERY = Number(process.env.EVERY_SEC || 60), PUSH = process.env.PUSH === "1";
 fs.mkdirSync("data", { recursive: true });
-const quotes = []; const ok = [], fail = [];
-for (const sym of SYMS) {
-  try {
-    const c = await fetchChain(sym);
-    const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, 10), keep = new Set(exps);
-    const rows = c.rows.filter(r => keep.has(r[0]) && Math.abs(r[2] / c.spot - 1) <= 0.2).map(r => r.map((v, i) => typeof v === "number" && i >= 3 ? +v.toPrecision(6) : v));
-    fs.writeFileSync(`data/${sym}.json`, JSON.stringify({ ...c, rows, snapshotAt: Date.now() }));
-    if (TAPE.includes(sym)) quotes.push({ symbol: sym, price: c.spot, prev: c.spot - (c.change || 0), last: c.spot, t: Date.now() });
-    ok.push(sym);
-  } catch (e) { fail.push(`${sym}:${e.message}`); }
-  try { const b = await fetchBars(sym, "5m", "5d", true); fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, bars: b.bars.slice(-800), snapshotAt: Date.now() })); } catch {}
-  try { const d = await fetchBars(sym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, bars: d.bars.slice(-300), snapshotAt: Date.now() })); } catch {}
+
+async function quote(sym) {
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[sym] || sym)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
+  if (!r.ok) throw new Error("http " + r.status);
+  const j = await r.json(), res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) throw new Error("no meta");
+  const q = res0.indicators?.quote?.[0], closes = (q?.close || []), ts = res0.timestamp || [];
+  let last = +m.regularMarketPrice || 0, lastT = (m.regularMarketTime || 0) * 1000;
+  for (let i = closes.length - 1; i >= 0; i--) if (closes[i] != null) { last = closes[i]; lastT = ts[i] * 1000; break; }
+  const price = +m.regularMarketPrice || last, prev = +(m.chartPreviousClose ?? m.previousClose ?? price);
+  const div = sym === "XSP" ? 10 : 1;
+  return { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000 };
 }
-if (quotes.find(q => q.symbol === "SPX")) { const s = quotes.find(q => q.symbol === "SPX"); quotes.push({ symbol: "XSP", price: s.price / 10, prev: s.prev / 10, last: s.last / 10, t: s.t }); }
-fs.writeFileSync("data/quotes.json", JSON.stringify({ at: Date.now(), quotes }));
-fs.writeFileSync("data/index.json", JSON.stringify({ at: Date.now(), ok, fail }));
-console.log("ok", ok.join(","), fail.length ? "fail " + fail.join(" ") : "");
+async function cycle(n) {
+  const t0 = Date.now(); const ok = [], fail = [];
+  // quotes for the tape (fast, near real-time, extended hours)
+  const quotes = [];
+  for (const sym of TAPE) { try { quotes.push(await quote(sym)); } catch (e) { fail.push(`q:${sym}:${e.message}`); } }
+  const spx = quotes.find(q => q.symbol === "SPX"); if (spx) quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 });
+  fs.writeFileSync("data/quotes.json", JSON.stringify({ at: Date.now(), quotes }));
+  // bars for every symbol (Yahoo, extended) every cycle; chains every 3rd cycle (they're big and 15-min delayed anyway)
+  for (const sym of SYMS) {
+    try { const b = await fetchBars(sym, "5m", "5d", true); fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, bars: b.bars.slice(-800), snapshotAt: Date.now() })); } catch (e) { fail.push(`b:${sym}`); }
+    if (n % 3 === 0) {
+      try {
+        const c = await fetchChain(sym);
+        const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, 10), keep = new Set(exps);
+        const rows = c.rows.filter(r => keep.has(r[0]) && Math.abs(r[2] / c.spot - 1) <= 0.2).map(r => r.map((v, i) => typeof v === "number" && i >= 3 ? +v.toPrecision(6) : v));
+        fs.writeFileSync(`data/${sym}.json`, JSON.stringify({ ...c, rows, snapshotAt: Date.now() })); ok.push(sym);
+      } catch (e) { fail.push(`c:${sym}:${e.message}`); }
+      if (n % 9 === 0) { try { const d = await fetchBars(sym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, bars: d.bars.slice(-300), snapshotAt: Date.now() })); } catch {} }
+    }
+  }
+  fs.writeFileSync("data/index.json", JSON.stringify({ at: Date.now(), cycle: n, ok, fail }));
+  console.log(`cycle ${n} · ${((Date.now() - t0) / 1000).toFixed(1)}s · quotes ${quotes.length} · chains ${ok.length}${fail.length ? " · fail " + fail.join(" ") : ""}`);
+  if (PUSH) push();
+}
+function push() {
+  try {
+    execSync(`cd data && (git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1; git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash" });
+  } catch (e) { console.error("push failed", e.message); }
+}
+const end = Date.now() + LOOP_MIN * 60e3; let n = 0;
+do { await cycle(n++); if (LOOP_MIN) { const wait = Math.max(5, EVERY - 1) * 1000; await new Promise(r => setTimeout(r, wait)); } } while (Date.now() < end);

@@ -1,25 +1,24 @@
-name: market data snapshot
+name: market data feed
 on:
   schedule:
-    - cron: "*/5 13-21 * * 1-5"   # every 5 min, 9:00–17:55 ET (13:00–21:55 UTC during daylight time)
+    - cron: "0 8-23 * * 1-5"   # a new 58-minute loop every hour, 4:00 AM–7:59 PM ET (daylight time) — pre-market through after-hours
   workflow_dispatch:
 permissions:
   contents: write
-concurrency: { group: data, cancel-in-progress: true }
+concurrency: { group: data-feed, cancel-in-progress: true }
 jobs:
-  snapshot:
+  feed:
     runs-on: ubuntu-latest
+    timeout-minutes: 62
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
-      - run: node scripts/snapshot.mjs
-      - name: push to data branch
-        run: |
-          cd data
-          git init -q -b data
-          git config user.name kingnode-bot
-          git config user.email bot@users.noreply.github.com
-          git add -A
-          git commit -qm "snapshot $(date -u +%FT%TZ)"
-          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
+      - name: snapshot loop (~1 min cadence, pushes each cycle)
+        env:
+          LOOP_MINUTES: "58"
+          EVERY_SEC: "60"
+          PUSH: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/snapshot.mjs
