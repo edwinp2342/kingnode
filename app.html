@@ -429,8 +429,15 @@ function extState(q){ // "PRE" | "POST" | false — from the feed's marketState,
   const st = (q.state||"").toUpperCase(); if (st.startsWith("PRE")) return "PRE"; if (st.startsWith("POST") || st === "CLOSED") return "POST";
   if (q.t){ const et = new Date(new Date(q.t).toLocaleString("en-US",{timeZone:"America/New_York"})); const m = et.getHours()*60+et.getMinutes(); if (m < 570) return "PRE"; if (m >= 960) return "POST"; } return false;
 }
+function renderNoChain(){
+  let b = document.getElementById("nochain"); if (!b){ b = h("div",{id:"nochain",class:"notice",style:{margin:"0 14px 8px",borderColor:"var(--gold)",color:"var(--gold)"}}); document.getElementById("tvChart")?.before(b); }
+  if (S.demo && S.chain?.noChain && S.bars && !S.barsDemo){ b.hidden = false; b.textContent = `No options chain for ${S.sym} on the free feed — price and chart are real, but the levels, Heatseeker and flow below are placeholders. Add ${S.sym} to SNAPSHOT_SYMBOLS in scripts/snapshot.mjs, set a data proxy in ⚙, or run the desktop server to get its chain.`; }
+  else b.hidden = true;
+}
 function renderLiveQuote(){
-  const el = document.getElementById("liveq"); if (!el) return; const q = tapeQuotes.get(S.sym); if (!q || q.demo){ el.hidden = true; return; }
+  const el = document.getElementById("liveq"); if (!el) return; let q = tapeQuotes.get(S.sym);
+  if ((!q || q.demo) && S.bars && !S.barsDemo && S.barsMeta?.sym === S.sym){ const b = S.bars.at(-1); const prev = S.chain && !S.chain.noChain && !S.demo ? (S.chain.spot - (S.chain.change||0)) : (() => { const days = [...new Set(S.bars.map(x => new Date(x[0]).toDateString()))]; const prevDay = days[days.length-2]; const pb = S.bars.filter(x => new Date(x[0]).toDateString() === prevDay && isRegular(x[0])); return pb.length ? pb.at(-1)[4] : b[4]; })(); q = { symbol:S.sym, price:b[4], prev, last:b[4], t:b[0], state:null }; }
+  if (!q || q.demo){ el.hidden = true; return; }
   const isExt = extState(q); const ext = isExt && q.last && Math.abs(q.last - q.price) > 1e-6;
   const chg = (ext ? q.last : q.price) - q.prev, pc = q.prev ? chg/q.prev*100 : 0;
   el.textContent = `${ext ? (isExt === "PRE" ? "PRE " : "AH ") : "LIVE "}${fmt(ext ? q.last : q.price, 2)}  ${chg>=0?"+":""}${fmt(chg,2)} (${pc>=0?"+":""}${fmt(pc,2)}%)${q.t ? " · " + new Date(q.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`;
@@ -767,7 +774,7 @@ function renderChips(){
 function renderAll(){
   const d = S.chain, c = S.calc;
   document.getElementById("symName").textContent = `${S.sym}${NAMES.get(S.sym) ? " · " + NAMES.get(S.sym) : ""}`;
-  document.getElementById("px").textContent = fmt(d.spot, 2); renderLiveQuote();
+  document.getElementById("px").textContent = fmt(d.spot, 2); renderLiveQuote(); renderNoChain();
   { const hb = document.getElementById("halalBadge"); const hs = halalStatus(S.sym); hb.hidden = false; hb.textContent = hs.s === "excluded" ? "☪ excluded — " + hs.why : hs.s === "index" ? "☪ " + hs.why : hs.s === "passes" ? "☪ halal — " + hs.why : hs.s === "mixed" ? "☪ mixed — " + hs.why : "☪ verify — " + hs.why; hb.className = "badge " + (hs.s === "excluded" ? "dn" : hs.s === "passes" ? "up" : ""); hb.style.textTransform = "none"; }
   const chg = document.getElementById("chg"); chg.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(d.changePct||0)})`; chg.className = "chg num " + (d.change>=0?"up":"dn");
   document.getElementById("asof").replaceChildren(h("span",{class:"live"}, h("i",null), S.demo ? "demo" : "live"), h("span",{id:"cd"},""), h("span",null, "chain " + new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})), h("span",{class:"badge"+(S.demo?" demo":"")}, S.demo ? "Demo data" : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
@@ -1093,9 +1100,11 @@ async function loadBars(){
   if (got && got.source) S.barsSrc = got.source;
   if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
   if (!got) got = await cboeBars(sym, iv, rg);
-  if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; S.barsAt = Date.now(); S.barsMissing = false; }
+  if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; S.barsAt = Date.now(); S.barsMissing = false; renderLiveQuote(); renderNoChain(); }
   else if (S.demo){ S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; S.barsMissing = false; }
   else { S.bars = null; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.barsMissing = true; }
+  // chain is demo but the price is real: rescale the placeholder chain to the real price so nothing on screen is off by 10x
+  if (S.demo && got && S.chain && S.chain.symbol === sym){ const last = got.bars.at(-1)[4]; if (last && Math.abs(last/S.chain.spot - 1) > 0.02){ const f = last / S.chain.spot; S.chain.spot = last; S.chain.rows = S.chain.rows.map(r => { const rr = r.slice(); rr[2] = +(r[2]*f).toFixed(2); return rr; }); S.chain.noChain = true; compute(); renderAll(); } else S.chain.noChain = true; renderNoChain(); }
   updateAh(); renderStatus();
   if (S.tab === "chart" || S.tab === "quant") renderTabs();
   const fb = document.querySelector("#tvChart .tvfb"); if (fb){ const msg = fb.querySelector(".hint")?.textContent || ""; tvFallback(msg); }

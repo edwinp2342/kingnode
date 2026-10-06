@@ -5,7 +5,7 @@ import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 
-const SYMS = (process.env.SNAPSHOT_SYMBOLS || "SPX,SPY,QQQ,IWM,VIX,NDX,RUT,DIA,TLT,NVDA,TSLA,AAPL,AMZN,MSFT,META,GOOGL,AMD,TSM,GLD,SLV,COIN,PLTR,NFLX,XSP").split(",").map(s => s.trim()).filter(Boolean);
+const SYMS = (process.env.SNAPSHOT_SYMBOLS || "SPX,SPY,QQQ,IWM,VIX,NDX,RUT,DIA,TLT,NVDA,TSLA,AAPL,AMZN,MSFT,META,GOOGL,AMD,TSM,GLD,SLV,COIN,PLTR,NFLX,XSP,AVGO,MU,ARM,MRVL,INTC,AMAT,LRCX,KLAC,SMH,XLE,XOM,FCX,CAT,CEG,VST,VRT,CRWD,PANW,ANET,ORCL,HOOD,MSTR,UBER,SHOP,LLY,UNH,JPM,BA,GE,DE,HYG,XLF,KRE,XBI,ARKK,IBIT,SOFI,RKLB,IONQ,APP,RDDT,OKLO,BABA,NIO,RIVN,MARA,DELL,ABNB,CMG,COST,WMT,HD,NKE").split(",").map(s => s.trim()).filter(Boolean);
 // bars for a much wider list (cheap: one small Yahoo request each), so every ticker in the app has a chart
 // every ticker the app knows: its built-in search universe + halal list + the extra list below
 const appHtml = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8");
@@ -46,8 +46,8 @@ async function cycle(n) {
     if (n % 3 === 0) {
       try {
         const c = await fetchChain(sym);
-        const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, 10), keep = new Set(exps);
-        const rows = c.rows.filter(r => keep.has(r[0]) && Math.abs(r[2] / c.spot - 1) <= 0.2).map(r => r.map((v, i) => typeof v === "number" && i >= 3 ? +v.toPrecision(6) : v));
+        const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, 8), keep = new Set(exps);
+        const rows = c.rows.filter(r => keep.has(r[0]) && Math.abs(r[2] / c.spot - 1) <= 0.15).map(r => r.map((v, i) => typeof v === "number" && i >= 3 ? +v.toPrecision(6) : v));
         fs.writeFileSync(`data/${sym}.json`, JSON.stringify({ ...c, rows, snapshotAt: Date.now() })); ok.push(sym);
       } catch (e) { fail.push(`c:${sym}:${e.message}`); }
     }
