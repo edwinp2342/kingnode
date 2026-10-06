@@ -37,7 +37,10 @@ export default async function handler(req, res) {
   const body = typeof req.body === "string" ? safeParse(req.body) : (req.body || {});
   const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "unknown";
   if (throttled(ip)) return res.status(429).json({ error: "rate_limited" });
-  // personal build: no gating
+  // Access control: a deployed server requires ASK_KEY (sent as body.key); the local desktop server (loopback) is open. Never let the server's
+  // Anthropic key be spent by anonymous callers.
+  const host = String(req.headers?.host || ""); const local = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host);
+  if (!local){ if (!process.env.ASK_KEY) return res.status(401).json({ error: "locked", hint: "set ASK_KEY on the server and enter it in ⚙ Settings" }); if (String(body.key || "") !== process.env.ASK_KEY) return res.status(401).json({ error: "bad_key" }); }
 
   const prompt = body.prompt;
   if (typeof prompt !== "string" || !prompt.trim() || prompt.length > MAX_PROMPT) {
