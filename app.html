@@ -276,6 +276,7 @@ table.qtab tr.sel td{background:rgba(245,185,66,.12); box-shadow:inset 2px 0 0 v
     <label>Alert distance (% from level)<input name="alertPct" type="number" min="0.05" max="2" step="0.05"></label>
     <label>Fresh positioning: min vol/OI<input name="freshRatio" type="number" min="0.5" max="20" step="0.1"></label>
     <label>Fresh positioning: min volume<input name="freshMinVol" type="number" min="0" max="100000"></label>
+    <label style="grid-column:1/-1">Data proxy URL (Cloudflare Worker — makes the static site live; see proxy/ in the project)<input name="proxy" placeholder="https://kingnode-proxy.yourname.workers.dev"></label>
     <label style="grid-column:1/-1">Discord webhook URL (for ⚑ Flag and alerts — works without a server)<input name="webhook" placeholder="https://discord.com/api/webhooks/…"></label>
 
   </div>
@@ -310,7 +311,7 @@ const HALAL_UNIVERSE = [
 const HALAL_MAP = new Map(HALAL_UNIVERSE.map(r => [r[0], r]));
 function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
 const DEFAULTS = { defaultSym:"SPX", refreshSec:60, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
-  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"" };
+  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"", proxy:"" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
 const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(), seekerMode:"gex", seekerRange:3, flowExp:"all", cfSort:"prem", view:null, inst:null, gate:false, flow:null, flowDemo:false, flowMinPrem:50000, flowKind:"all", flowSide:"all", flowCp:"all",
@@ -358,8 +359,8 @@ let tapeQuotes = new Map();
 async function tapeFromCboe(sym){
   // intraday chart gives today's path; the options feed carries current price + change. Try the light one first.
   const s = INDEX_SYMS.has(sym) ? `_${sym}` : sym;
-  try { const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (r.ok){ const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (arr.length){ const last = arr[arr.length-1], first = arr[0]; const px = +(last.close ?? last.price), open = +(first.open ?? first.price ?? px); const prev = +(d.prev_day_close ?? j.prev_day_close ?? 0) || null; return {symbol:sym, price:px, prev: prev || open, last:px, t:Date.parse(String(last.datetime||last.date||"").replace(" ","T")+"-04:00") || Date.now(), src:"cboe-intraday"}; } } } catch {}
-  try { const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (r.ok){ const j = await r.json(); const d = j.data || j; const px = +(d.current_price ?? d.last ?? d.close ?? 0); if (px) return {symbol:sym, price:px, prev: px - (+d.price_change || 0), last:px, t:Date.now(), src:"cboe-options"}; } } catch {}
+  try { const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (r && r.ok){ const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (arr.length){ const last = arr[arr.length-1], first = arr[0]; const px = +(last.close ?? last.price), open = +(first.open ?? first.price ?? px); const prev = +(d.prev_day_close ?? j.prev_day_close ?? 0) || null; return {symbol:sym, price:px, prev: prev || open, last:px, t:Date.parse(String(last.datetime||last.date||"").replace(" ","T")+"-04:00") || Date.now(), src:"cboe-intraday"}; } } } catch {}
+  try { const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (r && r.ok){ const j = await r.json(); const d = j.data || j; const px = +(d.current_price ?? d.last ?? d.close ?? 0); if (px) return {symbol:sym, price:px, prev: px - (+d.price_change || 0), last:px, t:Date.now(), src:"cboe-options"}; } } catch {}
   return null;
 }
 async function loadTape(){
@@ -410,6 +411,10 @@ async function load(){
   mountChart();
   if (S.tab === "chart") loadBars();
 }
+// External fetch: direct, or through the user's proxy worker when configured (static hosting + CORS-blocked feeds)
+function ext(url){ const p = (S.set.proxy||"").trim().replace(/\/$/,""); return p ? `${p}/?u=${encodeURIComponent(url)}` : url; }
+async function fetchExt(url, opts){ let r = null; try { r = await fetch(ext(url), opts); } catch { r = null; }
+  if ((!r || !r.ok) && (S.set.proxy||"").trim()){ try { r = await fetch(url, opts); } catch { r = null; } } return r; }
 // Static-hosting bars: Cboe's delayed intraday (1-minute) and historical (daily) chart feeds, aggregated to the chosen interval.
 async function cboeBars(sym, iv, rg){
   const tries = INDEX_SYMS.has(sym) ? [`_${sym}`, sym] : [sym];
@@ -417,13 +422,13 @@ async function cboeBars(sym, iv, rg){
   for (const s of tries){
     try {
       if (iv === "1d"){
-        const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/charts/historical/${s}.json`); if (!r.ok) continue;
+        const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/charts/historical/${s}.json`); if (!r || !r.ok) continue;
         const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (!arr.length) continue;
         const days = {"1d":2,"5d":8,"1mo":32,"3mo":95,"6mo":185,"1y":370,"2y":740,"5y":1830}[rg] || 95;
         const bars = arr.map(x => [Date.parse((x.date || x.datetime || x.time) + (String(x.date||"").length === 10 ? "T16:00:00-04:00" : "")), +x.open, +x.high, +x.low, +x.close, +(x.volume||x.stock_volume||0)]).filter(b => isFinite(b[0]) && isFinite(b[4])).sort((a,b)=>a[0]-b[0]);
         return { bars: bars.slice(-days), source:"cboe-direct" };
       }
-      const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (!r.ok) continue;
+      const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (!r || !r.ok) continue;
       const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (!arr.length) continue;
       const one = arr.map(x => { const t = x.datetime || x.date || x.time; const ts = Date.parse(/[T ]\d/.test(String(t)) ? String(t).replace(" ","T") + (/[+-]\d\d:?\d\d$|Z$/.test(String(t)) ? "" : "-04:00") : t); return [ts, +(x.open ?? x.price ?? x.close), +(x.high ?? x.price ?? x.close), +(x.low ?? x.price ?? x.close), +(x.close ?? x.price), +(x.volume||x.stock_volume||0)]; }).filter(b => isFinite(b[0]) && isFinite(b[4])).sort((a,b)=>a[0]-b[0]);
       if (!mins || mins === 1) return { bars: one, source:"cboe-direct" };
@@ -440,7 +445,7 @@ async function cboeDirect(sym){
   const tries = INDEX_SYMS.has(sym) ? [`_${sym}`, sym] : [sym];
   for (const s of tries){
     try {
-      const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (!r.ok) continue;
+      const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (!r || !r.ok) continue;
       const j = await r.json(), d = j.data || j; const opts = Array.isArray(d.options) ? d.options : Array.isArray(d) ? d : null; if (!opts) { console.warn("cboe chain: unexpected shape", Object.keys(d)); continue; }
       const rows = [];
       for (const o of opts){ const m = String(o.option||"").match(/^([A-Z]+)(\d{6})([CP])(\d{8})$/); if (!m) continue;
@@ -634,6 +639,7 @@ function renderStatus(){
     row("Tape", tapeQuotes.size ? `${tapeQuotes.size} tickers · ${[...tapeQuotes.values()][0]?.demo ? "demo" : ([...tapeQuotes.values()][0]?.src || "server")}` : "loading", tapeQuotes.size ? ![...tapeQuotes.values()][0]?.demo : null),
     row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
     row("Host", location.hostname.includes("github.io") ? "static (no server)" : location.hostname, null),
+    row("Proxy", (S.set.proxy||"").trim() ? "set" : "none — direct browser fetch", (S.set.proxy||"").trim() ? true : null),
     h("p",{style:{margin:"6px 0 0"}},"If a row is red, screenshot this card and the browser console (F12 → Console) and send it."));
 }
 // ---------- render ----------
@@ -957,6 +963,7 @@ async function loadBars(){
   const ext = S.set.extended && iv !== "1d";
   let got = null;
   try { const r = await fetch(`/api/bars?symbol=${sym}&interval=${iv}&range=${rg}&extended=${ext?1:0}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) got = j; } } catch {}
+  if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
   if (!got) got = await cboeBars(sym, iv, rg);
   if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; }
   else { S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; }
