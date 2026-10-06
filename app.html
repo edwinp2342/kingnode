@@ -7,6 +7,8 @@
 <meta name="description" content="Dealer positioning, options flow, institutional lean and TradingView charting on one screen.">
 <meta name="robots" content="noindex">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -83,8 +85,32 @@ tr.fresh td{animation:flash 1.6s ease-out}
 .tvfb{height:100%; overflow:auto; padding:0 8px}
 .tvfb svg{max-height:calc(62vh - 120px) !important}
 @media (max-width:980px){ .tvfb svg{max-height:calc(52vh - 120px) !important} }
-.tabs{display:flex; gap:0; border-bottom:1px solid var(--rule); padding:0 8px; overflow-x:auto; scrollbar-width:none; background:var(--bg); position:sticky; top:0; z-index:4}
-.card{background:var(--panel)}
+.tabs{display:block; border-bottom:1px solid var(--rule); padding:0; background:var(--bg); position:sticky; top:0; z-index:4}
+.tabs-primary{display:flex; gap:2px; padding:6px 10px 0; border-bottom:1px solid var(--rule); overflow-x:auto; scrollbar-width:none}
+.tab-g{border:0; background:transparent; color:var(--muted); padding:8px 14px 10px; font:600 12px/1 var(--sans); letter-spacing:.08em; text-transform:uppercase; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; white-space:nowrap}
+.tab-g:hover{color:var(--ink)} .tab-g[aria-selected="true"]{color:var(--ink); border-bottom-color:var(--gold)}
+.tab-g.util{margin-left:auto; color:var(--muted); font-weight:500; text-transform:none; letter-spacing:0}
+.tabs-secondary{display:flex; gap:4px; padding:6px 10px; overflow-x:auto; scrollbar-width:none; background:var(--panel)}
+.tabs-secondary .tab{border:1px solid transparent; border-radius:5px; padding:5px 11px; font:500 12.5px/1 var(--sans); color:var(--muted); background:transparent; margin:0}
+.tabs-secondary .tab:hover{color:var(--ink); background:var(--panel2)}
+.tabs-secondary .tab[aria-selected="true"]{color:var(--ink); background:var(--panel2); border-color:var(--rule2); font-weight:600}
+.card{background:var(--panel); border-radius:8px}
+.card h2{font:600 11px/1 var(--sans); letter-spacing:.09em; text-transform:uppercase; color:var(--muted); margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid var(--rule)}
+.btn{font-family:var(--sans); font-weight:600; letter-spacing:.01em; border-radius:6px; transition:background .12s, border-color .12s}
+.btn:hover{border-color:var(--rule2)}
+.btn.gold{background:var(--gold); color:#1a1200; border-color:var(--gold)} .btn.gold:hover{filter:brightness(1.06)}
+.bar{border-bottom:1px solid var(--rule); background:var(--bg)}
+#symIn{font-family:var(--mono); font-weight:600; letter-spacing:.04em; border-radius:6px}
+.chip{font-family:var(--mono); font-size:11.5px; letter-spacing:.04em; border-radius:5px; color:var(--muted)}
+.chip[aria-pressed="true"]{color:var(--ink); background:var(--panel2); border:1px solid var(--rule2)}
+.symrow{padding:12px 14px} #symName{font-weight:600; letter-spacing:-.01em; color:var(--ink)}
+.quote .px{font-size:22px; letter-spacing:-.02em} .badge{border-radius:4px; font-weight:600; letter-spacing:.06em}
+.tape{height:32px} .tq{font-size:12px} .tq b{letter-spacing:.06em}
+.ctl{font-size:12.5px} .data th{font:600 11px/1 var(--sans); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:8px 7px}
+.data td{font-size:12.5px} .ladder-head{font-size:10.5px}
+.lvl .n{font-size:12.5px} .lvl .v{font-size:15px}
+.notice,.empty{border-radius:8px}
+dialog .dlg h2{font:700 16px/1.2 var(--sans); letter-spacing:-.01em; text-transform:none; color:var(--ink); border:0; padding:0}
 .lvl:nth-child(odd){background:var(--panel2)}
 :root[data-theme="blackout"] .heat{border-color:var(--rule2)}
 :root[data-theme="blackout"] .btn:not(.gold):not(.blue){background:var(--panel2)}
@@ -792,8 +818,14 @@ function renderAlertsOld(){
   else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
 }
 function renderTabs(){
-  const T = LAYOUT_ITEMS.tabs.filter(([id]) => shown(id));
-  document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)), h("button",{class:"tab", title:"Choose which tabs and cards you see", style:{marginLeft:"auto",color:"var(--muted)"}, onclick:openCustomize},"⋯ Customize"));
+  const T = LAYOUT_ITEMS.tabs.filter(([id]) => shown(id)); const label = Object.fromEntries(LAYOUT_ITEMS.tabs);
+  const groupOf = id => TAB_GROUPS.find(g => g.tabs.includes(id))?.name || "More";
+  const curGroup = groupOf(S.tab);
+  const groups = TAB_GROUPS.map(g => ({...g, tabs: g.tabs.filter(id => T.some(([x]) => x === id))})).filter(g => g.tabs.length);
+  const tabsEl = document.getElementById("tabs");
+  tabsEl.replaceChildren(
+    h("div",{class:"tabs-primary"}, ...groups.map(g => h("button",{class:"tab-g", role:"tab", "aria-selected":String(g.name===curGroup), onclick:()=>{ if (g.name !== curGroup){ S.tab = g.tabs[0]; renderTabs(); } }}, g.name)), h("button",{class:"tab-g util", title:"Choose which tabs and cards you see", onclick:openCustomize},"Customize")),
+    h("div",{class:"tabs-secondary"}, ...(groups.find(g => g.name === curGroup)?.tabs || []).map(id => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, label[id]))));
   const p = document.getElementById("panel");
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
   if (S.tab === "seeker") { p.replaceChildren(viewSeeker()); return; }
@@ -2045,6 +2077,13 @@ function chainSnapshot(){ const c = S.calc; if (!c) return null; const tr = (S.f
 function journalOpen(pos){ const j = getJournal(); j.push({ id: pos.id || (pos.id = uidj()), opened:Date.now(), sym:pos.sym, contract:`${pos.sym} ${pos.exp} ${fmt(pos.K)}${pos.cp}`, entry:pos.entry, qty:pos.qty, thesis:pos.thesis||"", snap:chainSnapshot(), notes:"" }); setJournal(j); }
 function journalClose(pos, exitPx, why){ const j = getJournal(); const e = j.find(x => x.id === pos.id); if (!e) return; e.closed = Date.now(); e.exit = exitPx; e.pnl = (exitPx - pos.entry)*pos.qty*100; e.pnlPct = (exitPx/pos.entry-1)*100; e.why = why||""; e.snapExit = chainSnapshot(); setJournal(j); }
 function uidj(){ return Math.random().toString(36).slice(2,10); }
+const TAB_GROUPS = [
+  {name:"Map", tabs:["seeker","heat","profile","skew","fresh","chain","hist"]},
+  {name:"Flow", tabs:["flow","cflow","inst"]},
+  {name:"Trade", tabs:["ideas","play","quant","book"]},
+  {name:"Desk", tabs:["journal","calendar","brief","macro"]},
+  {name:"Lists", tabs:["watch","tracked","halal"]},
+];
 const LAYOUT_KEY = "kingnode:layout";
 const LAYOUT_ITEMS = {
   tabs: [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["ideas","Ideas"],["play","Playbook"],["book","Book"],["journal","Journal"],["brief","Brief"],["calendar","Calendar"],["macro","Macro"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]],
@@ -2297,7 +2336,7 @@ document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTARE
 document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
-window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; applyLayout(); renderPlan(); loadTape();
+window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; applyLayout(); renderChips(); renderPlan(); loadTape();
 { try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
