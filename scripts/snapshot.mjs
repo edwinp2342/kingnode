@@ -12,7 +12,7 @@ const LOOP_MIN = Number(process.env.LOOP_MINUTES || 0), EVERY = Number(process.e
 fs.mkdirSync("data", { recursive: true });
 
 async function quote(sym) {
-  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[sym] || sym)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[sym] || sym)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" }, signal: AbortSignal.timeout(15000) });
   if (!r.ok) throw new Error("http " + r.status);
   const j = await r.json(), res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) throw new Error("no meta");
   const q = res0.indicators?.quote?.[0], closes = (q?.close || []), ts = res0.timestamp || [];
@@ -48,7 +48,7 @@ async function cycle(n) {
 }
 function push() {
   try {
-    execSync(`cd data && (git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1; git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash" });
+    execSync(`cd data && (git rev-parse --is-inside-work-tree >/dev/null 2>&1 || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1; git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash", timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
   } catch (e) { console.error("push failed", e.message); }
 }
 const end = Date.now() + LOOP_MIN * 60e3; let n = 0;

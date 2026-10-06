@@ -45,7 +45,7 @@ async function cboeChain(symbol) {
 function tradierBase() { return process.env.TRADIER_ENV === "prod" ? "https://api.tradier.com/v1" : "https://sandbox.tradier.com/v1"; }
 async function tradier(path, params) {
   const u = new URL(tradierBase() + path); for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const r = await fetch(u, { headers: { Authorization: `Bearer ${process.env.TRADIER_TOKEN}`, Accept: "application/json" } });
+  const r = await fetch(u, { headers: { Authorization: `Bearer ${process.env.TRADIER_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(20000) });
   if (!r.ok) throw new Error(`tradier ${path} http ${r.status}`);
   return r.json();
 }
@@ -72,7 +72,7 @@ async function tradierChain(symbol) {
 // ---------- Polygon (POLYGON_KEY) ----------
 async function polygon(url) {
   const u = new URL(url); u.searchParams.set("apiKey", process.env.POLYGON_KEY);
-  const r = await fetch(u); if (!r.ok) throw new Error(`polygon http ${r.status}`); return r.json();
+  const r = await fetch(u, { signal: AbortSignal.timeout(20000) }); if (!r.ok) throw new Error(`polygon http ${r.status}`); return r.json();
 }
 async function polygonChain(symbol) {
   if (!process.env.POLYGON_KEY) throw new Error("POLYGON_KEY missing");
