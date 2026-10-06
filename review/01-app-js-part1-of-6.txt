@@ -1,0 +1,368 @@
+// KINGNODE app.html — JavaScript part 1 of 6 (see 00-overview.md)
+
+(() => {
+"use strict";
+const QUICK = ["SPX","SPY","QQQ","IWM","VIX","NVDA","TSLA","AAPL","AMZN","MSFT","META","GOOGL","AMD","NFLX","COIN","PLTR"];
+const UNIVERSE = [["SPX","S&P 500 Index"],["SPY","SPDR S&P 500 ETF"],["QQQ","Invesco Nasdaq-100 ETF"],["IWM","iShares Russell 2000 ETF"],["DIA","SPDR Dow Jones ETF"],["VIX","Cboe Volatility Index"],["NDX","Nasdaq-100 Index"],["RUT","Russell 2000 Index"],["XSP","Mini-SPX Index"],["TLT","iShares 20+ Year Treasury"],["GLD","SPDR Gold"],["SLV","iShares Silver"],["USO","United States Oil"],["UVXY","ProShares Ultra VIX"],["SQQQ","ProShares UltraPro Short QQQ"],["TQQQ","ProShares UltraPro QQQ"],["SOXL","Direxion Semiconductor Bull 3x"],["ARKK","ARK Innovation ETF"],["XLF","Financial Select Sector"],["XLE","Energy Select Sector"],["XLK","Technology Select Sector"],["XLV","Health Care Select Sector"],["XLI","Industrial Select Sector"],["XLU","Utilities Select Sector"],["XLP","Consumer Staples Select"],["XLY","Consumer Discretionary Select"],["XBI","SPDR Biotech"],["SMH","VanEck Semiconductor"],["KRE","SPDR Regional Banking"],["HYG","iShares High Yield Corporate"],["EEM","iShares Emerging Markets"],["FXI","iShares China Large-Cap"],["BITO","ProShares Bitcoin Strategy"],["IBIT","iShares Bitcoin Trust"],
+["AAPL","Apple"],["MSFT","Microsoft"],["NVDA","NVIDIA"],["AMZN","Amazon"],["GOOGL","Alphabet A"],["GOOG","Alphabet C"],["META","Meta Platforms"],["TSLA","Tesla"],["BRK.B","Berkshire Hathaway B"],["AVGO","Broadcom"],["LLY","Eli Lilly"],["JPM","JPMorgan Chase"],["V","Visa"],["MA","Mastercard"],["UNH","UnitedHealth"],["XOM","Exxon Mobil"],["COST","Costco"],["WMT","Walmart"],["HD","Home Depot"],["PG","Procter & Gamble"],["JNJ","Johnson & Johnson"],["NFLX","Netflix"],["ORCL","Oracle"],["CRM","Salesforce"],["ADBE","Adobe"],["AMD","Advanced Micro Devices"],["INTC","Intel"],["QCOM","Qualcomm"],["TXN","Texas Instruments"],["MU","Micron"],["ARM","Arm Holdings"],["TSM","Taiwan Semiconductor"],["ASML","ASML Holding"],["SMCI","Super Micro Computer"],["MRVL","Marvell"],["LRCX","Lam Research"],["AMAT","Applied Materials"],["KLAC","KLA"],["ANET","Arista Networks"],["PLTR","Palantir"],["SNOW","Snowflake"],["CRWD","CrowdStrike"],["PANW","Palo Alto Networks"],["NOW","ServiceNow"],["SHOP","Shopify"],["UBER","Uber"],["ABNB","Airbnb"],["COIN","Coinbase"],["MSTR","MicroStrategy"],["HOOD","Robinhood"],["SOFI","SoFi"],["SQ","Block"],["PYPL","PayPal"],["AFRM","Affirm"],["RBLX","Roblox"],["DKNG","DraftKings"],["BA","Boeing"],["CAT","Caterpillar"],["DE","Deere"],["GE","GE Aerospace"],["RTX","RTX"],["LMT","Lockheed Martin"],["NOC","Northrop Grumman"],["GS","Goldman Sachs"],["MS","Morgan Stanley"],["BAC","Bank of America"],["C","Citigroup"],["WFC","Wells Fargo"],["SCHW","Charles Schwab"],["AXP","American Express"],["BLK","BlackRock"],["KO","Coca-Cola"],["PEP","PepsiCo"],["MCD","McDonald's"],["SBUX","Starbucks"],["NKE","Nike"],["DIS","Disney"],["CMCSA","Comcast"],["T","AT&T"],["VZ","Verizon"],["TMUS","T-Mobile"],["PFE","Pfizer"],["MRK","Merck"],["ABBV","AbbVie"],["AMGN","Amgen"],["GILD","Gilead"],["BMY","Bristol Myers Squibb"],["MRNA","Moderna"],["NVO","Novo Nordisk"],["ISRG","Intuitive Surgical"],["CVS","CVS Health"],["CVX","Chevron"],["COP","ConocoPhillips"],["OXY","Occidental"],["SLB","Schlumberger"],["FCX","Freeport-McMoRan"],["NEM","Newmont"],["F","Ford"],["GM","General Motors"],["RIVN","Rivian"],["LCID","Lucid"],["NIO","NIO"],["BABA","Alibaba"],["PDD","PDD Holdings"],["JD","JD.com"],["MELI","MercadoLibre"],["SE","Sea Limited"],["SPOT","Spotify"],["ROKU","Roku"],["TTD","The Trade Desk"],["ZM","Zoom"],["DDOG","Datadog"],["NET","Cloudflare"],["MDB","MongoDB"],["ZS","Zscaler"],["OKTA","Okta"],["TEAM","Atlassian"],["WDAY","Workday"],["INTU","Intuit"],["ADP","ADP"],["IBM","IBM"],["CSCO","Cisco"],["DELL","Dell"],["HPQ","HP"],["UPS","UPS"],["FDX","FedEx"],["DAL","Delta Air Lines"],["UAL","United Airlines"],["AAL","American Airlines"],["LUV","Southwest"],["CCL","Carnival"],["RCL","Royal Caribbean"],["MAR","Marriott"],["LOW","Lowe's"],["TGT","Target"],["TJX","TJX"],["LULU","Lululemon"],["CMG","Chipotle"],["ELF","e.l.f. Beauty"],["CELH","Celsius"],["ENPH","Enphase"],["FSLR","First Solar"],["PLUG","Plug Power"],["GME","GameStop"],["AMC","AMC Entertainment"],["MARA","MARA Holdings"],["RIOT","Riot Platforms"],["CLSK","CleanSpark"],["IONQ","IonQ"],["RGTI","Rigetti"],["QUBT","Quantum Computing"],["APP","AppLovin"],["VRT","Vertiv"],["CEG","Constellation Energy"],["VST","Vistra"],["NRG","NRG Energy"],["OKLO","Oklo"],["SMR","NuScale"],["RKLB","Rocket Lab"],["ASTS","AST SpaceMobile"],["LUNR","Intuitive Machines"],["HIMS","Hims & Hers"],["TEM","Tempus AI"],["RDDT","Reddit"],["DUOL","Duolingo"],["CAVA","Cava"],["SBET","SharpLink Gaming"],["CRCL","Circle"],["CRWV","CoreWeave"],["NBIS","Nebius"],["ORCL","Oracle"]];
+const NAMES = new Map(UNIVERSE.map(([s,n]) => [s,n]));
+// Halal screen: only the clear exclusions are listed (interest-based business, gambling, alcohol-heavy, bond funds).
+// Everything else shows "verify" — ratios (debt, interest income) drift quarter to quarter, so confirm in Zoya/Musaffa before sizing.
+const HALAL_EXCLUDED = { TLT:"bond fund — interest", HYG:"bond fund — interest", JPM:"bank", BAC:"bank", C:"bank", WFC:"bank", GS:"investment bank", MS:"investment bank", SCHW:"brokerage — interest income", AXP:"lender", BLK:"asset manager — bond/interest products", XLF:"financials ETF", KRE:"bank ETF", HOOD:"brokerage — margin interest", SOFI:"lender", AFRM:"lender", SQ:"lending arm", PYPL:"lending/credit", COIN:"interest + staking income (debated)", DKNG:"gambling", CCL:"cruises — alcohol/casino", RCL:"cruises — alcohol/casino", BITO:"derivatives fund (debated)", UVXY:"derivatives fund (debated)", SQQQ:"leveraged derivatives fund (debated)", TQQQ:"leveraged derivatives fund (debated)", SOXL:"leveraged derivatives fund (debated)" };
+const HALAL_INDEX = { SPX:"index — mixed constituents", SPY:"broad ETF — holds banks/alcohol", QQQ:"broad ETF — mixed", IWM:"broad ETF — bank-heavy", DIA:"broad ETF — mixed", NDX:"index — mixed", RUT:"index — bank-heavy", XSP:"index — mixed", VIX:"volatility derivative" };
+function halalStatus(sym){ const u = HALAL_MAP.get(sym); if (u){ if (u[3] === "fails") return {s:"excluded", why:u[4]||"fails standard screens"}; if (u[3] === "mixed") return {s:"mixed", why:u[4]||"scholars differ / ratio near limit"}; return {s:"passes", why:u[4]||"passes AAOIFI-style screens on recent data — verify"}; } if (HALAL_EXCLUDED[sym]) return {s:"excluded", why:HALAL_EXCLUDED[sym]}; if (HALAL_INDEX[sym]) return {s:"index", why:HALAL_INDEX[sym]}; return {s:"verify", why:"not screened here — check Zoya/Musaffa"}; }
+// Curated halal universe. "passes" = passes AAOIFI-style screens on recent data (business + debt/mcap < 33% + interest-bearing assets < 33% + impermissible income < 5%),
+// "mixed" = passes business but ratios hover near a limit or scholars differ, "fails" = fails. Verify in Zoya/Musaffa before trading — ratios change every quarter.
+const HALAL_UNIVERSE = [
+ ["NVDA","NVIDIA","Semis","passes"],["AMD","Advanced Micro Devices","Semis","passes"],["TSM","Taiwan Semiconductor","Semis","passes"],["AVGO","Broadcom","Semis","mixed","debt/mcap near limit after acquisitions"],["QCOM","Qualcomm","Semis","passes"],["TXN","Texas Instruments","Semis","passes"],["MU","Micron","Semis","passes"],["ARM","Arm Holdings","Semis","passes"],["ASML","ASML","Semi equipment","passes"],["AMAT","Applied Materials","Semi equipment","passes"],["LRCX","Lam Research","Semi equipment","passes"],["KLAC","KLA","Semi equipment","passes"],["INTC","Intel","Semis","mixed","debt rising"],["MRVL","Marvell","Semis","passes"],
+ ["AAPL","Apple","Tech","passes"],["MSFT","Microsoft","Tech","passes"],["GOOGL","Alphabet","Tech","passes"],["META","Meta Platforms","Tech","passes"],["ADBE","Adobe","Software","passes"],["CRM","Salesforce","Software","passes"],["ORCL","Oracle","Software","mixed","debt/mcap near limit"],["NOW","ServiceNow","Software","passes"],["CRWD","CrowdStrike","Software","passes"],["PANW","Palo Alto Networks","Software","passes"],["NET","Cloudflare","Software","passes"],["DDOG","Datadog","Software","passes"],["SNOW","Snowflake","Software","passes"],["PLTR","Palantir","Software","mixed","defense revenue — scholars differ"],["ANET","Arista Networks","Networking","passes"],["CSCO","Cisco","Networking","passes"],["SHOP","Shopify","E-commerce","passes"],["ABNB","Airbnb","Travel","passes"],["UBER","Uber","Mobility","mixed","interest income from cash pile"],["TSLA","Tesla","Autos","passes"],
+ ["LLY","Eli Lilly","Pharma","passes"],["NVO","Novo Nordisk","Pharma","passes"],["ISRG","Intuitive Surgical","Med devices","passes"],["JNJ","Johnson & Johnson","Pharma","passes"],["MRK","Merck","Pharma","passes"],["ABBV","AbbVie","Pharma","mixed","debt/mcap"],["AMGN","Amgen","Biotech","mixed","debt/mcap"],["GILD","Gilead","Biotech","passes"],["PFE","Pfizer","Pharma","passes"],["TEM","Tempus AI","Health AI","passes"],["HIMS","Hims & Hers","Health","passes"],
+ ["XOM","Exxon Mobil","Energy","passes"],["CVX","Chevron","Energy","passes"],["COP","ConocoPhillips","Energy","passes"],["OXY","Occidental","Energy","mixed","debt/mcap"],["SLB","Schlumberger","Oil services","passes"],["XLE","Energy Select ETF","Energy ETF","mixed","ETF holds some non-compliant names"],
+ ["FCX","Freeport-McMoRan","Copper","passes"],["NEM","Newmont","Gold miner","passes"],["GLD","SPDR Gold","Gold","passes","physical gold — spot-settled"],["SLV","iShares Silver","Silver","passes","physical silver — spot-settled"],["CAT","Caterpillar","Industrial","mixed","finance arm (Cat Financial) — scholars differ"],["DE","Deere","Industrial","mixed","finance arm"],["GE","GE Aerospace","Aerospace","passes"],["UPS","UPS","Logistics","passes"],["FDX","FedEx","Logistics","passes"],["VRT","Vertiv","Data-center power","passes"],["CEG","Constellation Energy","Nuclear power","mixed","utility debt"],["VST","Vistra","Power","mixed","utility debt"],["ENPH","Enphase","Solar","passes"],["FSLR","First Solar","Solar","passes"],
+ ["PG","Procter & Gamble","Staples","passes"],["COST","Costco","Retail","mixed","alcohol/tobacco sales under 5% — most screens pass"],["WMT","Walmart","Retail","mixed","alcohol/tobacco sales — most screens pass"],["HD","Home Depot","Retail","passes"],["LOW","Lowe's","Retail","passes"],["NKE","Nike","Apparel","passes"],["LULU","Lululemon","Apparel","passes"],["TJX","TJX","Retail","passes"],["CMG","Chipotle","Restaurants","passes"],["ELF","e.l.f. Beauty","Beauty","passes"],["CELH","Celsius","Beverages","passes"],["KO","Coca-Cola","Beverages","passes"],["PEP","PepsiCo","Beverages","mixed","debt/mcap"],
+ ["RKLB","Rocket Lab","Space","passes"],["ASTS","AST SpaceMobile","Space","mixed","debt"],["IONQ","IonQ","Quantum","passes"],["RGTI","Rigetti","Quantum","passes"],["APP","AppLovin","Ad tech","passes"],["RDDT","Reddit","Social","passes"],["DUOL","Duolingo","Education","passes"],["SPOT","Spotify","Media","mixed","music content — scholars differ"],["NFLX","Netflix","Media","mixed","content — scholars differ"],["DIS","Disney","Media","fails","debt + content"],
+ ["SPUS","SP Funds S&P 500 Sharia ETF","Halal ETF","passes","screened S&P 500"],["HLAL","Wahed FTSE USA Shariah ETF","Halal ETF","passes","screened US large caps"],["SPSK","SP Funds Dow Jones Global Sukuk ETF","Halal ETF","passes","sukuk — the bond substitute"],["SPRE","SP Funds S&P Global REIT Sharia ETF","Halal ETF","passes","screened REITs"],["UMMA","Wahed Dow Jones Islamic World ETF","Halal ETF","passes","global screened"],
+ ["JPM","JPMorgan","Banks","fails","interest-based"],["BAC","Bank of America","Banks","fails","interest-based"],["GS","Goldman Sachs","Banks","fails","interest-based"],["V","Visa","Payments","mixed","most screens pass; some flag interest income"],["MA","Mastercard","Payments","mixed","most screens pass"],["HOOD","Robinhood","Brokerage","fails","margin interest"],["COIN","Coinbase","Crypto exchange","mixed","staking/interest income"],["TLT","iShares 20+ Yr Treasury","Bond ETF","fails","interest"],["DKNG","DraftKings","Gambling","fails","gambling"],["BA","Boeing","Aerospace","fails","debt/mcap"],["T","AT&T","Telecom","fails","debt/mcap"],["VZ","Verizon","Telecom","fails","debt/mcap"],["F","Ford","Autos","fails","finance arm + debt"],["GM","General Motors","Autos","fails","finance arm + debt"],["CCL","Carnival","Cruises","fails","alcohol, casino, debt"],["LMT","Lockheed Martin","Defense","mixed","weapons — scholars differ"],["RTX","RTX","Defense","mixed","weapons — scholars differ; debt"],
+];
+const HALAL_MAP = new Map(HALAL_UNIVERSE.map(r => [r[0], r]));
+function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
+const DEFAULTS = { defaultSym:"SPX", refreshSec:45, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
+  interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"", proxy:"" };
+function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
+function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
+const S = { flowSeen:new Set(), seekerHist:[], alertLog:[], flowAlerted:new Set(), seekerMode:"gex", seekerRange:3, flowExp:"all", cfSort:"prem", view:null, inst:null, gate:false, flow:null, flowDemo:false, flowMinPrem:50000, flowKind:"all", flowSide:"all", flowCp:"all",
+  set:loadSettings(), sym:"SPX", chain:null, bars:null, barsMeta:null, barsDemo:false, demo:false, err:"", tab:"seeker", hview:"net", inspect:null, exps:[], allExps:[], plan:null, token:"", exp:0, timer:null, lastAlert:{}, calc:null };
+
+// ---------- helpers ----------
+function h(tag, attrs, ...kids){
+  const el = document.createElement(tag);
+  if (attrs) for (const [k,v] of Object.entries(attrs)){
+    if (v == null || v === false) continue;
+    if (k === "class") el.className = v; else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    else if (k in el && k !== "list" && k !== "form") { try { el[k] = v; } catch { el.setAttribute(k, v); } } else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) el.append(k.nodeType ? k : String(k));
+  return el;
+}
+function svgEl(tag, attrs){ const el = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k,v] of Object.entries(attrs||{})) el.setAttribute(k, v); return el; }
+const fmt = (n, d=0) => n == null || !isFinite(n) ? "—" : n.toLocaleString(undefined,{minimumFractionDigits:d, maximumFractionDigits:d});
+const money = n => { const a = Math.abs(n); const s = a >= 1e9 ? (a/1e9).toFixed(2)+"B" : a >= 1e6 ? (a/1e6).toFixed(1)+"M" : a >= 1e3 ? (a/1e3).toFixed(0)+"K" : a.toFixed(0); return (n < 0 ? "-$" : "$") + s; };
+const pct = n => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+const dte = exp => Math.max(0, Math.round((new Date(exp + "T16:00:00") - Date.now()) / 86400000));
+const isWeekday = d => d.getDay() % 6 !== 0;
+
+// ---------- personal build: no plans, no gating ----------
+const isPro = () => true;
+function requirePro(){ return false; }
+function openUpgrade(){ }
+function renderPlan(){ }
+function applyToken(){ } function clearToken(){ }
+// ---------- Notify: server → direct Discord webhook (from the browser) → clipboard ----------
+async function notify(text){
+  try { const r = await fetch("/api/notify",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, text})}); if (r.ok) return "server"; } catch {}
+  const hook = (S.set.webhook||"").trim();
+  if (/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\//.test(hook)){
+    try { const r = await fetch(hook, {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({content:text.slice(0,1900)})}); if (r.ok || r.status === 204) return "discord"; } catch {}
+  }
+  try { await navigator.clipboard.writeText(text); return "clipboard"; } catch {}
+  return null;
+}
+// ---------- Index tape: our own, from the server quotes API or straight from Cboe on the static site ----------
+const TAPE = ["SPX","NDX","RUT","VIX","SPY","QQQ","IWM","DIA","XSP"];
+const TAPE_NAMES = {SPX:"S&P 500", NDX:"Nasdaq 100", RUT:"Russell 2000", VIX:"VIX", SPY:"SPY", QQQ:"QQQ", IWM:"IWM", DIA:"Dow ETF", XSP:"Mini-SPX"};
+let tapeQuotes = new Map();
+async function tapeFromCboe(sym){
+  // intraday chart gives today's path; the options feed carries current price + change. Try the light one first.
+  const s = INDEX_SYMS.has(sym) ? `_${sym}` : sym;
+  try { const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (r && r.ok){ const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (arr.length){ const last = arr[arr.length-1], first = arr[0]; const px = +(last.close ?? last.price), open = +(first.open ?? first.price ?? px); const prev = +(d.prev_day_close ?? j.prev_day_close ?? 0) || null; return {symbol:sym, price:px, prev: prev || open, last:px, t:Date.parse(String(last.datetime||last.date||"").replace(" ","T")+"-04:00") || Date.now(), src:"cboe-intraday"}; } } } catch {}
+  try { const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (r && r.ok){ const j = await r.json(); const d = j.data || j; const px = +(d.current_price ?? d.last ?? d.close ?? 0); if (px) return {symbol:sym, price:px, prev: px - (+d.price_change || 0), last:px, t:Date.now(), src:"cboe-options"}; } } catch {}
+  return null;
+}
+async function loadTape(){
+  let got = [];
+  try { const r = await fetch(`/api/quotes?symbols=${TAPE.join(",")}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); got = (j.quotes||[]).filter(q => q && !q.error && q.price); } } catch {}
+  if (!got.length && (S.set.proxy||"").trim()){
+    const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",XSP:"^GSPC"};
+    const res = await Promise.all(TAPE.filter(s=>s!=="XSP").map(async sym => { try { const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=1m&range=1d&includePrePost=true`); if (!r || !r.ok) return null; const j = await r.json(); const res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) return null; const cl = res0.indicators?.quote?.[0]?.close||[], ts = res0.timestamp||[]; let last = +m.regularMarketPrice||0, lastT = (m.regularMarketTime||0)*1000; for (let i = cl.length-1; i >= 0; i--) if (cl[i] != null){ last = cl[i]; lastT = ts[i]*1000; break; } return {symbol:sym, price:+m.regularMarketPrice||last, prev:+(m.chartPreviousClose ?? m.previousClose ?? last), last, state:m.marketState||null, t:lastT, src:"proxy"}; } catch { return null; } }));
+    got = res.filter(Boolean); const spx = got.find(q=>q.symbol==="SPX"); if (spx) got.push({...spx, symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10});
+  }
+  if (!got.length){ const snap = await snapshotJson("quotes.json", 10); if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot"})); }
+  if (!got.length){
+    const syms = TAPE.filter(s => s !== "XSP");
+    const res = await Promise.all(syms.map(tapeFromCboe)); got = res.filter(Boolean);
+    const spx = got.find(q => q.symbol === "SPX"); if (spx) got.push({symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10, t:spx.t, src:"derived"});
+  }
+  if (!got.length && S.chain && S.demo){ got = TAPE.map(sym => { const sp = {SPX:7743.41, NDX:28510, RUT:2846, VIX:16.8, SPY:772.4, QQQ:642, IWM:282, DIA:471, XSP:774.3}[sym]; return {symbol:sym, price:sp, prev:sp*(1-0.0051), last:sp, t:Date.now(), demo:true}; }); }
+  got.forEach(q => tapeQuotes.set(q.symbol, q)); renderTape(); renderLiveQuote();
+}
+function extState(q){ // "PRE" | "POST" | false — from the feed's marketState, else from the print's ET clock
+  const st = (q.state||"").toUpperCase(); if (st.startsWith("PRE")) return "PRE"; if (st.startsWith("POST") || st === "CLOSED") return "POST";
+  if (q.t){ const et = new Date(new Date(q.t).toLocaleString("en-US",{timeZone:"America/New_York"})); const m = et.getHours()*60+et.getMinutes(); if (m < 570) return "PRE"; if (m >= 960) return "POST"; } return false;
+}
+function renderLiveQuote(){
+  const el = document.getElementById("liveq"); if (!el) return; const q = tapeQuotes.get(S.sym); if (!q || q.demo){ el.hidden = true; return; }
+  const isExt = extState(q); const ext = isExt && q.last && Math.abs(q.last - q.price) > 1e-6;
+  const chg = (ext ? q.last : q.price) - q.prev, pc = q.prev ? chg/q.prev*100 : 0;
+  el.textContent = `${ext ? (isExt === "PRE" ? "PRE " : "AH ") : "LIVE "}${fmt(ext ? q.last : q.price, 2)}  ${chg>=0?"+":""}${fmt(chg,2)} (${pc>=0?"+":""}${fmt(pc,2)}%)${q.t ? " · " + new Date(q.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`;
+  el.className = "badge " + (chg >= 0 ? "up" : "dn"); el.style.textTransform = "none"; el.hidden = false;
+}
+function renderTape(){
+  const el = document.getElementById("tapeIn"); if (!el) return;
+  const items = TAPE.map(sym => tapeQuotes.get(sym)).filter(Boolean);
+  if (!items.length){ el.className = "tape-in"; el.replaceChildren(h("span",{class:"tq"}, h("small",null,"loading tape…"))); return; }
+  const chip = q => { const chg = q.price - q.prev, pc = q.prev ? chg/q.prev*100 : 0, up = chg >= 0; const es = extState(q); const ext = q.last && Math.abs(q.last - q.price) > 0.0001 && es ? q.last : null;
+    return h("span",{class:"tq", title:TAPE_NAMES[q.symbol] + (q.demo ? " · demo" : q.src ? " · " + q.src : ""), onclick:()=>goSym(q.symbol)}, h("b",null,q.symbol), h("span",{class:"p"}, fmt(q.price, q.price > 1000 ? 2 : 2)), h("span",{class:up?"c":"d"}, `${up?"+":""}${fmt(chg,2)} (${up?"+":""}${fmt(pc,2)}%)`), ext ? h("span",{class:"ext"}, es === "PRE" ? "pre " : "ah ", fmt(ext,2)) : null, q.demo ? h("small",null,"demo") : null); };
+  const once = items.map(chip), twice = items.map(chip);
+  el.className = "tape-in anim"; el.replaceChildren(...once, ...twice);
+}
+setInterval(() => { if (document.visibilityState === "visible" && (S.set.proxy||"").trim()) loadTape(); }, 10000);
+setInterval(() => { if (document.visibilityState === "visible" && !(S.set.proxy||"").trim()) loadTape(); }, 30000);
+
+// ---------- main chart host (built-in) ----------
+function mountChart(){ const host = document.getElementById("tvChart"); if (!host) return; host.replaceChildren(h("div",{class:"tvfb"}, viewChart())); if (!S.bars) loadBars(); }
+function tvFallback(){ mountChart(); }
+// ---------- data ----------
+async function load(){
+  const sym = S.sym;
+  document.getElementById("asof").replaceChildren(h("span",null,"Loading " + sym + "…"));
+  let data = null, demo = false;
+  try {
+    let r = await fetch(`/api/chain?symbol=${encodeURIComponent(sym)}${S.token ? "&token=" + encodeURIComponent(S.token) : ""}`).catch(() => null);
+    if (!r || r.status === 404 || (r.headers.get("content-type")||"").includes("text/html")) {
+      if ((S.set.proxy||"").trim()) r = await cboeDirect(sym);
+      if (!r || !r.ok){ const snap = await snapshotJson(`${sym}.json`, 40); r = snap ? { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => ({...snap, source: (snap.source||"cboe") + " · snapshot"}) } : await cboeDirect(sym); } }
+    if (!r.ok) throw 0;
+    data = await r.json();
+    if (!data.rows || !data.rows.length) throw 0;
+  } catch {
+    data = synthChain(sym); demo = true;
+  }
+  if (S.chain && S.chain.symbol !== data.symbol){ S.inspect = null; S.inst = null; }
+  if (!demo && S.chain && !S.demo) recordDerived(S.chain, data);
+  S.chain = data; S.demo = demo; S.err = "";
+  S.allExps = [...new Set(data.rows.map(r => r[0]))].sort();
+  if (!S.exps.length || !S.exps.every(e => S.allExps.includes(e))) S.exps = S.allExps.slice(0, isPro() ? S.set.expCount : Math.min(4, S.set.expCount));
+  compute(); renderAll(); checkAlerts();
+  if (S.bars && !S.barsDemo && S.barsMeta && S.barsMeta.sym === S.sym && Date.now() - (S.barsAt||0) > 55000) loadBars(); else mountChart();
+  if (S.tab === "chart") loadBars();
+}
+// Snapshot feed: the GitHub Action writes chains/bars/quotes to the `data` branch every 5 minutes; raw.githubusercontent allows browser reads.
+const DATA_BASE = "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
+async function snapshotJson(name, maxAgeMin){ try { const r = await fetch(DATA_BASE + name + "?t=" + Math.floor(Date.now()/60000), {cache:"no-store"}); if (!r.ok) return null; const j = await r.json(); if (j.snapshotAt && Date.now() - j.snapshotAt > maxAgeMin*60e3) return null; return j; } catch { return null; } }
+// External fetch: direct, or through the user's proxy worker when configured (static hosting + CORS-blocked feeds)
+function ext(url){ const p = (S.set.proxy||"").trim().replace(/\/$/,""); return p ? `${p}/?u=${encodeURIComponent(url)}` : url; }
+async function fetchExt(url, opts){ let r = null; try { r = await fetch(ext(url), opts); } catch { r = null; }
+  if ((!r || !r.ok) && (S.set.proxy||"").trim()){ try { r = await fetch(url, opts); } catch { r = null; } } return r; }
+// Static-hosting bars: Cboe's delayed intraday (1-minute) and historical (daily) chart feeds, aggregated to the chosen interval.
+async function cboeBars(sym, iv, rg){
+  const tries = INDEX_SYMS.has(sym) ? [`_${sym}`, sym] : [sym];
+  const mins = {"1m":1,"5m":5,"15m":15,"30m":30,"1h":60}[iv];
+  for (const s of tries){
+    try {
+      if (iv === "1d"){
+        const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/charts/historical/${s}.json`); if (!r || !r.ok) continue;
+        const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (!arr.length) continue;
+        const days = {"1d":2,"5d":8,"1mo":32,"3mo":95,"6mo":185,"1y":370,"2y":740,"5y":1830}[rg] || 95;
+        const bars = arr.map(x => [Date.parse((x.date || x.datetime || x.time) + (String(x.date||"").length === 10 ? "T16:00:00-04:00" : "")), +x.open, +x.high, +x.low, +x.close, +(x.volume||x.stock_volume||0)]).filter(b => isFinite(b[0]) && isFinite(b[4])).sort((a,b)=>a[0]-b[0]);
+        return { bars: bars.slice(-days), source:"cboe-direct" };
+      }
+      const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/charts/intraday/${s}.json`); if (!r || !r.ok) continue;
+      const j = await r.json(); const d = j.data || j; const arr = Array.isArray(d) ? d : (d.data || d.candles || []); if (!arr.length) continue;
+      const one = arr.map(x => { const t = x.datetime || x.date || x.time; const ts = Date.parse(/[T ]\d/.test(String(t)) ? String(t).replace(" ","T") + (/[+-]\d\d:?\d\d$|Z$/.test(String(t)) ? "" : "-04:00") : t); return [ts, +(x.open ?? x.price ?? x.close), +(x.high ?? x.price ?? x.close), +(x.low ?? x.price ?? x.close), +(x.close ?? x.price), +(x.volume||x.stock_volume||0)]; }).filter(b => isFinite(b[0]) && isFinite(b[4])).sort((a,b)=>a[0]-b[0]);
+      if (!mins || mins === 1) return { bars: one, source:"cboe-direct" };
+      const out = []; let cur = null;
+      for (const b of one){ const bucket = Math.floor(b[0]/(mins*60000))*mins*60000; if (!cur || cur[0] !== bucket){ cur = [bucket, b[1], b[2], b[3], b[4], b[5]]; out.push(cur); } else { cur[2] = Math.max(cur[2], b[2]); cur[3] = Math.min(cur[3], b[3]); cur[4] = b[4]; cur[5] += b[5]; } }
+      return { bars: out, source:"cboe-direct" };
+    } catch {}
+  }
+  return null;
+}
+// Static-hosting fallback (no serverless): fetch Cboe's delayed chain directly. Same normalized shape as api/chain.js.
+const INDEX_SYMS = new Set(["SPX","NDX","RUT","VIX","DJX","XSP","OEX"]);
+async function cboeDirect(sym){
+  const tries = INDEX_SYMS.has(sym) ? [`_${sym}`, sym] : [sym];
+  for (const s of tries){
+    try {
+      const r = await fetchExt(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`); if (!r || !r.ok) continue;
+      const j = await r.json(), d = j.data || j; const opts = Array.isArray(d.options) ? d.options : Array.isArray(d) ? d : null; if (!opts) { console.warn("cboe chain: unexpected shape", Object.keys(d)); continue; }
+      const rows = [];
+      for (const o of opts){ const m = String(o.option||"").match(/^([A-Z]+)(\d{6})([CP])(\d{8})$/); if (!m) continue;
+        rows.push([`20${m[2].slice(0,2)}-${m[2].slice(2,4)}-${m[2].slice(4,6)}`, m[3], Number(m[4])/1000, +o.open_interest||0, +o.volume||0, +o.iv||0, +o.gamma||0, +o.delta||0, +o.bid||0, +o.ask||0, +o.last_trade_price||0, o.last_trade_time||null]); }
+      const exps = [...new Set(rows.map(r=>r[0]))].sort().slice(0,12), keep = new Set(exps);
+      const body = { symbol:sym, spot:+(d.current_price ?? d.last ?? d.close ?? d.prev_day_close ?? 0), asOf:j.timestamp || new Date().toISOString(), delayed:true, source:"cboe-direct", change:+d.price_change||0, changePct:+d.price_change_percent||0, rows: rows.filter(r => keep.has(r[0]) && r[2] > 0) };
+      return { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => body };
+    } catch {}
+  }
+  return null;
+}
+function synthChain(sym){
+  // Deterministic demo chain so the terminal is usable without a data feed (clearly labeled).
+  // Demo seeds — approximate late-September 2026 levels so the demo looks like today's tape. Live data replaces all of this.
+  const spot = {SPX:7743.41, SPY:772.4, QQQ:642, IWM:282, NVDA:221, TSLA:407, AAPL:325, AMZN:255, MSFT:545, META:580}[sym] || 100;
+  const step = spot > 2000 ? 25 : spot > 500 ? 5 : spot > 200 ? 2.5 : 1;
+  const rows = []; const today = new Date();
+  const exps = []; for (let i = 0; exps.length < 8; i++){ const d = new Date(today.getTime() + i*86400000); if (isWeekday(d) && (i===0 || d.getDay()===5 || exps.length<3)) exps.push(d.toISOString().slice(0,10)); }
+  for (let m = 1; m <= 3; m++){ const d = new Date(today.getFullYear(), today.getMonth()+m, 15); while (d.getDay() !== 5) d.setDate(d.getDate()+1); exps.push(d.toISOString().slice(0,10)); }
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  exps.forEach((exp, ei) => {
+    const T = Math.max(0.5, dte(exp)) / 365, iv0 = 0.14 + ei*0.004;
+    for (let k = -30; k <= 30; k++){
+      const K = Math.round((spot + k*step) / step) * step;
+      const m = Math.log(K/spot), iv = iv0 + Math.max(0, -m)*0.9 + Math.abs(m)*0.25;
+      const d1 = (Math.log(spot/K) + (iv*iv/2)*T) / (iv*Math.sqrt(T)), nd = Math.exp(-d1*d1/2)/Math.sqrt(2*Math.PI);
+      const gamma = nd / (spot*iv*Math.sqrt(T));
+      const cdf = x => 0.5*(1+erf(x/Math.SQRT2)), delta = cdf(d1);
+      const wall = Math.abs(K - Math.round(spot*1.02/step)*step) < 1 ? 14 : Math.abs(K - Math.round(spot*0.97/step)*step) < 1 ? 12 : 1;
+      const base = Math.exp(-Math.abs(k)/10) * (ei===0 ? 30000 : 14000/(ei+1));
+      const cOI = Math.round(base * (K>spot ? wall : 1) * (0.6 + rnd())), pOI = Math.round(base * (K<spot ? wall : 1) * (0.6 + rnd()));
+      const cMid = Math.max(0.05, spot*nd*iv*Math.sqrt(T)*0.8 + Math.max(0, spot-K)), pMid = Math.max(0.05, cMid - (spot-K));
+      rows.push([exp,"C",K,cOI,Math.round(cOI*(0.1+rnd()*(k===2?4:1))),iv,gamma,delta,cMid*0.98,cMid*1.02,cMid]);
+      rows.push([exp,"P",K,pOI,Math.round(pOI*(0.1+rnd()*(k===-3?4:1))),iv,gamma,delta-1,pMid*0.98,pMid*1.02,pMid]);
+    }
+  });
+  return { symbol:sym, spot, asOf:new Date().toISOString(), delayed:true, change:spot*0.0051, changePct:0.51, rows };
+}
+function erf(x){ const s = Math.sign(x); x = Math.abs(x); const t = 1/(1+0.3275911*x); const y = 1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x); return s*y; }
+
+// ---------- math ----------
+function compute(){ S.calc = computeFrom(S.chain, S.exps, S.set.range, S.set.model); recordHistory(); recordTracked(); recordSeeker(); trackLevelTests(); }
+function computeFrom(d, expsSel, range, model){
+  const spot = d.spot, mult = 100 * spot * spot * 0.01; // $ gamma per 1% move
+  const byCell = new Map(), byStrike = new Map(), byExp = new Map();
+  const hi = spot * (1 + range/100), lo = spot * (1 - range/100);
+  const contracts = [], allContracts = [];
+  for (const r of d.rows){
+    const [exp, type, K, oi, vol, iv, gamma, delta, bid, ask, last] = r;
+    allContracts.push({exp, type, K, oi, vol, iv, delta, bid, ask, mid:(bid+ask)/2 || last});
+    if (!expsSel.includes(exp)) continue;
+    // Standard dealer model: dealers are long calls (positive gamma) and short puts (negative gamma).
+    // "Net short" model treats dealers as short everything customers bought: both signs negative → magnitude only.
+    const sign = model === "standard" ? (type === "C" ? 1 : -1) : -1;
+    const gex = sign * gamma * oi * mult;
+    // Vanna (dDelta/dVol) and dealer delta from Black-Scholes with r=0, using the quoted IV.
+    const T = Math.max(0.5, dte(exp)) / 365, sig = iv > 0 ? iv : 0.2, sq = sig * Math.sqrt(T);
+    const d1 = (Math.log(spot / K) + 0.5 * sig * sig * T) / sq, d2 = d1 - sq, phi = Math.exp(-d1 * d1 / 2) / Math.sqrt(2 * Math.PI);
+    const vanna = -phi * d2 / sig;                        // per 1.0 vol (100 pts); same for calls and puts
+    const vex = sign * vanna * oi * 100 * spot * 0.01;    // $ delta change per 1-pt move in IV, dealer sign
+    const dex = -delta * oi * 100 * spot;                 // dealer delta $ (dealers hold the other side of customer longs)
+    contracts.push({exp, type, K, oi, vol, iv, gamma, delta, mid:(bid+ask)/2 || last, gex, vex, dex, vanna});
+    if (K < lo || K > hi) continue;
+    const key = exp + "|" + K;
+    const c = byCell.get(key) || {exp, K, gex:0, vex:0, dex:0, cOI:0, pOI:0, cVol:0, pVol:0, cG:0, pG:0};
+    c.gex += gex; c.vex += vex; c.dex += dex; if (type==="C"){ c.cOI+=oi; c.cVol+=vol; c.cG += gamma*oi*mult; } else { c.pOI+=oi; c.pVol+=vol; c.pG += gamma*oi*mult; }
+    byCell.set(key, c);
+    const s = byStrike.get(K) || {K, gex:0, vex:0, dex:0, cG:0, pG:0, cOI:0, pOI:0};
+    s.gex += gex; s.vex += vex; s.dex += dex; if (type==="C"){ s.cG += gamma*oi*mult; s.cOI += oi; } else { s.pG += gamma*oi*mult; s.pOI += oi; }
+    byStrike.set(K, s);
+    const e = byExp.get(exp) || {exp, gex:0, vex:0}; e.gex += gex; e.vex += vex; byExp.set(exp, e);
+  }
+  const strikes = [...byStrike.values()].sort((a,b)=>a.K-b.K);
+  const total = strikes.reduce((a,s)=>a+s.gex,0), totalVex = strikes.reduce((a,s)=>a+s.vex,0), totalDex = strikes.reduce((a,s)=>a+s.dex,0);
+  const vexPeak = strikes.reduce((a,s)=> Math.abs(s.vex) > Math.abs(a?.vex||0) ? s : a, null);
+  const callWall = strikes.reduce((a,s)=> s.K > spot*1.002 && s.cG > (a?.cG||0) ? s : a, null);
+  const putWall = strikes.reduce((a,s)=> s.K < spot*0.998 && s.pG > (a?.pG||0) ? s : a, null);
+  // Gamma flip: strike where cumulative net GEX (from the low end) changes sign, nearest to spot.
+  let cum = 0, flip = null, best = Infinity, prev = null;
+  for (const s of strikes){ cum += s.gex; if (prev !== null && Math.sign(cum) !== Math.sign(prev) && prev !== 0){ if (Math.abs(s.K - spot) < best){ best = Math.abs(s.K-spot); flip = s.K; } } prev = cum; }
+  // Max pain for nearest expiry
+  const near = expsSel[0];
+  const nearC = contracts.filter(c => c.exp === near);
+  const ks = [...new Set(nearC.map(c=>c.K))].sort((a,b)=>a-b);
+  let maxPain = null, minPain = Infinity;
+  for (const K of ks){ let pain = 0; for (const c of nearC){ pain += c.oi * 100 * (c.type==="C" ? Math.max(0, K - c.K) : Math.max(0, c.K - K)); } if (pain < minPain){ minPain = pain; maxPain = K; } }
+  // Expected move per expiry from ATM straddle
+  const em = expsSel.map(exp => {
+    const cs = contracts.filter(c => c.exp === exp); if (!cs.length) return null;
+    const atm = cs.reduce((a,c)=> Math.abs(c.K-spot) < Math.abs(a.K-spot) ? c : a, cs[0]).K;
+    const call = cs.find(c=>c.K===atm&&c.type==="C"), put = cs.find(c=>c.K===atm&&c.type==="P");
+    const straddle = (call?.mid||0) + (put?.mid||0);
+    return {exp, atm, move:straddle, pct:straddle/spot*100, iv:call?.iv||0, dte:dte(exp)};
+  }).filter(Boolean);
+  // Top nodes
+  const cells = [...byCell.values()].sort((a,b)=>Math.abs(b.gex)-Math.abs(a.gex));
+  const top = cells.slice(0, 5);
+  // Fresh positioning: volume vs OI
+  const fresh = contracts.filter(c => c.vol >= S.set.freshMinVol && c.oi > 0 && c.vol/c.oi >= S.set.freshRatio).map(c => ({...c, ratio:c.vol/c.oi, notional:c.vol*c.mid*100})).sort((a,b)=>b.notional-a.notional).slice(0, 40);
+  return { spot, strikes, byCell, byExp, allContracts, total, totalVex, totalDex, vexPeak, callWall, putWall, flip, maxPain, near, em, top, fresh, contracts, maxAbs: Math.max(1, ...cells.map(c=>Math.abs(c.gex))) };
+}
+
+// ---------- intraday history of the levels (per ticker, per day, in this browser) ----------
+function histKey(){ return `kingnode:hist:${S.sym}:${new Date().toISOString().slice(0,10)}`; }
+// Level tests: when spot comes within 0.15% of a wall, watch whether it holds (moves 0.4% away) or breaks (0.3% through).
+const LT_KEY = () => `kingnode:leveltests:${S.sym}`;
+function getLT(){ try { return JSON.parse(localStorage.getItem(LT_KEY())||'{"cw":{"t":0,"h":0},"pw":{"t":0,"h":0},"open":null}'); } catch { return {cw:{t:0,h:0},pw:{t:0,h:0},open:null}; } }
+function setLT(x){ try { localStorage.setItem(LT_KEY(), JSON.stringify(x)); } catch {} }
+function trackLevelTests(){
+  if (S.demo) return; const c = S.calc, sp = c.spot, lt = getLT();
+  if (lt.open){ const L = lt.open; const moved = (sp/L.K - 1) * (L.type === "pw" ? 1 : -1); // + = held direction
+    if (moved >= 0.004){ lt[L.type].t++; lt[L.type].h++; lt.open = null; fireAlert(`${S.sym} ${L.type === "pw" ? "put wall" : "call wall"} held`, `${fmt(L.K)} tested and held (${lt[L.type].h}/${lt[L.type].t} this month).`); }
+    else if (moved <= -0.003){ lt[L.type].t++; lt.open = null; fireAlert(`${S.sym} ${L.type === "pw" ? "put wall" : "call wall"} broke`, `${fmt(L.K)} gave way (${lt[L.type].h}/${lt[L.type].t} held this month).`); }
+  } else { for (const [type, K] of [["pw", c.putWall?.K],["cw", c.callWall?.K]]){ if (K && Math.abs(sp/K-1) < 0.0015 && Date.now() - (lt.lastTest||0) > 20*60e3){ lt.open = {type, K, t:Date.now()}; lt.lastTest = Date.now(); break; } } }
+  setLT(lt);
+}
+// Charm: how much delta dealers must trade as one day of time passes on the near expiries (0–3 DTE). Vanna: per 1-pt drop in IV.
+function hedgeFlows(){
+  const c = S.calc, spot = c.spot; let charm = 0;
+  for (const x of c.allContracts){ const d = dte(x.exp); if (d > 3 || !x.iv) continue; const T0 = Math.max(0.25, d)/365, T1 = Math.max(0.05, d-1)/365;
+    const delta = (T) => { const sq = x.iv*Math.sqrt(T); const d1 = (Math.log(spot/x.K) + 0.5*x.iv*x.iv*T)/sq; const Nd = 0.5*(1+erf(d1/Math.SQRT2)); return x.type === "C" ? Nd : Nd - 1; };
+    const sign = S.set.model === "standard" ? (x.type === "C" ? -1 : 1) : 1; // dealers hold the opposite of the customer
+    charm += sign * (delta(T1) - delta(T0)) * x.oi * 100 * spot; }
+  return { charm, vanna: c.totalVex };
+}
+function recordHistory(){
+  if (S.demo) return;
+  try {
+    const c = S.calc, list = JSON.parse(localStorage.getItem(histKey()) || "[]");
+    const last = list[list.length-1];
+    const row = {t:Date.now(), spot:c.spot, cw:c.callWall?.K||null, pw:c.putWall?.K||null, flip:c.flip, total:c.total};
+    if (!last || Date.now() - last.t > 4*60e3) { list.push(row); localStorage.setItem(histKey(), JSON.stringify(list.slice(-200))); }
+  } catch {}
+}
+function readHistory(){ try { return JSON.parse(localStorage.getItem(histKey()) || "[]"); } catch { return []; } }
+
+// ---------- read ----------
+function readText(){
+  const c = S.calc, sym = S.sym, sp = c.spot, out = [];
+  const regimePos = c.total > 0;
+  out.push(regimePos
+    ? `${sym} is in positive gamma across the selected expirations. Dealers are net long gamma, so their hedging leans against moves: rallies get sold into and dips get bought. Expect ranges to hold and mean reversion to work better than breakouts.`
+    : `${sym} is in negative gamma. Dealers are net short gamma, so their hedging amplifies moves: they buy strength and sell weakness. Expect wider ranges, faster moves and breakouts that follow through.`);
+  if (c.flip) out.push(sp > c.flip ? `Spot is ${fmt((sp/c.flip-1)*100,2)}% above the gamma flip at ${fmt(c.flip)}. A move below it would shift the regime and open the door to faster downside.` : `Spot is below the gamma flip at ${fmt(c.flip)}. Reclaiming it would calm things down; until then volatility stays elevated.`);
+  if (c.callWall) out.push(`The call wall sits at ${fmt(c.callWall.K)} (${money(c.callWall.cG)} of call gamma). That's the level most likely to cap a rally today; a clean break above it can squeeze as dealers chase.`);
+  if (c.putWall) out.push(`The put wall is ${fmt(c.putWall.K)} (${money(c.putWall.pG)} of put gamma), the first real support. Losing it tends to accelerate selling.`);
+  out.push(c.totalVex > 0 ? `Vanna is positive: if implied vol comes in, dealers buy back delta and price gets a tailwind${c.vexPeak ? `, strongest around ${fmt(c.vexPeak.K)}` : ""}. That's the mechanism behind post-event grinds higher — moves that get sold until vol actually resets.` : `Vanna is negative: a drop in implied vol makes dealers sell delta, so calmer tape doesn't automatically mean higher prices here.`);
+  if (c.em[0]) out.push(`The market is pricing about ±${fmt(c.em[0].move,1)} (${fmt(c.em[0].pct,2)}%) into ${c.em[0].exp}${c.em[0].dte===0?" (0DTE)":""}. Max pain for that expiry is ${fmt(c.maxPain)}.`);
+  if (c.fresh.length) out.push(`Freshest positioning: ${c.fresh.slice(0,3).map(f => `${fmt(f.K)}${f.type} ${f.exp.slice(5)} (${fmt(f.vol)} vol vs ${fmt(f.oi)} OI)`).join(", ")}.`);
+  return out;
+}
+
+// ---------- alerts ----------
+function checkAlerts(){
+  if (!getRules().levels || S.demo) return;
+  const c = S.calc, sp = c.spot, near = [["Call wall", c.callWall?.K], ["Put wall", c.putWall?.K], ["Gamma flip", c.flip]].filter(x => x[1]);
+  for (const [name, lvl] of near){
+    const dist = Math.abs(sp/lvl - 1);
+    const key = name + lvl;
+    if (dist < S.set.alertPct/100 && Date.now() - (S.lastAlert[key]||0) > 30*60e3){ S.lastAlert[key] = Date.now(); fireAlert(`${S.sym} at ${name}`, `Spot ${fmt(sp,2)} is within ${S.set.alertPct}% of ${fmt(lvl)}.`); }
+  }
+}
+
+const EV_KEY = "kingnode:events";
+function getEvents(){ try { return JSON.parse(localStorage.getItem(EV_KEY)||"[]"); } catch { return []; } }
+function setEvents(l){ try { localStorage.setItem(EV_KEY, JSON.stringify(l)); } catch {} }
+const FOMC_2026 = ["2026-01-28","2026-03-18","2026-04-29","2026-06-17","2026-07-29","2026-09-16","2026-10-28","2026-12-09"];
+const CPI_2026_APPROX = ["2026-10-14","2026-11-12","2026-12-10"];
+function autoEvents(){ const out = []; const now = new Date();
+  FOMC_2026.forEach(d => out.push({name:"FOMC decision", date:d, auto:true}));
+  CPI_2026_APPROX.forEach(d => out.push({name:"CPI (approx.)", date:d, auto:true})); for (let m = 0; m < 3; m++){ const y = now.getFullYear(), mo = now.getMonth()+m; const d1 = new Date(y, mo, 1); const firstFri = new Date(y, mo, 1 + ((5 - d1.getDay() + 7) % 7)); const thirdFri = new Date(firstFri); thirdFri.setDate(firstFri.getDate()+14); out.push({name:"Jobs report (NFP)", date:firstFri.toISOString().slice(0,10), auto:true}, {name:"Monthly opex", date:thirdFri.toISOString().slice(0,10), auto:true}); } return out; }
+function nextEventBefore(exp){ const today = new Date(); today.setHours(0,0,0,0); const all = [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= 0 && (!exp || e.date <= exp)).sort((a,b)=>a.days-b.days); return all[0] || null; }
+function renderEvents(){
+  const el = document.getElementById("events"); if (!el) return; el.replaceChildren();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const all = [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= -1).sort((a,b)=>a.days-b.days).slice(0,7);
+  const isFri = today.getDay() === 5;
+  if (isFri) el.append(h("div",{class:"notice", style:{marginBottom:"8px", color:"var(--gold)"}},"Friday: short-dated premium pays for the weekend. Theta × 3 on anything you hold past the close."));
+  el.append(h("div",{style:{display:"grid",gap:"2px"}}, ...all.map(e => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"4px 0",borderBottom:"1px solid var(--rule)",fontSize:"12.5px"}}, h("span",null, e.name, e.auto ? h("small",{class:"hint"}," auto") : null), h("span",{class:"num", style:{color: e.days <= 1 ? "var(--neg)" : e.days <= 5 ? "var(--gold)" : "var(--muted)"}}, e.days === 0 ? "today" : e.days === 1 ? "tomorrow" : e.days < 0 ? "yesterday" : `in ${e.days}d`)))));
+  el.append(h("div",{class:"actions",style:{marginTop:"8px"}}, h("button",{class:"btn small", onclick:()=>{ const name = prompt("Event (e.g. CPI, FOMC, NVDA earnings):"); if (!name) return; const date = prompt("Date (YYYY-MM-DD):"); if (!/^\d{4}-\d{2}-\d{2}$/.test(date||"")) return; setEvents([...getEvents(), {name, date}]); renderEvents(); }},"+ Add event"), getEvents().length ? h("button",{class:"btn small", onclick:()=>{ const l = getEvents(); const pick = prompt("Remove which? " + l.map((e,i)=>`${i+1}) ${e.name} ${e.date}`).join("  ")); const i = Number(pick)-1; if (l[i]){ l.splice(i,1); setEvents(l); renderEvents(); } }},"Remove") : null));
+}

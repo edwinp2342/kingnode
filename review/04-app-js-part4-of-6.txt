@@ -1,0 +1,336 @@
+// KINGNODE app.html — JavaScript part 4 of 6 (see 00-overview.md)
+function roundRect(g, x, y, w, h, r){ g.beginPath(); g.moveTo(x+r,y); g.lineTo(x+w-r,y); g.quadraticCurveTo(x+w,y,x+w,y+r); g.lineTo(x+w,y+h-r); g.quadraticCurveTo(x+w,y+h,x+w-r,y+h); g.lineTo(x+r,y+h); g.quadraticCurveTo(x,y+h,x,y+h-r); g.lineTo(x,y+r); g.quadraticCurveTo(x,y,x+r,y); g.closePath(); }
+
+// ---------- Heatseeker grid: strike × expiration, every cell labeled, king node starred ----------
+const HSG = { mode:"gex", step:"auto", view:"grid", net:true, exps:8, vol:false };
+function gridColor(t){ // t in [-1,1]. Muted institutional scale: dealers long = slate → teal → mint; dealers short = slate → indigo → lavender. zero = panel black.
+  const a = Math.min(1, Math.abs(t)), e = Math.pow(a, 0.6);
+  const mix = (c1, c2, f) => c1.map((v,i) => Math.round(v + (c2[i]-v)*f));
+  const col = t >= 0 ? (e < 0.55 ? mix([11,15,20],[22,78,74],e/0.55) : mix([22,78,74],[120,196,170],(e-0.55)/0.45))
+                     : (e < 0.55 ? mix([11,13,22],[48,52,110],e/0.55) : mix([48,52,110],[170,140,210],(e-0.55)/0.45));
+  return `rgb(${col.join(",")})`;
+}
+function viewSeeker(){
+  if (HSG.view === "session") return viewSeekerSession();
+  const d = S.chain, box = h("div",{class: SK.full ? "seeker-full" : ""});
+  const exps = S.allExps.slice(0, HSG.exps);
+  const chainForCalc = HSG.vol ? {...d, rows: d.rows.map(r => { const rr = r.slice(); rr[3] = r[4]; return rr; })} : d; // volume-weighted: treat today's volume as the position
+  const calc = computeFrom(chainForCalc, exps, S.set.range, S.set.model); const spot = calc.spot;
+  const mode = HSG.mode, isDelta = mode === "dgex", key = {gex:"gex", vex:"vex", dex:"dex", dgex:"gex"}[mode], unit = 1;
+  // strike step: bin strikes so the grid stays readable
+  const ks = [...new Set(calc.strikes.map(x=>x.K))].sort((a,b)=>a-b); const minGap = ks.length > 1 ? Math.min(...ks.slice(1).map((k,i)=>k-ks[i])) : 1;
+  const autoStep = ks.length > 60 ? minGap*5 : ks.length > 36 ? minGap*2 : minGap; const step = HSG.step === "auto" ? autoStep : Number(HSG.step);
+  const binOf = K => Math.round(K/step)*step;
+  const rowsK = [...new Set(ks.map(binOf))].sort((a,b)=>b-a);
+  const cell = new Map(); // `${exp}|${bin}` -> {v, cOI, pOI, cVol, pVol}
+  for (const c of calc.byCell.values()){ const b = binOf(c.K), k = `${c.exp}|${b}`; const o = cell.get(k) || {v:0, cOI:0, pOI:0, cVol:0, pVol:0}; o.v += c[key]; o.cOI += c.cOI; o.pOI += c.pOI; o.cVol += c.cVol; o.pVol += c.pVol; cell.set(k, o); }
+  // Δ since open: compare with the first Heatseeker snapshot of the day (GEX only, selected-exp basis)
+  let open0 = null; if (isDelta){ const h0 = S.seekerHist[0]; if (h0) open0 = new Map(h0.k.map(x => [binOf(x[0]), (open0?.get(binOf(x[0]))||0) + x[1]*1e5])); }
+  const val = (exp, b) => { const o = cell.get(`${exp}|${b}`); if (!o) return 0; return o.v; };
+  const rowNet = b => exps.reduce((a,e)=>a+val(e,b),0);
+  const vals = rowsK.flatMap(b => exps.map(e => val(e,b))); const vmax = Math.max(1e-9, ...vals.map(Math.abs));
+  const netMax = Math.max(1e-9, ...rowsK.map(b => Math.abs(rowNet(b))));
+  // king node = largest positive cell; short node = largest negative; spot row
+  let king = null, shortN = null; rowsK.forEach(b => exps.forEach(e => { const v = val(e,b); if (v > (king?.v||0)) king = {e,b,v}; if (v < (shortN?.v||0)) shortN = {e,b,v}; }));
+  const spotRow = rowsK.find(b => b <= spot) ?? rowsK[rowsK.length-1];
+  const fmtv = v => Math.abs(v) < 1e3 ? "" : money(v).replace("$","").replace("-","−");
+  const btn = (v,l) => h("button",{type:"button","aria-pressed":String(HSG.mode===v), onclick:()=>{HSG.mode=v; renderTabs();}}, l);
+  box.append(h("div",{class:"sk-head"},
+    h("div",{class:"grp"}, btn("gex","GEX"), btn("vex","VEX"), btn("dex","DEX")),
+    h("div",{class:"grp"}, [["grid","Grid"],["session","Session map"]].map(([v,l]) => h("button",{type:"button","aria-pressed":String(HSG.view===v), onclick:()=>{HSG.view=v; renderTabs();}}, l))),
+    h("div",{class:"grp"}, [[false,"Open interest"],[true,"Today's volume (0DTE)"]].map(([v,l]) => h("button",{type:"button","aria-pressed":String(HSG.vol===v), title:"Volume-weighted: where today's positioning is being built — the intraday map for 0DTE", onclick:()=>{HSG.vol=v; renderTabs();}}, l))),
+    h("select",{class:"sk-sel", onchange:e=>{HSG.step=e.target.value; renderTabs();}}, [["auto","Step auto"],[minGap,`Step ${minGap}`],[minGap*2,`Step ${minGap*2}`],[minGap*5,`Step ${minGap*5}`],[minGap*10,`Step ${minGap*10}`]].map(([v,l])=>h("option",{value:v, selected:String(HSG.step)===String(v)}, l))),
+    h("select",{class:"sk-sel", onchange:e=>{S.set.range=Number(e.target.value); saveSettings(); renderTabs();}}, [2,3,4,6,8,12].map(v=>h("option",{value:v, selected:S.set.range===v}, "±"+v+"%"))),
+    h("select",{class:"sk-sel", onchange:e=>{HSG.exps=Number(e.target.value); renderTabs();}}, [4,6,8,10,12].map(v=>h("option",{value:v, selected:HSG.exps===v}, v+" expiries"))),
+    h("span",{class:"sk-title"}, S.sym, h("span",{class:"hint"}, ` · ${ {gex:"gamma exposure, $ per 1% move",vex:"vanna exposure, $ delta per 1 vol pt",dex:"dealer delta, $"}[mode] }`)),
+    h("span",{style:{flex:1}}), S.demo ? h("span",{class:"badge demo"},"Demo data") : h("span",{class:"hint"},"chain " + new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})),
+    h("button",{class:"btn small", onclick:()=>{ SK.full = !SK.full; renderTabs(); }}, SK.full ? "Exit" : "Full screen")));
+  const tip = document.getElementById("tip");
+  const th = (txt, cls) => h("th",{class:cls||""}, txt);
+  const table = h("table",{class:"hsg"},
+    h("thead",null, h("tr",null, th("Strike","stk"), ...exps.map(e => h("th",null, h("div",null, e), h("div",{class:"hint"}, dte(e)===0 ? "0DTE" : dte(e)+"d"))), HSG.net ? th("Net","net") : null)),
+    h("tbody",null, ...rowsK.map(b => h("tr",{class: b===spotRow ? "spot" : ""},
+      h("td",{class:"stk"}, fmt(b, step < 1 ? 2 : 0)),
+      ...exps.map(e => { const v = val(e,b), o = cell.get(`${e}|${b}`); const isKing = king && king.e===e && king.b===b, isShort = shortN && shortN.e===e && shortN.b===b;
+        return h("td",{class:"c"+(isKing?" king":"")+(isShort?" shortn":""), style:{background:gridColor(v/vmax), color: Math.abs(v)/vmax > 0.75 ? "#0B0F14" : "#D6DAE0"},
+          onmouseenter:ev=>{ if(!o){ tip.style.display="none"; return; } tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; tip.textContent = `${fmt(b)} · ${e}\n${mode.toUpperCase()} ${money(v)}\ncalls OI ${fmt(o.cOI)} vol ${fmt(o.cVol)}\nputs  OI ${fmt(o.pOI)} vol ${fmt(o.pVol)}`; },
+          onmousemove:ev=>{ tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; }, onmouseleave:()=>tip.style.display="none",
+          onclick:()=>{ S.inspect = {exp:e, K:b}; S.tab = "heat"; renderTabs(); document.querySelector(".insp")?.scrollIntoView({behavior:"smooth", block:"nearest"}); }},
+          fmtv(v), isKing ? h("span",{class:"star"},"★") : null); }),
+      HSG.net ? h("td",{class:"net", style:{background:gridColor(rowNet(b)/netMax), color: Math.abs(rowNet(b))/netMax > 0.75 ? "#0B0F14" : "#D6DAE0"}}, fmtv(rowNet(b))) : null))),
+    h("tfoot",null, h("tr",null, th("Σ","stk"), ...exps.map(e => { const t = rowsK.reduce((a,b)=>a+val(e,b),0); return h("td",{class:"sum "+(t>=0?"pos":"neg")}, fmtv(t)); }), HSG.net ? h("td",{class:"sum "+(calc.total>=0?"pos":"neg")}, fmtv(rowsK.reduce((a,b)=>a+rowNet(b),0))) : null)));
+  box.append(h("div",{class:"hsg-wrap"}, table));
+  const kingTxt = king ? `★ King node ${fmt(king.b)} · ${king.e} · ${money(king.v)}` : "";
+  box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"linear-gradient(90deg,#30346E,#AA8CD2)"}}), "dealers short — moves accelerate"), h("span",null, h("i",{style:{background:"linear-gradient(90deg,#164E4A,#78C4AA)"}}), "dealers long — support / pin"), h("span",{style:{color:"var(--gold)",fontWeight:600}}, kingTxt), h("span",{class:"hint"},`spot ${fmt(spot,2)} row outlined · Net = across ${exps.length} expiries · click a cell for the contracts`)));
+  return box;
+}
+
+// =====================================================================================================
+// QUANT DESK — market-maker style pricing: realized vs implied vol, probability of profit, expected value,
+// Monte Carlo with your exit rules, and a ranked list of structures. The edge is the same one a desk looks for:
+// buy what the market overprices in probability terms and sell what it underprices, then size by the edge.
+// =====================================================================================================
+const QD = { view:"bull", horizon:10, stop:20, target:60, minPop:30, maxSpread:12, minDte:7, maxDte:60, structures:{call:true,put:true,debit:true,credit:true}, sel:null, mc:new Map(), seed:17 };
+const N = x => 0.5*(1+erf(x/Math.SQRT2));
+const Nd2 = (S0, K, T, sig) => { const sq = sig*Math.sqrt(Math.max(T,1e-6)); return N((Math.log(S0/K) - 0.5*sig*sig*T)/sq); };
+function realizedVol(bars){
+  if (!bars || bars.length < 30) return null;
+  // group by session → daily closes; if fewer than 12 sessions, fall back to intraday returns scaled to annual
+  const byDay = new Map(); for (const b of bars){ byDay.set(new Date(b[0]).toDateString(), b[4]); }
+  const closes = [...byDay.values()];
+  if (closes.length >= 12){ const r = closes.slice(1).map((c,i)=>Math.log(c/closes[i])); const n = Math.min(20, r.length); const rr = r.slice(-n); const m = rr.reduce((a,b)=>a+b,0)/n; const v = rr.reduce((a,b)=>a+(b-m)**2,0)/(n-1); return {rv:Math.sqrt(v*252), n, basis:`${n} sessions, close-to-close`}; }
+  const mins = (bars[1][0]-bars[0][0])/60000 || 5, per = 390/mins; const r = bars.slice(1).map((b,i)=>Math.log(b[4]/bars[i][4])).filter(isFinite); const n = Math.min(400, r.length); const rr = r.slice(-n); const m = rr.reduce((a,b)=>a+b,0)/n; const v = rr.reduce((a,b)=>a+(b-m)**2,0)/(n-1); return {rv:Math.sqrt(v*per*252), n, basis:`${n} intraday bars, scaled`};
+}
+function volSurface(){
+  const c = S.calc, spot = c.spot; const byExp = new Map();
+  for (const x of c.allContracts){ if (!x.iv || x.iv <= 0 || x.iv > 5) continue; const e = byExp.get(x.exp) || {exp:x.exp, dte:dte(x.exp), atm:null, atmDist:Infinity, p25:null, c25:null, p25d:1, c25d:1};
+    const d = Math.abs(x.K - spot); if (d < e.atmDist){ e.atmDist = d; e.atm = x.iv; }
+    if (x.type==="P" && Math.abs(Math.abs(x.delta)-0.25) < e.p25d){ e.p25d = Math.abs(Math.abs(x.delta)-0.25); e.p25 = x.iv; }
+    if (x.type==="C" && Math.abs(x.delta-0.25) < e.c25d){ e.c25d = Math.abs(x.delta-0.25); e.c25 = x.iv; }
+    byExp.set(x.exp, e); }
+  return [...byExp.values()].sort((a,b)=>a.dte-b.dte);
+}
+function ivAt(days){ const vs = volSurface().filter(v => v.atm); if (!vs.length) return 0.2; let best = vs[0]; for (const v of vs) if (Math.abs(v.dte-days) < Math.abs(best.dte-days)) best = v; return best.atm; }
+// candidate structures
+function quantCandidates(){
+  const c = S.calc, spot = c.spot, bull = QD.view === "bull", bear = QD.view === "bear";
+  const cs = c.allContracts.filter(x => { const d = dte(x.exp); return d >= QD.minDte && d <= QD.maxDte && x.oi >= 50 && x.mid > 0.05 && Math.abs(x.K/spot-1) <= 0.15; });
+  const byKey = new Map(cs.map(x => [`${x.exp}|${x.type}|${x.K}`, x]));
+  const out = [];
+  const liq = x => (x.ask - x.bid) / (x.mid || 1);
+  const push = o => { if (o.spreadPct <= QD.maxSpread/100) out.push(o); };
+  for (const x of cs){
+    const T = Math.max(1, dte(x.exp))/365;
+    if (QD.structures.call && x.type==="C" && bull && x.K >= spot*0.97 && x.K <= spot*1.08){ push({kind:"Long call", legs:[{...x, side:+1}], debit:x.mid, maxLoss:x.mid, maxGain:Infinity, be:x.K + x.mid, spreadPct:liq(x), exp:x.exp, T, dir:+1, K:x.K}); }
+    if (QD.structures.put && x.type==="P" && bear && x.K <= spot*1.03 && x.K >= spot*0.92){ push({kind:"Long put", legs:[{...x, side:+1}], debit:x.mid, maxLoss:x.mid, maxGain:x.K - x.mid, be:x.K - x.mid, spreadPct:liq(x), exp:x.exp, T, dir:-1, K:x.K}); }
+    if (QD.structures.debit && bull && x.type==="C" && x.K >= spot*0.98 && x.K <= spot*1.05){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="C").map(y=>y.K))].sort((a,b)=>a-b); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|C|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05) continue; push({kind:"Call debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(K2-x.K)-debit, be:x.K+debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:+1, K:x.K, K2}); } }
+    if (QD.structures.debit && bear && x.type==="P" && x.K <= spot*1.02 && x.K >= spot*0.95){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="P").map(y=>y.K))].sort((a,b)=>b-a); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|P|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05) continue; push({kind:"Put debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(x.K-K2)-debit, be:x.K-debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:-1, K:x.K, K2}); } }
+    if (QD.structures.credit && (bull || QD.view==="neutral") && x.type==="P" && x.K <= spot*0.99 && x.K >= spot*0.90){ for (const w of [1,2]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="P").map(y=>y.K))].sort((a,b)=>b-a); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|P|${K2}`); if (!y) continue; const credit = x.mid - y.mid, width = x.K - K2; if (credit <= 0.05 || credit >= width) continue; push({kind:"Put credit spread", legs:[{...x, side:-1},{...y, side:+1}], debit:-credit, maxLoss:width-credit, maxGain:credit, be:x.K-credit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:+1, K:x.K, K2, credit:true}); } }
+    if (QD.structures.credit && (bear || QD.view==="neutral") && x.type==="C" && x.K >= spot*1.01 && x.K <= spot*1.10){ for (const w of [1,2]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="C").map(y=>y.K))].sort((a,b)=>a-b); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|C|${K2}`); if (!y) continue; const credit = x.mid - y.mid, width = K2 - x.K; if (credit <= 0.05 || credit >= width) continue; push({kind:"Call credit spread", legs:[{...x, side:-1},{...y, side:+1}], debit:-credit, maxLoss:width-credit, maxGain:credit, be:x.K+credit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:-1, K:x.K, K2, credit:true}); } }
+  }
+  return out;
+}
+// structure value at a given underlying/time (BS with each leg's own IV)
+function structValue(o, S0, tYears, ivShift=0){ return o.legs.reduce((a,l) => a + l.side * bsPrice(S0, l.K, Math.max(0, tYears), Math.max(0.02, (l.iv||0.2) + ivShift), l.type), 0); }
+function payoffAtExpiry(o, S0){ return o.legs.reduce((a,l) => a + l.side * Math.max(0, l.type==="C" ? S0-l.K : l.K-S0), 0) - o.debit; }
+// analytic metrics under two measures: implied (what the market prices) and realized (what the stock has been doing)
+function analytic(o, rv){
+  const c = S.calc, S0 = c.spot, T = o.T, ivs = o.legs[0].iv || 0.2;
+  const pProfitExp = sig => { // P(payoff at expiry > 0) under lognormal, drift 0
+    const sq = sig*Math.sqrt(T); if (o.kind.includes("credit")){ return o.dir > 0 ? Nd2(S0, o.be, T, sig) : 1 - Nd2(S0, o.be, T, sig); } return o.dir > 0 ? Nd2(S0, o.be, T, sig) : 1 - Nd2(S0, o.be, T, sig); };
+  const pItm = sig => o.dir > 0 ? Nd2(S0, o.K, T, sig) : 1 - Nd2(S0, o.K, T, sig);
+  // expected value at expiry by numeric integration under RV lognormal
+  const ev = sig => { const n = 240, sq = sig*Math.sqrt(T); let e = 0; for (let i = 0; i < n; i++){ const z = -4 + 8*(i+0.5)/n; const w = Math.exp(-z*z/2)/Math.sqrt(2*Math.PI)*(8/n); const ST = S0*Math.exp(-0.5*sig*sig*T + sq*z); e += w*payoffAtExpiry(o, ST); } return e; };
+  return { pItmIV:pItm(ivs), pItmRV:pItm(rv), popIV:pProfitExp(ivs), popRV:pProfitExp(rv), evIV:ev(ivs), evRV:ev(rv) };
+}
+// Monte Carlo with your rules: stop at −stop% / target at +target% of the debit, exit at horizon otherwise. Student-t(4) shocks for fat tails.
+function monteCarlo(o, rv, paths=3000){
+  const c = S.calc, S0 = c.spot, H = Math.min(QD.horizon, dte(o.exp)), steps = H, dt = 1/252, sig = rv;
+  let seed = QD.seed + Math.round(o.K*7 + (o.K2||0)*3 + o.legs.length); const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  const gauss = () => { const u = Math.max(1e-9, rnd()), v = rnd(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); };
+  const tdraw = () => { const z = gauss(); const chi = (gauss()**2 + gauss()**2 + gauss()**2 + gauss()**2)/4; return z/Math.sqrt(chi) * Math.sqrt(2/4); }; // t(4) scaled to unit variance
+  const risk = o.credit ? o.maxLoss : o.debit; const stopLvl = -QD.stop/100*risk, tgtLvl = QD.target/100*risk;
+  const v0 = structValue(o, S0, o.T); // anchor to the model's own t=0 value so a model/market gap doesn't show up as instant P&L
+  let hitT = 0, hitS = 0, profH = 0, sumPnl = 0, sumT = 0; const pnls = [];
+  for (let p = 0; p < paths; p++){
+    let St = S0, pnl = 0, done = false;
+    for (let d = 1; d <= steps; d++){
+      St *= Math.exp(-0.5*sig*sig*dt + sig*Math.sqrt(dt)*tdraw());
+      const val = structValue(o, St, o.T - d*dt); pnl = val - v0;
+      if (pnl >= tgtLvl){ hitT++; sumT += d; done = true; break; }
+      if (pnl <= stopLvl){ hitS++; sumT += d; done = true; break; }
+    }
+    if (!done){ sumT += steps; if (pnl > 0) profH++; }
+    sumPnl += Math.max(stopLvl, Math.min(tgtLvl, pnl)); pnls.push(pnl);
+  }
+  pnls.sort((a,b)=>a-b); const q = f => pnls[Math.floor(f*(pnls.length-1))];
+  return { pTarget:hitT/paths, pStop:hitS/paths, pProfit:(hitT+profH)/paths, ev:sumPnl/paths, avgDays:sumT/paths, p10:q(.1), p50:q(.5), p90:q(.9), horizon:H, risk };
+}
+function rankQuant(rvInfo){
+  const rv = rvInfo?.rv || ivAt(30)*0.9; const cands = quantCandidates(); const c = S.calc;
+  const flowLean = (() => { const tr = (S.flow?.trades||[]).filter(t=>t.u===S.sym); const b = tr.filter(t=>(t.cp==="C"&&t.side==="A")||(t.cp==="P"&&t.side==="B")).reduce((a,t)=>a+t.prem,0), s = tr.filter(t=>(t.cp==="P"&&t.side==="A")||(t.cp==="C"&&t.side==="B")).reduce((a,t)=>a+t.prem,0); return (b-s)/((b+s)||1); })();
+  const rows = cands.map(o => { const a = analytic(o, rv); const risk = o.credit ? o.maxLoss : o.debit; const evr = a.evRV/risk;
+    const posAlign = o.dir > 0 ? (c.spot > (c.flip||0) ? 1 : 0) + (c.callWall && o.K <= c.callWall.K ? 1 : 0) : (c.spot < (c.flip||Infinity) ? 1 : 0) + (c.putWall && o.K >= c.putWall.K ? 1 : 0);
+    const edge = a.evRV - a.evIV; // what realized vol says vs what implied prices → the mispricing a desk harvests
+    const score = evr*40 + a.popRV*30 + posAlign*6 + (o.dir*flowLean)*8 - o.spreadPct*60 + Math.min(6, Math.log10(1+(o.legs[0].oi||0)));
+    return {...o, ...a, risk, evr, edge, posAlign, flowLean, score, rv}; })
+    .filter(r => r.popRV*100 >= QD.minPop).sort((a,b)=>b.score-a.score);
+  return rows.slice(0, 40);
+}
+function viewQuant(){
+  const c = S.calc, box = h("div",null); if (!c) return box;
+  const rvInfo = realizedVol(S.bars), rv = rvInfo?.rv || null, vs = volSurface(), iv30 = ivAt(30), vrp = rv != null ? iv30 - rv : null;
+  const near = vs.find(v => v.dte >= 20) || vs[0]; const skew = near && near.p25 && near.c25 ? (near.p25 - near.c25)*100 : null;
+  const hdr = (k,v,sub,cls) => h("div",{class:"qk"}, h("div",{class:"hint"},k), h("div",{class:"num qv "+(cls||"")},v), sub ? h("div",{class:"hint",style:{fontSize:"11px"}},sub) : null);
+  box.append(h("div",{class:"qhead"},
+    h("div",null, h("div",{class:"qtitle"},"Quant desk"), h("div",{class:"hint"},`${S.sym} · ${fmt(c.spot,2)} · pricing the chain the way a market maker does: what the market implies vs what the tape has done, probability by two measures, expected value per dollar of risk, then your exit rules simulated.`)),
+    h("div",{class:"qkpis"},
+      hdr("IV (30d ATM)", fmt(iv30*100,1)+"%", "what the market charges"),
+      hdr("Realized vol", rv != null ? fmt(rv*100,1)+"%" : "—", rvInfo ? rvInfo.basis : "needs bars", ""),
+      hdr("Vol risk premium", vrp != null ? (vrp>=0?"+":"")+fmt(vrp*100,1)+" pts" : "—", vrp == null ? "" : vrp > 0.03 ? "options rich → sellers' edge" : vrp < -0.02 ? "options cheap → buyers' edge" : "fair", vrp == null ? "" : vrp > 0.03 ? "p" : vrp < -0.02 ? "c" : ""),
+      hdr("25Δ skew", skew != null ? (skew>=0?"+":"")+fmt(skew,1)+" pts" : "—", skew == null ? "" : skew > 3 ? "puts bid — downside feared" : skew < 0 ? "calls bid — upside chased" : "balanced", skew == null ? "" : skew > 3 ? "p" : skew < 0 ? "c" : ""),
+      hdr("Regime", c.total > 0 ? "+γ pinned" : "−γ trending", c.total > 0 ? "mean reversion favoured" : "breakouts follow through", c.total > 0 ? "c" : "p"))));
+  // term structure strip
+  if (vs.length) box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,"Implied vol term structure (ATM)"), h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap"}}, vs.slice(0,10).map(v => h("div",{class:"qterm", title:`${v.exp} · 25Δ put ${v.p25?fmt(v.p25*100,1):"—"} / call ${v.c25?fmt(v.c25*100,1):"—"}`}, h("div",{class:"hint"},`${v.exp.slice(5)} · ${v.dte}d`), h("div",{class:"num",style:{fontWeight:600}}, v.atm ? fmt(v.atm*100,1)+"%" : "—"), h("div",{class:"hint",style:{fontSize:"10.5px"}}, v.p25&&v.c25 ? `skew ${((v.p25-v.c25)*100>=0?"+":"")}${fmt((v.p25-v.c25)*100,1)}` : "")))),
+    h("p",{class:"hint",style:{margin:"8px 0 0"}}, vs.length > 1 && vs[0].atm && vs[vs.length-1].atm ? (vs[0].atm > vs[vs.length-1].atm*1.1 ? "Front-end vol is elevated relative to the back: an event or a scare is priced near-term. Short-dated premium is expensive; the back is where you buy time." : "Term structure is normal (upward): no near-term event premium. Buying the front is not being overcharged.") : "")));
+  // inputs
+  const num = (label, key, min, max, step) => h("label",{class:"hint",style:{display:"flex",flexDirection:"column",gap:"3px"}}, label, h("input",{type:"number", min, max, step, value:QD[key], style:{width:"92px",background:"var(--bg)",border:"1px solid var(--rule2)",borderRadius:"4px",padding:"5px 8px",color:"var(--ink)",fontFamily:"var(--mono)"}, onchange:e=>{ QD[key]=Number(e.target.value); QD.mc.clear(); renderTabs(); }}));
+  const chk = (label, key) => h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:QD.structures[key], onchange:e=>{ QD.structures[key]=e.target.checked; renderTabs(); }}), label);
+  box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("div",{style:{display:"flex",gap:"14px",alignItems:"flex-end",flexWrap:"wrap"}},
+    h("div",{class:"grp",style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["bull","Bullish"],["bear","Bearish"],["neutral","Neutral"]].map(([v,l])=>h("button",{type:"button", style:{border:0,background:QD.view===v?"var(--panel2)":"transparent",color:QD.view===v?"var(--ink)":"var(--muted)",padding:"7px 12px",cursor:"pointer",fontWeight:600}, onclick:()=>{QD.view=v; QD.mc.clear(); QD.sel=null; renderTabs();}}, l))),
+    num("Horizon (days)","horizon",1,120,1), num("Stop % of risk","stop",5,100,5), num("Target % of risk","target",10,300,10), num("Min P(profit) %","minPop",0,90,5), num("Max spread %","maxSpread",2,40,1), num("Min DTE","minDte",0,365,1), num("Max DTE","maxDte",1,730,1),
+    h("div",{style:{display:"flex",gap:"10px",flexWrap:"wrap"}}, chk("Long calls","call"), chk("Long puts","put"), chk("Debit spreads","debit"), chk("Credit spreads","credit")))));
+  if (rv == null) box.append(h("div",{class:"notice"},"Realized vol needs price bars. Loading…"));
+  const rows = rankQuant(rvInfo);
+  const legTxt = o => o.legs.map(l => `${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join(" / ") + ` ${o.exp.slice(5)} (${dte(o.exp)}d)`;
+  box.append(h("div",{class:"card"}, h("h2",null,`Ranked structures — ${QD.view} · ${rows.length} pass the filters`),
+    rows.length ? h("div",{style:{overflow:"auto",maxHeight:"46vh"}}, h("table",{class:"data qtab"}, h("thead",null,h("tr",null,["#","Structure","Legs","Cost","Max loss","Max gain","Breakeven","P(ITM) IV","P(ITM) RV","P(profit) RV","EV (RV)","EV / risk","Edge vs IV","Spread","Pos.","Score"].map(x=>h("th",null,x)))),
+      h("tbody",null, rows.map((r,i) => h("tr",{class: QD.sel===i?"sel":"", style:{cursor:"pointer"}, onclick:()=>{ QD.sel = i; renderTabs(); setTimeout(()=>document.querySelector(".qcard")?.scrollIntoView({behavior:"smooth",block:"start"}), 50); }},
+        h("td",null,i+1), h("td",{style:{textAlign:"left",fontWeight:600}},r.kind), h("td",{style:{textAlign:"left"}},legTxt(r)), h("td",null,(r.credit?"+":"")+fmt(Math.abs(r.debit),2)), h("td",{class:"p"},fmt(r.maxLoss,2)), h("td",{class:"c"}, isFinite(r.maxGain)?fmt(r.maxGain,2):"∞"), h("td",null,fmt(r.be,2)),
+        h("td",null,fmt(r.pItmIV*100,0)+"%"), h("td",null,fmt(r.pItmRV*100,0)+"%"), h("td",{class:r.popRV>=0.5?"c":""},fmt(r.popRV*100,0)+"%"), h("td",{class:r.evRV>=0?"c":"p"},(r.evRV>=0?"+":"")+fmt(r.evRV,2)), h("td",{class:r.evr>=0?"c":"p",style:{fontWeight:600}},(r.evr>=0?"+":"")+fmt(r.evr*100,0)+"%"), h("td",{class:r.edge>=0?"c":"p"},(r.edge>=0?"+":"")+fmt(r.edge,2)), h("td",{class:r.spreadPct>0.08?"p":""},fmt(r.spreadPct*100,0)+"%"), h("td",null,"★".repeat(r.posAlign)), h("td",{class:"num",style:{fontWeight:700}},fmt(r.score,0)))))))
+    : h("p",{class:"hint",style:{margin:0}},"Nothing passes. Loosen min P(profit) or max spread, or widen the DTE window."),
+    h("p",{class:"hint",style:{margin:"8px 0 0"}},"P(ITM) IV = what the options market prices (N(d₂)). P(ITM) RV = the same probability using the stock's realized vol instead. EV (RV) = expected payoff at expiry under realized vol, per contract. Edge vs IV = EV under realized minus EV under implied: positive means the market is charging less than the stock's behaviour justifies. Pos. = agreement with walls/flip. Not a forecast — a pricing comparison.")));
+  // selected trade card
+  if (QD.sel != null && rows[QD.sel]) box.append(quantCard(rows[QD.sel], rv));
+  box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"How this works (and what it isn't)"),
+    h("div",{class:"grid2"}, h("div",null, h("p",{style:{margin:"0 0 8px"}},h("b",null,"The desk's edge, simplified.")," Market makers like Citadel Securities and Jane Street don't predict direction. They price every option against a model, quote around it, hedge the delta, and collect the difference between what the market pays and what the risk is worth. The one piece of that you can use as a directional trader is the pricing comparison: ",h("b",null,"is this contract cheap or expensive relative to how the stock actually moves?")," That's the IV-vs-realized column, the Edge column, and the two probabilities side by side."),
+      h("p",{style:{margin:"0 0 8px"}},h("b",null,"Probabilities.")," P(ITM) and P(profit) come from the lognormal model (Black-Scholes world) with zero drift: the implied version uses the option's own IV, the realized version uses the stock's recent realized vol. When realized is below implied, long premium is being overcharged and the RV probability of profit is lower than the IV one makes it look; the reverse when realized is above."),
+      h("p",{style:{margin:0}},h("b",null,"Monte Carlo.")," 3,000 price paths with fat-tailed (Student-t) daily shocks at realized vol, repricing the structure every day, applying your stop and target. It reports how often you hit the target before the stop, how often the position is green at the horizon, and the expected P&L with your rules — which is the number that matters, not the expiry payoff.")),
+     h("div",null, h("p",{style:{margin:"0 0 8px"}},h("b",null,"Sizing.")," Kelly fraction = EV ÷ (risk × variance proxy), shown halved (half-Kelly), capped at your max risk. Desks run a fraction of Kelly because the model is always a little wrong."),
+      h("p",{style:{margin:"0 0 8px"}},h("b",null,"What it isn't.")," No model of order flow, no microstructure, no latency, no inventory — the things that are the actual business of those firms. It also assumes IV stays put; earnings and FOMC break that (use the IV-shift slider on the card). Treat the output as a filter that removes bad-priced trades, not a machine that finds good ones."),
+      h("p",{style:{margin:0,color:"var(--muted)"}},"Not investment advice. Probabilities are model outputs on delayed data.")))));
+  return box;
+}
+function quantCard(o, rv){
+  const c = S.calc, S0 = c.spot; const key = `${o.kind}|${o.exp}|${o.K}|${o.K2||""}|${QD.horizon}|${QD.stop}|${QD.target}`;
+  let mc = QD.mc.get(key); if (!mc){ mc = monteCarlo(o, rv || ivAt(30)*0.9); QD.mc.set(key, mc); }
+  const pb = getPb(), risk$ = pb.account*pb.maxRiskPct/100, perContract = o.risk*100; const stopPerContract = perContract*QD.stop/100;
+  const qty = Math.max(1, Math.floor(risk$ / stopPerContract));
+  const variance = Math.max(1e-6, ((mc.p90 - mc.p10)/2.56)**2); const kelly = Math.max(0, Math.min(0.25, (mc.ev/perContract*100) / (variance/(perContract*perContract/10000)) )); // crude; halved below
+  const halfKelly = kelly/2; const kellyQty = Math.max(0, Math.floor(pb.account*halfKelly / perContract));
+  // payoff diagram
+  const W = 760, H = 260, pad = {l:56,r:16,t:16,b:28}; const lo = S0*0.85, hi = S0*1.15; const xs = []; for (let i = 0; i <= 120; i++) xs.push(lo + (hi-lo)*i/120);
+  const v0 = structValue(o, S0, o.T);
+  const yExp = xs.map(x => payoffAtExpiry(o, x)), yNow = xs.map(x => structValue(o, x, Math.max(0, o.T - Math.min(QD.horizon, dte(o.exp))/365)) - v0);
+  const yMin = Math.min(...yExp, ...yNow), yMax = Math.max(...yExp.filter(isFinite), ...yNow);
+  const X = x => pad.l + (x-lo)/(hi-lo)*(W-pad.l-pad.r), Y = y => H-pad.b - (y-yMin)/((yMax-yMin)||1)*(H-pad.t-pad.b);
+  const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", style:"display:block"});
+  svg.append(svgEl("rect",{x:pad.l,y:pad.t,width:W-pad.l-pad.r,height:H-pad.t-pad.b,fill:"var(--panel)"}));
+  svg.append(svgEl("line",{x1:pad.l,y1:Y(0),x2:W-pad.r,y2:Y(0),stroke:"var(--rule2)"}));
+  // profit/loss fill at expiry
+  const area = xs.map((x,i)=>`${X(x)},${Y(yExp[i])}`).join(" "); svg.append(svgEl("polyline",{points:area, fill:"none", stroke:"#5EEAD4", "stroke-width":2}));
+  svg.append(svgEl("polyline",{points:xs.map((x,i)=>`${X(x)},${Y(yNow[i])}`).join(" "), fill:"none", stroke:"#F5B942", "stroke-width":1.6, "stroke-dasharray":"5 4"}));
+  const vline = (x, col, lbl) => { if (x < lo || x > hi) return; svg.append(svgEl("line",{x1:X(x),y1:pad.t,x2:X(x),y2:H-pad.b,stroke:col,"stroke-dasharray":"3 3"})); const t = svgEl("text",{x:X(x)+3,y:pad.t+11}); t.textContent = lbl; t.style.fill = col; svg.append(t); };
+  vline(S0, "#fff", `spot ${fmt(S0,2)}`); vline(o.be, "#F97066", `BE ${fmt(o.be,2)}`); if (c.callWall) vline(c.callWall.K, "rgba(94,234,212,.7)", "CW"); if (c.putWall) vline(c.putWall.K, "rgba(252,165,165,.7)", "PW");
+  [yMin, 0, yMax].forEach(v => { const t = svgEl("text",{x:pad.l-6,y:Y(v)+4,"text-anchor":"end"}); t.textContent = fmt(v,2); svg.append(t); });
+  [lo, S0, hi].forEach(v => { const t = svgEl("text",{x:X(v),y:H-8,"text-anchor":"middle"}); t.textContent = fmt(v,0); svg.append(t); });
+  // probability cone
+  const sig = rv || ivAt(30); const Hd = Math.min(QD.horizon, dte(o.exp)); const W2 = 760, H2 = 220, p2 = {l:56,r:16,t:14,b:26};
+  const cone = svgEl("svg",{viewBox:`0 0 ${W2} ${H2}`, width:"100%", style:"display:block"});
+  const bands = [[1,"rgba(45,212,191,.18)"],[2,"rgba(45,212,191,.08)"]]; const yLo = S0*Math.exp(-2*sig*Math.sqrt(Hd/252))*0.99, yHi = S0*Math.exp(2*sig*Math.sqrt(Hd/252))*1.01;
+  const X2 = d => p2.l + d/Hd*(W2-p2.l-p2.r), Y2 = v => H2-p2.b - (v-yLo)/((yHi-yLo)||1)*(H2-p2.t-p2.b);
+  for (const [k,col] of bands.reverse()){ const up = [], dn = []; for (let d = 0; d <= Hd; d++){ const s = sig*Math.sqrt(d/252); up.push(`${X2(d)},${Y2(S0*Math.exp(k*s))}`); dn.unshift(`${X2(d)},${Y2(S0*Math.exp(-k*s))}`); } cone.append(svgEl("polygon",{points:[...up,...dn].join(" "), fill:col})); }
+  cone.append(svgEl("line",{x1:p2.l,y1:Y2(S0),x2:W2-p2.r,y2:Y2(S0),stroke:"#fff","stroke-width":1}));
+  const hline = (v, col, lbl) => { if (v < yLo || v > yHi) return; cone.append(svgEl("line",{x1:p2.l,y1:Y2(v),x2:W2-p2.r,y2:Y2(v),stroke:col,"stroke-dasharray":"4 3"})); const t = svgEl("text",{x:W2-p2.r-2,y:Y2(v)-3,"text-anchor":"end"}); t.textContent = `${lbl} ${fmt(v,2)}`; t.style.fill = col; cone.append(t); };
+  hline(o.K, "#F5B942", "strike"); hline(o.be, "#F97066", "breakeven"); if (o.K2) hline(o.K2, "#C084FC", "short strike");
+  [0, Math.round(Hd/2), Hd].forEach(d => { const t = svgEl("text",{x:X2(d),y:H2-8,"text-anchor":"middle"}); t.textContent = d === 0 ? "today" : `+${d}d`; cone.append(t); });
+  [yLo, S0, yHi].forEach(v => { const t = svgEl("text",{x:p2.l-6,y:Y2(v)+4,"text-anchor":"end"}); t.textContent = fmt(v,0); cone.append(t); });
+  const kv = (k,v,cls) => h("div",null, h("span",null,k), h("span",{class:cls||""},v));
+  const ivShiftBox = h("div",{class:"hint"},"");
+  const shiftInput = h("input",{type:"range", min:-20, max:20, step:1, value:0, style:{width:"180px"}, oninput:e=>{ const sh = Number(e.target.value)/100; const v = structValue(o, S0, Math.max(0, o.T - Hd/365), sh) - v0; ivShiftBox.textContent = `IV ${sh>=0?"+":""}${Number(e.target.value)} pts, flat price at +${Hd}d → P&L ${v>=0?"+":""}${fmt(v,2)} (${fmt(v/o.risk*100,0)}% of risk)`; }});
+  const legs = o.legs.map(l => `${l.side>0?"Buy":"Sell"} ${S.sym} ${o.exp} ${fmt(l.K)} ${l.type==="C"?"Call":"Put"} @ ${fmt(l.mid,2)} (δ ${fmt(l.delta,2)}, IV ${fmt((l.iv||0)*100,1)}%, OI ${fmt(l.oi)})`);
+  return h("div",{class:"card qcard"}, h("h2",null,"Trade card"),
+    h("div",{class:"qlegs"}, h("div",{style:{fontSize:"16px",fontWeight:700}}, `${o.kind} · ${S.sym} ${o.exp} · ${dte(o.exp)} DTE`), ...legs.map(t => h("div",{class:"num",style:{fontSize:"12.5px"}}, t))),
+    h("div",{class:"grid2",style:{marginTop:"12px"}},
+      h("div",null, h("h3",{class:"qh3"},"Payoff — expiry (solid) vs at +" + Hd + "d (dashed)"), svg),
+      h("div",null, h("h3",{class:"qh3"},`Probability cone at realized vol (${fmt(sig*100,1)}%) — 1σ and 2σ`), cone)),
+    h("div",{class:"grid2",style:{marginTop:"12px"}},
+      h("div",{class:"kv"}, kv("Cost / risk per contract", `${fmt(Math.abs(o.debit),2)} → ${money(perContract)}`), kv("Max loss", money(o.maxLoss*100), "p"), kv("Max gain", isFinite(o.maxGain)?money(o.maxGain*100):"unlimited", "c"), kv("Breakeven", fmt(o.be,2)), kv("P(ITM) implied / realized", `${fmt(o.pItmIV*100,0)}% / ${fmt(o.pItmRV*100,0)}%`), kv("P(profit at expiry) realized", fmt(o.popRV*100,0)+"%", o.popRV>=0.5?"c":""), kv("EV at expiry (realized)", (o.evRV>=0?"+":"")+fmt(o.evRV,2)+" / contract", o.evRV>=0?"c":"p"), kv("Edge vs implied", (o.edge>=0?"+":"")+fmt(o.edge,2), o.edge>=0?"c":"p")),
+      h("div",{class:"kv"}, kv(`MC: hit +${QD.target}% target before stop`, fmt(mc.pTarget*100,0)+"%", "c"), kv(`MC: hit −${QD.stop}% stop first`, fmt(mc.pStop*100,0)+"%", "p"), kv(`MC: green at +${mc.horizon}d (any)`, fmt(mc.pProfit*100,0)+"%", mc.pProfit>=0.5?"c":""), kv("MC: expected P&L with your rules", (mc.ev>=0?"+":"")+fmt(mc.ev,2)+" / contract", mc.ev>=0?"c":"p"), kv("MC: P&L p10 / p50 / p90", `${fmt(mc.p10,2)} / ${fmt(mc.p50,2)} / ${fmt(mc.p90,2)}`), kv("MC: avg days in trade", fmt(mc.avgDays,1)), kv(`Size at ${pb.maxRiskPct}% risk, ${QD.stop}% stop`, `${qty} contracts (${money(qty*perContract)} premium)`), kv("Half-Kelly size", `${kellyQty} contracts (${fmt(halfKelly*100,1)}% of account)`, kellyQty>0?"c":"p"))),
+    h("div",{style:{marginTop:"12px",display:"flex",gap:"12px",alignItems:"center",flexWrap:"wrap"}}, h("span",{class:"hint"},"What if IV moves?"), shiftInput, ivShiftBox),
+    h("p",{style:{margin:"12px 0 0"}}, quantNarrative(o, mc, rv)),
+    h("div",{class:"actions"}, h("button",{class:"btn gold", onclick:()=>{ const pb2 = getPb(); if (pb2.positions.filter(p=>!p.closed).length >= pb2.maxPositions){ notice("Position limit reached.", true); return; } const l = o.legs[0]; const pos = {sym:S.sym, exp:o.exp, K:l.K, cp:l.type, entry:Math.abs(o.debit), qty, target: o.dir>0 ? (c.callWall?.K||null) : (c.putWall?.K||null), inval: o.dir>0 ? (c.flip||c.putWall?.K||null) : (c.flip||c.callWall?.K||null), thesis:`${o.kind} from the Quant desk: P(profit) ${fmt(o.popRV*100,0)}%, MC target-first ${fmt(mc.pTarget*100,0)}%, EV ${fmt(mc.ev,2)}/contract with ${QD.stop}% stop / ${QD.target}% target.`, opened:Date.now()}; journalOpen(pos); pb2.positions.push(pos); setPb(pb2); notice("Added to Playbook positions."); }},"Add to positions"), h("button",{class:"btn", onclick:()=>{ S.inspect = {exp:o.exp, K:o.K}; S.tab = "heat"; renderTabs(); }},"Open in inspector"), h("span",{class:"hint"},"Delayed data · model output · not advice")));
+}
+function quantNarrative(o, mc, rv){
+  const c = S.calc; const cheap = o.edge > 0; const parts = [];
+  parts.push(`${o.kind} on ${S.sym}: the market prices a ${fmt(o.pItmIV*100,0)}% chance of finishing in the money; the stock's realized vol says ${fmt(o.pItmRV*100,0)}%.`);
+  parts.push(cheap ? `Implied is below realized here, so you're paying less than the movement justifies — that's the kind of mispricing a desk buys.` : `Implied is above realized, so you're paying for more movement than the stock has delivered; the edge is on the seller's side unless a catalyst changes the vol.`);
+  parts.push(`With your rules (stop ${QD.stop}%, target ${QD.target}%, ${mc.horizon}-day horizon) the simulation hits the target first ${fmt(mc.pTarget*100,0)}% of the time and the stop first ${fmt(mc.pStop*100,0)}%, for an expected ${mc.ev>=0?"gain":"loss"} of ${fmt(Math.abs(mc.ev),2)} per contract.`);
+  if (o.posAlign >= 2) parts.push(`Positioning agrees: spot is on the right side of the flip and the strike sits inside the wall.`); else if (o.posAlign === 0) parts.push(`Positioning disagrees: dealers are leaning against this direction at these strikes, so expect the move to be ground out, not gapped.`);
+  if (o.spreadPct > 0.08) parts.push(`Watch the fill — the market is ${fmt(o.spreadPct*100,0)}% wide, which is a real tax on a trade this size.`);
+  return parts.join(" ");
+}
+
+// =====================================================================================================
+// IDEAS — the cross-ticker engine. Scans a universe, pulls each chain + bars, and turns positioning, trend,
+// momentum and vol pricing into a Buy / Trim / Avoid call for the stock, plus the best-priced option structure
+// from the Quant desk for the same view. Halal-aware.
+// =====================================================================================================
+const ID = { universe:"quick", running:false, results:new Map(), at:0, progress:"", halal:false, onlySignals:true };
+const IDEA_UNIVERSES = {
+  quick: () => [...new Set(["SPX","SPY","QQQ","IWM",...QUICK.filter(s=>s!=="VIX")])],
+  halal: () => HALAL_UNIVERSE.filter(r => r[3] !== "fails" && r[2] !== "Halal ETF" && !["GLD","SLV","XLE"].includes(r[0])).map(r => r[0]).slice(0, 36),
+  watch: () => getWatch(),
+};
+function withCalc(calc, bars, fn){ const sc = S.calc, sb = S.bars, ss = S.sym; S.calc = calc; S.bars = bars; S.sym = calc.symbol || ss; try { return fn(); } finally { S.calc = sc; S.bars = sb; S.sym = ss; } }
+async function fetchChainAny(sym){
+  try { let r = await fetch(`/api/chain?symbol=${encodeURIComponent(sym)}`).catch(()=>null); if (!r || r.status === 404 || (r.headers.get("content-type")||"").includes("text/html")){ const snap = await snapshotJson(`${sym}.json`, 60); if (snap?.rows?.length) return snap; r = await cboeDirect(sym); } if (r && r.ok){ const j = await r.json(); if (j.rows?.length) return j; } } catch {}
+  return null;
+}
+async function fetchBarsAny(sym){
+  try { const r = await fetch(`/api/bars?symbol=${sym}&interval=1d&range=6mo`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) return j.bars; } } catch {}
+  { const snap = await snapshotJson(`${sym}-daily.json`, 24*60); if (snap?.bars?.length) return snap.bars; }
+  const got = await cboeBars(sym, "1d", "6mo"); return got?.bars || null;
+}
+function emaArr(v, n){ return ema(v, n); }
+function analyzeTicker(sym, chain, daily){
+  const exps = [...new Set(chain.rows.map(r=>r[0]))].sort().slice(0, 6);
+  const calc = computeFrom({...chain, symbol:sym}, exps, 8, S.set.model); calc.symbol = sym;
+  const spot = calc.spot; const closes = daily ? daily.map(b=>b[4]) : [];
+  const e21 = closes.length > 25 ? emaArr(closes,21).at(-1) : null, e50 = closes.length > 55 ? emaArr(closes,50).at(-1) : null;
+  const r14 = closes.length > 16 ? rsi(closes,14).at(-1) : null;
+  const chg1 = closes.length > 1 ? closes.at(-1)/closes.at(-2)-1 : (chain.changePct||0)/100, chg5 = closes.length > 6 ? closes.at(-1)/closes.at(-6)-1 : null, chg20 = closes.length > 21 ? closes.at(-1)/closes.at(-21)-1 : null;
+  const rvInfo = daily && daily.length > 12 ? realizedVol(daily) : null; const rv = rvInfo?.rv || null;
+  const iv30 = withCalc(calc, daily, () => ivAt(30)); const vrp = rv != null ? iv30 - rv : null;
+  const aboveFlip = calc.flip ? spot > calc.flip : null; const posG = calc.total > 0;
+  const cw = calc.callWall?.K, pw = calc.putWall?.K; const toCW = cw ? cw/spot-1 : null, toPW = pw ? 1-pw/spot : null;
+  const trendUp = e21 && e50 ? (spot > e21 && e21 > e50) : (chg20 != null ? chg20 > 0 : null);
+  const trendDown = e21 && e50 ? (spot < e21 && e21 < e50) : (chg20 != null ? chg20 < 0 : null);
+  const pullback = e21 ? Math.abs(spot/e21-1) < 0.015 : false; const extended = e21 ? spot/e21-1 > 0.04 : chg5 != null && chg5 > 0.06;
+  const reasons = []; let signal = "Watch", score = 0, view = "neutral";
+  // --- equity rules ---
+  if (trendUp){ score += 25; reasons.push("uptrend (price > 21 EMA > 50 EMA)"); view = "bull"; }
+  if (trendDown){ score -= 25; reasons.push("downtrend (price < 21 EMA < 50 EMA)"); view = "bear"; }
+  if (aboveFlip === true){ score += 10; reasons.push(`above gamma flip ${fmt(calc.flip)}`); } else if (aboveFlip === false){ score -= 10; reasons.push(`below gamma flip ${fmt(calc.flip)}`); }
+  if (posG){ score += 5; reasons.push("dealers long gamma — dips bought"); } else { reasons.push("dealers short gamma — moves extend"); }
+  if (toPW != null && toPW < 0.02 && toPW >= 0){ score += 12; reasons.push(`put wall ${fmt(pw)} within ${fmt(toPW*100,1)}% below — support under you`); }
+  if (toCW != null && toCW < 0.01 && toCW >= 0){ score -= 10; reasons.push(`at the call wall ${fmt(cw)} — resistance`); }
+  if (pullback && trendUp){ score += 12; reasons.push("pullback to the 21 EMA in an uptrend"); }
+  if (extended){ score -= 12; reasons.push("extended above the 21 EMA — chase risk"); }
+  if (r14 != null){ if (r14 < 35){ score += 8; reasons.push(`RSI ${fmt(r14,0)} — washed out`); } else if (r14 > 72){ score -= 10; reasons.push(`RSI ${fmt(r14,0)} — overbought`); } }
+  if (chg1 > 0.04){ score -= 6; reasons.push(`+${fmt(chg1*100,1)}% today — don't chase`); } if (chg1 < -0.04 && trendUp){ score += 6; reasons.push(`${fmt(chg1*100,1)}% today inside an uptrend — buy-low candidate`); }
+  if (vrp != null){ if (vrp > 0.04) reasons.push(`options rich (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — prefer spreads / shares`); else if (vrp < -0.02) reasons.push(`options cheap (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — long premium works`); }
+  if (score >= 30) signal = "Buy"; else if (score >= 15) signal = "Accumulate"; else if (score <= -25) signal = "Avoid / short"; else if (score <= -10) signal = "Trim";
+  if (signal === "Watch" && view === "neutral") view = chg20 != null && chg20 > 0 ? "bull" : "bear";
+  // --- equity plan ---
+  const entry = signal === "Buy" || signal === "Accumulate" ? (pullback || !e21 ? spot : Math.max(e21, pw||0)) : null;
+  const stop = entry ? (pw && pw < entry ? Math.min(pw*0.995, e50 || pw*0.995) : (e50 || entry*0.95)) : null;
+  const target = entry ? (cw && cw > entry*1.01 ? cw : entry*1.06) : null;
+  // --- option structure from the quant engine ---
+  let best = null;
+  try { best = withCalc(calc, daily, () => { const saveView = QD.view; QD.view = view === "bear" ? "bear" : "bull"; const rows = rankQuant(rvInfo); QD.view = saveView; return rows[0] || null; }); } catch {}
+  return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, trendUp, trendDown, aboveFlip, posG, cw, pw, flip:calc.flip, iv30, rv, vrp, score, signal, view, reasons, entry, stop, target, best, halal:halalStatus(sym), at:Date.now() };
+}
+async function runIdeas(){
+  if (ID.running) return; ID.running = true; const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
+  let done = 0;
+  for (const sym of syms){
+    const cached = ID.results.get(sym); if (cached && Date.now() - cached.at < 10*60e3){ done++; continue; }
+    ID.progress = `${done+1}/${syms.length} · ${sym}`; if (S.tab === "ideas") renderTabs();
+    const [chain, daily] = await Promise.all([fetchChainAny(sym), fetchBarsAny(sym)]);
+    if (chain){ try { ID.results.set(sym, analyzeTicker(sym, chain, daily)); } catch(e){ console.warn("ideas", sym, e); } }
+    else if (S.demo){ try { const demo = synthChain(sym); ID.results.set(sym, {...analyzeTicker(sym, demo, synthBars(demo.spot,"1d")), demo:true}); } catch(e){ console.error("ideas demo", sym, e.message, e.stack); } }
+    done++;
+  }
+  ID.running = false; ID.progress = ""; ID.at = Date.now(); if (S.tab === "ideas") renderTabs();
+}

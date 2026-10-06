@@ -1,0 +1,349 @@
+// KINGNODE app.html — JavaScript part 2 of 6 (see 00-overview.md)
+function renderStatus(){
+  const el = document.getElementById("dstatus"); if (!el) return;
+  const row = (k,v,ok) => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"3px 0"}}, h("span",null,k), h("span",{class:ok===true?"c":ok===false?"p":"", style:{fontFamily:"var(--mono)"}}, v));
+  const d = S.chain;
+  el.replaceChildren(
+    row("Chain", S.demo ? "DEMO — feed failed" : `${d?.source||"server"} · ${d?.rows?.length||0} contracts`, !S.demo),
+    row("Chain time", d?.asOf ? new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : "—", null),
+    row("Bars", S.barsDemo ? "DEMO — feed failed" : S.bars ? `${S.bars.length} bars` : "loading", S.bars ? !S.barsDemo : null),
+    row("Flow", S.flow ? (S.flowDemo ? "demo" : S.flow.derived ? `derived · ${S.flow.trades.length} prints` : "live") : "—", S.flow ? !S.flowDemo : null),
+    row("Tape", tapeQuotes.size ? `${tapeQuotes.size} tickers · ${[...tapeQuotes.values()][0]?.demo ? "demo" : ([...tapeQuotes.values()][0]?.src || "server")}` : "loading", tapeQuotes.size ? ![...tapeQuotes.values()][0]?.demo : null),
+    row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
+    row("Host", location.hostname.includes("github.io") ? "static (no server)" : location.hostname, null),
+    row("Proxy", (S.set.proxy||"").trim() ? "set" : "none — direct browser fetch", (S.set.proxy||"").trim() ? true : null),
+    h("p",{style:{margin:"6px 0 0"}},"If a row is red, screenshot this card and the browser console (F12 → Console) and send it."));
+}
+// ---------- render ----------
+function notice(msg, err){ const p = document.getElementById("panel"); const n = h("div",{class:"notice"+(err?" err":"")}, msg); p.prepend(n); setTimeout(()=>n.remove(), 6000); }
+function renderChips(){
+  document.getElementById("chips").replaceChildren(...QUICK.filter(s => !halalOnly() || halalStatus(s).s !== "excluded").map(s => h("button",{class:"chip", "aria-pressed":String(s===S.sym), title:NAMES.get(s)||"", onclick:()=>goSym(s)}, s)));
+}
+function renderAll(){
+  const d = S.chain, c = S.calc;
+  document.getElementById("symName").textContent = `${S.sym}${NAMES.get(S.sym) ? " · " + NAMES.get(S.sym) : ""}`;
+  document.getElementById("px").textContent = fmt(d.spot, 2); renderLiveQuote();
+  { const hb = document.getElementById("halalBadge"); const hs = halalStatus(S.sym); hb.hidden = false; hb.textContent = hs.s === "excluded" ? "☪ excluded — " + hs.why : hs.s === "index" ? "☪ " + hs.why : hs.s === "passes" ? "☪ halal — " + hs.why : hs.s === "mixed" ? "☪ mixed — " + hs.why : "☪ verify — " + hs.why; hb.className = "badge " + (hs.s === "excluded" ? "dn" : hs.s === "passes" ? "up" : ""); hb.style.textTransform = "none"; }
+  const chg = document.getElementById("chg"); chg.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(d.changePct||0)})`; chg.className = "chg num " + (d.change>=0?"up":"dn");
+  document.getElementById("asof").replaceChildren(h("span",{class:"live"}, h("i",null), S.demo ? "demo" : "live"), h("span",{id:"cd"},""), h("span",null, "chain " + new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})), h("span",{class:"badge"+(S.demo?" demo":"")}, S.demo ? "Demo data" : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
+  updateAh();
+  // levels
+  document.getElementById("regime").replaceChildren(
+    h("div",{class:"regime "+(c.total>0?"pos":"neg")}, h("b",null, c.total > 0 ? "Positive gamma — dampened" : "Negative gamma — amplified"), h("span",{class:"hint"}, "GEX ", money(c.total), " per 1% move")),
+    h("div",{class:"regime "+(c.totalVex>0?"pos":"neg")}, h("b",null, c.totalVex > 0 ? "Positive vanna — vol down lifts price" : "Negative vanna — vol down pressures price"), h("span",{class:"hint"}, "VEX ", money(c.totalVex), " per 1 vol pt", c.vexPeak ? ` · peak at ${fmt(c.vexPeak.K)}` : "")));
+  const HELP = {"Call wall":"Strike above spot with the most call gamma. Dealers sell into rallies here, so it tends to cap price. A break above can squeeze.","Put wall":"Strike below spot with the most put gamma. First real support; losing it tends to accelerate selling.","Gamma flip":"Where net dealer gamma changes sign. Above it, hedging dampens moves; below it, hedging amplifies them.","Max pain":"Strike where the most options expire worthless for the nearest expiration. Price often drifts toward it into expiry.","Vanna peak":"Strike where vanna exposure is largest. When IV drops, dealer hedging near this strike moves price most — the classic post-event 'vanna rally' level.","Charm into close":"Estimated dealer delta that must be bought or sold as one day of time passes on the 0–3 DTE expiries. Positive = buying pressure into the close (the 3:30 ramp mechanism).","Walls held this month":"Every time spot came within 0.15% of a wall while the tab was open, the app recorded whether it held (moved 0.4% away) or broke (0.3% through).","Chain spot":"The underlying price the options data was priced against (15-min delayed on the free feed).","Expected move":"What the ATM straddle says the market is pricing for the nearest expiration, as ± points."};
+  const L = [["Chain spot", c.spot, S.demo ? "demo" : "options data, delayed"],["Call wall", c.callWall?.K, c.callWall ? money(c.callWall.cG) + " call gamma" : ""],["Put wall", c.putWall?.K, c.putWall ? money(c.putWall.pG) + " put gamma" : ""],["Gamma flip", c.flip, "regime changes here"],["Vanna peak", c.vexPeak?.K, c.vexPeak ? money(c.vexPeak.vex) + " VEX" : ""],["Max pain", c.maxPain, c.near],["Expected move", c.em[0] ? "±" + fmt(c.em[0].move,1) : null, c.em[0] ? `${fmt(c.em[0].pct,2)}% into ${c.em[0].exp}` : ""]];
+  const lt = getLT(), hf = hedgeFlows();
+  L.push(["Charm into close", money(hf.charm), hf.charm >= 0 ? "dealers buy delta as the day decays (0–3 DTE)" : "dealers sell delta as the day decays (0–3 DTE)"]);
+  if (lt.cw.t || lt.pw.t) L.push(["Walls held this month", `${lt.pw.h}/${lt.pw.t} put · ${lt.cw.h}/${lt.cw.t} call`, "tests recorded while the tab was open"]);
+  document.getElementById("levels").replaceChildren(...L.map(([n,v,s]) => h("div",{class:"lvl", title:HELP[n]}, h("div",null, h("b",null,n, h("span",{class:"q","aria-hidden":"true"},"?")), h("small",null,s)), h("span",{class:"v"}, typeof v === "number" ? fmt(v, n === "Chain spot" ? 2 : 0) : (v || "—")))));
+  document.getElementById("read").replaceChildren(...readText().map(t => h("p",null,t)));
+  renderAsk();
+  renderAlerts();
+  renderEvents();
+  renderStatus();
+  renderTabs();
+}
+function renderAsk(){
+  const box = document.getElementById("askBox"); box.replaceChildren();
+  const inp = h("input",{placeholder: "Ask the desk: e.g. “Is 7,700 likely to hold into Friday?” (needs the desktop app + API key)", "aria-label":"Ask the desk"});
+  const out = h("div",{class:"answer"});
+  const go = async () => {
+    if (requirePro("Ask the desk turns the positioning into a plain-English answer to your question.")) return;
+    const q = inp.value.trim(); if (!q) return;
+    out.textContent = "Thinking…";
+    const c = S.calc;
+    const ctx = `Ticker ${S.sym}, spot ${c.spot.toFixed(2)}, net dealer gamma ${money(c.total)} (${c.total>0?"positive":"negative"}). Call wall ${c.callWall?.K}, put wall ${c.putWall?.K}, gamma flip ${c.flip}, max pain ${c.maxPain} (${c.near}). Expected moves: ${c.em.map(e=>`${e.exp} ±${e.move.toFixed(1)} (${e.pct.toFixed(2)}%)`).join("; ")}. Top nodes: ${c.top.map(t=>`${t.K} ${t.exp} ${money(t.gex)}`).join("; ")}. Fresh positioning: ${c.fresh.slice(0,8).map(f=>`${f.K}${f.type} ${f.exp} vol ${f.vol} oi ${f.oi}`).join("; ")}. Data is 15-min delayed${S.demo?" and is DEMO data":""}.`;
+    try {
+      const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({token:S.token, tier:"quick", prompt:`You are an options market-structure analyst on a trading desk. Using ONLY the dealer-positioning snapshot below, answer the trader's question in under 120 words, concrete and level-specific. Note that positioning is context, not a prediction, and that this is not financial advice — one short clause, not a paragraph.\n\nSNAPSHOT\n${ctx}\n\nQUESTION\n${q}`})});
+      const txt = await r.text(); out.textContent = r.ok ? txt : "The desk isn't available right now.";
+    } catch { out.textContent = "Couldn't reach the desk."; }
+  };
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+  box.append(h("div",{class:"ask"}, inp, h("button",{class:"btn small", onclick:go},"Ask")), out);
+}
+const AL_KEY = "kingnode:alertrules";
+function getRules(){ try { return {...{on:false, minPrem:250000, sweepsOnly:false, minVolOi:2, sideAsk:true, minDte:0, discord:false, levels:true}, ...JSON.parse(localStorage.getItem(AL_KEY)||"{}")}; } catch { return {on:false, minPrem:250000, sweepsOnly:false, minVolOi:2, sideAsk:true, minDte:0, discord:false, levels:true}; } }
+function setRules(r){ try { localStorage.setItem(AL_KEY, JSON.stringify(r)); } catch {} }
+function checkFlowAlerts(){
+  const r = getRules(); if (!r.on || !S.flow || S.flowDemo) return;
+  const c = S.calc; const hits = [];
+  for (const t of S.flow.trades){ const id = `${t.t}|${t.o||t.K}|${t.sz}`; if (S.flowAlerted.has(id)) continue; S.flowAlerted.add(id);
+    if (Date.now() - t.t > 15*60e3) continue; if (t.prem < r.minPrem) continue; if (r.sweepsOnly && t.kind !== "sweep") continue; if (r.sideAsk && t.side !== "A") continue; if (dte(t.exp) < r.minDte) continue;
+    const ct = c?.contracts.find(x => x.exp===t.exp && x.K===t.K && x.type===t.cp); const volOi = ct && ct.oi ? ct.vol/ct.oi : 0; if (r.minVolOi && volOi && volOi < r.minVolOi) continue;
+    hits.push({t, volOi}); }
+  for (const {t, volOi} of hits.slice(0, 5)){ const text = `${t.u} ${fmt(t.K)}${t.cp} ${t.exp} — ${money(t.prem)} ${t.kind.toUpperCase()} at the ${t.side==="A"?"ASK":t.side==="B"?"BID":"MID"}, ${fmt(t.sz)} contracts${volOi ? `, vol/OI ${fmt(volOi,1)}×` : ""}`; fireAlert("Suspicious flow", text); }
+}
+function fireAlert(title, text){
+  S.alertLog.unshift({t:Date.now(), title, text}); S.alertLog = S.alertLog.slice(0,50);
+  if ("Notification" in window && Notification.permission === "granted") { try { new Notification(`Kingnode · ${title}`, {body:text}); } catch {} }
+  const r = getRules(); if (r.discord) notify(`**${title}** — ${text}`);
+  renderAlerts();
+}
+function renderAlerts(){
+  const el = document.getElementById("alerts"); el.replaceChildren();
+  const r = getRules();
+  const rule = (label, key, type="checkbox", step) => h("label",{class:"hint",style:{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"8px",padding:"3px 0"}}, label, type==="checkbox" ? h("input",{type:"checkbox", checked:!!r[key], onchange:e=>{ r[key]=e.target.checked; setRules(r); renderAlerts(); }}) : h("input",{type:"number", step, value:r[key], style:{width:"90px",background:"var(--bg)",border:"1px solid var(--rule2)",borderRadius:"4px",padding:"3px 6px",color:"var(--ink)",fontFamily:"var(--mono)",fontSize:"12px"}, onchange:e=>{ r[key]=Number(e.target.value); setRules(r); }}));
+  el.append(h("div",{style:{display:"grid",gap:"2px"}}, rule("Suspicious flow alerts","on"), rule("Min premium $","minPrem","number",50000), rule("Sweeps only","sweepsOnly"), rule("Ask side only","sideAsk"), rule("Min vol/OI","minVolOi","number",0.5), rule("Min DTE","minDte","number",1), rule("Also post to Discord (set webhook in ⚙)","discord")),
+    h("p",{class:"hint",style:{margin:"6px 0 4px"}}, "Level alerts fire when spot comes within " + S.set.alertPct + "% of a wall or the flip."));
+  if ("Notification" in window && Notification.permission !== "granted") el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable browser notifications"));
+  if (S.alertLog.length) el.append(h("div",{style:{marginTop:"8px",borderTop:"1px solid var(--rule)",paddingTop:"6px",maxHeight:"180px",overflow:"auto"}}, S.alertLog.slice(0,12).map(a => h("div",{style:{padding:"4px 0",fontSize:"12px"}}, h("span",{class:"hint"}, new Date(a.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) + " "), h("b",null,a.title + ": "), a.text))));
+  if (S.flowDemo && r.on) el.append(h("p",{class:"hint",style:{margin:"6px 0 0"}},"Rules are saved; they'll fire once live flow is connected."));
+}
+function renderAlertsOld(){
+  const el = document.getElementById("alerts"); el.replaceChildren();
+  if (!isPro()){ el.append(h("p",{class:"hint",style:{margin:0}},"Pro: get a notification when price comes within 0.2% of a wall or the flip."), h("button",{class:"btn small", style:{marginTop:"8px"}, onclick:()=>openUpgrade("Level alerts are part of Pro.")},"Turn on alerts")); return; }
+  if (!("Notification" in window)){ el.append(h("p",{class:"hint",style:{margin:0}},"This browser doesn't support notifications.")); return; }
+  if (Notification.permission === "granted") el.append(h("p",{class:"hint",style:{margin:0}},"On. You'll be notified when spot comes within 0.2% of the call wall, put wall or gamma flip while this tab is open."));
+  else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
+}
+function renderTabs(){
+  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["ideas","Ideas"],["play","Playbook"],["book","Book"],["journal","Journal"],["brief","Brief"],["macro","Macro"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
+  document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)));
+  const p = document.getElementById("panel");
+  if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
+  if (S.tab === "seeker") { p.replaceChildren(viewSeeker()); return; }
+  if (S.tab === "halal") { p.replaceChildren(viewHalal()); loadHalalQuotes(); return; }
+  if (S.tab === "ideas") { p.replaceChildren(viewIdeas()); return; }
+  if (S.tab === "book") { p.replaceChildren(viewBook()); loadBookGreeks(); return; }
+  if (S.tab === "journal") { p.replaceChildren(viewJournal()); return; }
+  if (S.tab === "brief") { p.replaceChildren(viewBrief()); return; }
+  if (S.tab === "macro") { p.replaceChildren(viewMacro()); loadMacro(); return; }
+  if (S.tab === "quant") { p.replaceChildren(viewQuant()); if (!S.bars) loadBars(); return; }
+  if (S.tab === "play") { p.replaceChildren(viewPlaybook()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
+  if (S.tab === "cflow") { p.replaceChildren(viewContractFlow()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
+  if (S.tab === "flow") { p.replaceChildren(viewFlow()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); else { clearTimeout(flowTimer); flowTimer = setTimeout(loadFlow, S.flowDemo ? 60000 : 10000); } return; }
+  if (S.tab === "inst") { p.replaceChildren(viewInst()); loadInst(); return; }
+  if (S.tab === "watch") { p.replaceChildren(viewWatch()); return; }
+  if (S.tab === "tracked") { p.replaceChildren(viewTracked()); return; }
+  if (S.tab === "hist") { p.replaceChildren(viewHist()); return; }
+  p.replaceChildren(controls(), ({heat:viewHeat, profile:viewProfile, skew:viewSkew, fresh:viewFresh, chain:viewChain})[S.tab]());
+  if (S.tab === "heat" || S.tab === "chain" || S.tab === "fresh"){ const ip = inspectPanel(); if (ip) p.append(ip); }
+}
+function controls(){
+  const expChips = h("div",{class:"exps"}, S.allExps.map((e,i) => {
+    const on = S.exps.includes(e), locked = false;
+    return h("button",{class:"chip"+(locked?" lock":""), "aria-pressed":String(on), title: locked ? "Pro unlocks all expirations" : `${dte(e)} DTE`, onclick:()=>{ if (locked){ openUpgrade("Free shows the nearest 4 expirations. Pro shows all of them."); return; } S.exps = on ? S.exps.filter(x=>x!==e) : [...S.exps, e].sort(); if (!S.exps.length) S.exps=[e]; compute(); renderAll(); }}, e.slice(5) + (dte(e)===0 ? " 0D" : ""));
+  }));
+  const grpBtn = (l, pick) => h("button",{type:"button", class:"chip", onclick:()=>{ const sel = pick(S.allExps); if (sel.length){ S.exps = sel; compute(); renderAll(); } }}, l);
+  const groups = h("div",{class:"exps"}, grpBtn("0DTE", a => a.filter(e => dte(e) === 0)), grpBtn("This week", a => a.filter(e => dte(e) <= 7)), grpBtn("Next 4", a => a.slice(0,4)), grpBtn("Monthly", a => a.filter(e => { const d = new Date(e+"T12:00:00"); return d.getDay()===5 && d.getDate() >= 15 && d.getDate() <= 21; })), grpBtn("All", a => a));
+  return h("div",{class:"ctl"},
+    h("span",null,"Expirations"), groups, expChips,
+    S.tab === "heat" ? h("label",null,"Show", h("select",{onchange:e=>{S.hview=e.target.value; renderTabs();}}, [["net","Net gamma (GEX)"],["vex","Vanna (VEX)"],["dex","Delta (DEX)"],["calls","Call gamma"],["puts","Put gamma"],["oi","Open interest"],["vol","Volume"]].map(([v,l])=>h("option",{value:v, selected:S.hview===v}, l)))) : null,
+    S.tab === "heat" ? h("div",{class:"grp", style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["smooth","Smooth"],["grid","Grid"]].map(([v,l]) => h("button",{type:"button","aria-pressed":String(S_HEAT.mode===v), style:{border:0,background:S_HEAT.mode===v?"var(--panel2)":"transparent",color:S_HEAT.mode===v?"var(--ink)":"var(--muted)",padding:"3px 9px",cursor:"pointer",fontSize:"12px"}, onclick:()=>{S_HEAT.mode=v; renderTabs();}}, l))) : null,
+    h("label",null,"Range ±", h("select",{onchange:e=>{S.set.range=Number(e.target.value); compute(); renderAll();}}, [2,4,6,8,12,20].map(v=>h("option",{value:v, selected:v===S.set.range}, v+"%")))),
+    h("label",null,"Model", h("select",{onchange:e=>{S.set.model=e.target.value; compute(); renderAll();}}, h("option",{value:"standard", selected:S.set.model==="standard"},"Dealers long calls / short puts"), h("option",{value:"short", selected:S.set.model==="short"},"Dealers short all (magnitude)"))),
+    h("span",{style:{flex:1}}),
+    h("button",{class:"btn small", onclick:()=>{ if (requirePro("CSV export is part of Pro.")) return; exportCsv(); }},"Export CSV"));
+}
+function heatColor(v, max){
+  const t = Math.min(1, Math.abs(v)/max); const a = 0.08 + 0.85*Math.sqrt(t);
+  return v >= 0 ? `rgba(45,212,191,${a})` : `rgba(249,112,102,${a})`;
+}
+const S_HEAT = { mode:"smooth" };
+function heatRamp(t){ // diverging: coral (−) → dark → teal (+), t in [-1,1]
+  const a = Math.min(1, Math.abs(t)); const ease = Math.pow(a, 0.6);
+  if (t >= 0) return `rgba(38,166,154,${0.06 + 0.9*ease})`;
+  return `rgba(239,83,80,${0.06 + 0.9*ease})`;
+}
+function viewHeatSmooth(){
+  const c = S.calc, exps = S.exps, strikes = c.strikes.map(s=>s.K).sort((a,b)=>b-a);
+  if (!strikes.length) return h("div",{class:"empty"},"No strikes in range.");
+  const val = cell => !cell ? 0 : S.hview==="net" ? cell.gex : S.hview==="calls" ? cell.cG : S.hview==="puts" ? -cell.pG : S.hview==="vex" ? cell.vex : S.hview==="dex" ? cell.dex : S.hview==="oi" ? cell.cOI+cell.pOI : cell.cVol+cell.pVol;
+  const mag = S.hview==="oi"||S.hview==="vol";
+  const grid = exps.map(e => strikes.map(K => val(c.byCell.get(e+"|"+K))));
+  // vertical smoothing across strikes (gaussian, 5 taps) so nodes read as bands, not blocks
+  const kern = [0.06,0.24,0.4,0.24,0.06];
+  const sm = grid.map(col => col.map((_,i) => kern.reduce((a,w,k) => a + w*(col[i+k-2] ?? col[i]), 0)));
+  const vmax = Math.max(1e-9, ...sm.flat().map(Math.abs));
+  const availW = Math.max(600, (document.getElementById("panel")?.clientWidth || 900) - 24);
+  const L = 78, T = 34, cw = Math.max(70, Math.floor((availW - L - 8)/Math.max(1,exps.length))), rh = 20;
+  const W = L + exps.length*cw + 8, H = T + strikes.length*rh + 10, dpr = Math.min(2, window.devicePixelRatio||1);
+  const cv = h("canvas",{width:W*dpr, height:H*dpr, style:{width:W+"px", height:H+"px", display:"block", cursor:"pointer"}});
+  const g = cv.getContext("2d"); g.scale(dpr,dpr);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  g.fillStyle = css("--bg"); g.fillRect(0,0,W,H);
+  // cells: vertical gradient between neighbours for a continuous look
+  exps.forEach((e,ci) => { const x = L + ci*cw;
+    strikes.forEach((K,ri) => { const y = T + ri*rh; const v = sm[ci][ri]/vmax, vn = (sm[ci][ri+1] ?? sm[ci][ri])/vmax;
+      const gr = g.createLinearGradient(0,y,0,y+rh); gr.addColorStop(0, heatRamp(mag ? Math.abs(v) : v)); gr.addColorStop(1, heatRamp(mag ? Math.abs(vn) : vn));
+      g.fillStyle = gr; g.fillRect(x+1, y, cw-2, rh); }); });
+  // labels
+  g.font = "11px " + css("--mono"); g.textBaseline = "middle";
+  const spotIdx = strikes.findIndex(k => k <= c.spot);
+  const em = c.em[0], emLo = em ? c.spot-em.move : null, emHi = em ? c.spot+em.move : null;
+  strikes.forEach((K,ri) => { const y = T + ri*rh + rh/2; const inEm = emLo != null && K >= emLo && K <= emHi;
+    g.fillStyle = ri===spotIdx ? css("--spot") : inEm ? css("--ink") : css("--muted"); g.textAlign = "right"; g.fillText(fmt(K), L-8, y);
+    if (inEm){ g.fillStyle = css("--gold"); g.fillRect(L-4, T + ri*rh, 2, rh); } });
+  g.textAlign = "center"; g.fillStyle = css("--muted");
+  exps.forEach((e,ci) => { const x = L + ci*cw + cw/2; g.fillText(e.slice(5) + (dte(e)===0?" 0D":""), x, 12); g.fillText(dte(e)+"d", x, 25); });
+  // value labels on the strongest cells
+  g.font = "600 10.5px " + css("--mono");
+  exps.forEach((e,ci) => strikes.forEach((K,ri) => { const raw = grid[ci][ri]; if (Math.abs(raw) < vmax*0.35) return; const x = L + ci*cw + cw/2, y = T + ri*rh + rh/2; g.fillStyle = css("--ink"); g.fillText(mag ? fmt(raw) : money(raw).replace("$",""), x, y); }));
+  // spot line + walls
+  const yOf = K => { const i = strikes.findIndex(k => k <= K); const k0 = strikes[i] ?? strikes.at(-1), k1 = strikes[i-1] ?? k0; const f = k1===k0 ? 0.5 : (K-k0)/(k1-k0); return T + (i - f + 0.5)*rh; };
+  const line = (K, color, label) => { if (!K) return; const y = yOf(K); g.strokeStyle = color; g.setLineDash([4,3]); g.lineWidth = 1.2; g.beginPath(); g.moveTo(L, y); g.lineTo(W-6, y); g.stroke(); g.setLineDash([]); g.fillStyle = color; g.textAlign = "left"; g.font = "600 10px " + css("--mono"); g.fillText(label, L+4, y-7); };
+  line(c.spot, css("--spot"), "spot " + fmt(c.spot, c.spot<200?2:0)); line(c.callWall?.K, css("--pos"), "call wall"); line(c.putWall?.K, css("--neg"), "put wall"); if (c.flip && c.flip !== c.callWall?.K && c.flip !== c.putWall?.K) line(c.flip, css("--muted"), "flip");
+  // top nodes
+  const topKeys = new Set(c.top.map(t=>t.exp+"|"+t.K)); g.fillStyle = css("--gold"); g.font = "9px sans-serif"; g.textAlign = "right";
+  exps.forEach((e,ci) => strikes.forEach((K,ri) => { if (topKeys.has(e+"|"+K)) g.fillText("◆", L + ci*cw + cw - 4, T + ri*rh + 6); }));
+  // interaction
+  const tip = document.getElementById("tip");
+  const at = ev => { const r = cv.getBoundingClientRect(); const x = ev.clientX - r.left, y = ev.clientY - r.top; const ci = Math.floor((x-L)/cw), ri = Math.floor((y-T)/rh); if (ci < 0 || ci >= exps.length || ri < 0 || ri >= strikes.length) return null; return {exp:exps[ci], K:strikes[ri]}; };
+  cv.addEventListener("mousemove", ev => { const p = at(ev); const cell = p && c.byCell.get(p.exp+"|"+p.K); if (!cell){ tip.style.display = "none"; return; } tip.style.display = "block"; tip.style.left = (ev.clientX+14)+"px"; tip.style.top = (ev.clientY+14)+"px";
+    tip.textContent = `${fmt(p.K)} · ${p.exp}\nGEX ${money(cell.gex)}   VEX ${money(cell.vex)}\nDEX ${money(cell.dex)}\ncalls OI ${fmt(cell.cOI)} vol ${fmt(cell.cVol)}\nputs  OI ${fmt(cell.pOI)} vol ${fmt(cell.pVol)}`; });
+  cv.addEventListener("mouseleave", () => tip.style.display = "none");
+  cv.addEventListener("click", ev => { const p = at(ev); if (!p) return; S.inspect = p; renderTabs(); document.querySelector(".insp")?.scrollIntoView({behavior:"smooth", block:"nearest"}); });
+  return h("div",null, h("div",{class:"heat", style:{padding:"4px"}}, cv),
+    h("div",{class:"legend"}, h("span",null, h("i",{style:{background:"rgba(38,166,154,.85)"}}), mag ? "more" : "dealers long (pins / supports)"), h("span",null, h("i",{style:{background:"rgba(239,83,80,.85)"}}), mag ? "less" : "dealers short (accelerates)"), h("span",null,"◆ top 5 nodes"), h("span",null, h("i",{style:{background:"var(--gold)",width:"3px"}}), "inside expected move"), h("span",null,"Smoothed across strikes — switch to Grid for exact cells.")));
+}
+function viewHeat(){
+  if (S_HEAT.mode === "smooth") return viewHeatSmooth();
+  const c = S.calc, exps = S.exps, strikes = c.strikes.map(s=>s.K).sort((a,b)=>b-a);
+  if (!strikes.length) return h("div",{class:"empty"},"No strikes in range.");
+  const spotIdx = strikes.findIndex((k,i) => k <= c.spot);
+  const topKeys = new Set(c.top.map(t=>t.exp+"|"+t.K));
+  const em = c.em[0], emLo = em ? c.spot - em.move : null, emHi = em ? c.spot + em.move : null;
+  const val = cell => !cell ? 0 : S.hview==="net" ? cell.gex : S.hview==="calls" ? cell.cG : S.hview==="puts" ? -cell.pG : S.hview==="vex" ? cell.vex : S.hview==="dex" ? cell.dex : S.hview==="oi" ? cell.cOI+cell.pOI : cell.cVol+cell.pVol;
+  const vmax = Math.max(1, ...exps.flatMap(e => strikes.map(K => Math.abs(val(c.byCell.get(e+"|"+K))))));
+  const label = v => S.hview==="oi"||S.hview==="vol" ? fmt(v) : money(v).replace("$","");
+  const tip = document.getElementById("tip");
+  const tbl = h("table",{class:"hm"}, h("thead",null, h("tr",null, h("th",null,"Strike"), exps.map(e => h("th",null, e.slice(5), h("div",{style:{fontWeight:400}}, dte(e)+"d"))))),
+    h("tbody",null, strikes.map((K,i) => h("tr",{class: i===spotIdx ? "spot" : ""}, h("td",{class: (i===spotIdx?"spotrow":"") + (emLo!=null && K>=emLo && K<=emHi ? " em" : ""), title: emLo!=null && K>=emLo && K<=emHi ? "Inside today's expected move" : ""}, fmt(K)),
+      exps.map(e => { const cell = c.byCell.get(e+"|"+K); const v = val(cell);
+        return h("td",{class: topKeys.has(e+"|"+K)?"node":"", style:{background: cell ? heatColor(S.hview==="oi"||S.hview==="vol" ? Math.abs(v) : v, vmax) : "transparent"},
+          onmousemove:ev=>{ if(!cell) return; tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; tip.textContent = `${fmt(K)} · ${e}\nnet ${money(v)}\ncalls OI ${fmt(cell.cOI)} vol ${fmt(cell.cVol)}\nputs OI ${fmt(cell.pOI)} vol ${fmt(cell.pVol)}`; tip.style.whiteSpace="pre"; },
+          onmouseleave:()=>tip.style.display="none", onclick:()=>{ S.inspect = {exp:e, K}; renderTabs(); document.querySelector(".insp")?.scrollIntoView({behavior:"smooth", block:"nearest"}); }}, cell && Math.abs(v) > vmax*0.04 ? label(v) : ""); })))));
+  return h("div",null, h("div",{class:"heat"}, tbl),
+    h("div",{class:"legend"}, h("span",null, h("i",{style:{background:"rgba(45,212,191,.8)"}}), "Positive gamma (pins / resists)"), h("span",null, h("i",{style:{background:"rgba(249,112,102,.8)"}}), "Negative gamma (accelerates)"), h("span",null, "◆ top 5 nodes"), h("span",null, h("i",{style:{borderLeft:"3px solid var(--gold)",width:"6px"}}), "inside expected move"), h("span",null, h("i",{style:{border:"1px solid var(--spot)"}}), "spot row")));
+}
+const S_PROF = { m:"gex" };
+function viewProfile(){
+  const c = S.calc, st0 = c.strikes; if (!st0.length) return h("div",{class:"empty"},"No strikes in range.");
+  const key = S_PROF.m, st = st0.map(s => ({K:s.K, gex:s[key]}));
+  const sel = h("div",{class:"ctl"}, h("div",{class:"grp", style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["gex","GEX · gamma"],["vex","VEX · vanna"],["dex","DEX · delta"]].map(([v,l]) => h("button",{type:"button", style:{border:0,background:S_PROF.m===v?"var(--panel2)":"transparent",color:S_PROF.m===v?"var(--ink)":"var(--muted)",padding:"4px 10px",cursor:"pointer",fontSize:"12px"}, onclick:()=>{S_PROF.m=v; renderTabs();}}, l))),
+    h("span",{class:"hint"}, key==="gex" ? `Net ${money(c.total)} per 1% move` : key==="vex" ? `Net ${money(c.totalVex)} of delta per 1 vol point` : `Net dealer delta ${money(c.totalDex)}`));
+  const W = 900, H = Math.max(320, st.length*14+40), pad = {l:70, r:130, t:14, b:20};
+  const max = Math.max(1, ...st.map(s=>Math.abs(s.gex)));
+  const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", style:"max-height:70vh; display:block"});
+  const x0 = pad.l + (W-pad.l-pad.r)/2, scale = (W-pad.l-pad.r)/2/max, rowH = (H-pad.t-pad.b)/st.length;
+  const ks = st.map(s=>s.K), kMin = Math.min(...ks), kMax = Math.max(...ks);
+  const yOf = K => pad.t + (kMax-K)/(kMax-kMin||1)*(H-pad.t-pad.b);
+  svg.append(svgEl("line",{x1:x0,y1:pad.t,x2:x0,y2:H-pad.b,stroke:"var(--rule)"}));
+  st.forEach(s => { const y = yOf(s.K), w = Math.abs(s.gex)*scale; svg.append(svgEl("rect",{x: s.gex>=0?x0:x0-w, y:y-rowH*0.4, width:Math.max(1,w), height:rowH*0.8, fill: s.gex>=0?"var(--pos)":"var(--neg)", opacity:.85, rx:1})); });
+  const labelEvery = Math.ceil(st.length/18);
+  st.forEach((s,i) => { if (i%labelEvery===0) { const t = svgEl("text",{x:pad.l-8, y:yOf(s.K)+4, "text-anchor":"end"}); t.textContent = fmt(s.K); svg.append(t); } });
+  const marks = [[c.spot,"spot","var(--spot)"],[c.callWall?.K,"call wall","var(--pos)"],[c.putWall?.K,"put wall","var(--neg)"],[c.flip,"flip","var(--muted)"]].filter(m=>m[0]).map(m=>({K:m[0],label:m[1],color:m[2],y:yOf(m[0]),ly:yOf(m[0])})).sort((a,b)=>a.y-b.y);
+  for (let i = 1; i < marks.length; i++) if (marks[i].ly - marks[i-1].ly < 13) marks[i].ly = marks[i-1].ly + 13;
+  for (const m of marks){ svg.append(svgEl("line",{x1:pad.l,y1:m.y,x2:W-pad.r,y2:m.y,stroke:m.color,"stroke-dasharray":"4 4"})); const t = svgEl("text",{x:W-pad.r+6,y:m.ly+4}); t.textContent = `${m.label} ${fmt(m.K)}`; t.style.fill = m.color; svg.append(t); }
+  return h("div",null, sel, svg, h("p",{class:"hint"}, key==="gex" ? "Net dealer gamma by strike, dollars per 1% move. Teal pins, coral repels." : key==="vex" ? "Vanna exposure by strike: how much delta dealers must buy (teal) or sell (coral) per 1-point drop in IV. Big teal near spot = vol crush lifts price." : "Dealer delta by strike. Where dealers are short delta (coral) they buy on strength; long delta (teal) they sell into it."));
+}
+function viewSkew(){
+  const c = S.calc, exp = S.exps[0];
+  const rows = c.contracts.filter(x => x.exp===exp && x.iv > 0 && Math.abs(x.K/c.spot-1) <= S.set.range/100).sort((a,b)=>a.K-b.K);
+  const W = 900, H = 300, pad = {l:50,r:20,t:14,b:30};
+  const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", style:"display:block"});
+  if (rows.length){
+    const ks = rows.map(r=>r.K), ivs = rows.map(r=>r.iv*100), kMin=Math.min(...ks), kMax=Math.max(...ks), vMin=Math.min(...ivs), vMax=Math.max(...ivs);
+    const X = K => pad.l + (K-kMin)/(kMax-kMin||1)*(W-pad.l-pad.r), Y = v => H-pad.b - (v-vMin)/(vMax-vMin||1)*(H-pad.t-pad.b);
+    for (const type of ["C","P"]){ const pts = rows.filter(r=>r.type===type).map(r=>`${X(r.K)},${Y(r.iv*100)}`).join(" "); svg.append(svgEl("polyline",{points:pts, fill:"none", stroke: type==="C"?"var(--pos)":"var(--neg)", "stroke-width":2})); }
+    svg.append(svgEl("line",{x1:X(c.spot),y1:pad.t,x2:X(c.spot),y2:H-pad.b,stroke:"var(--spot)","stroke-dasharray":"4 4"}));
+    [0,.25,.5,.75,1].forEach(f => { const v = vMin+(vMax-vMin)*f; const t = svgEl("text",{x:pad.l-6,y:Y(v)+4,"text-anchor":"end"}); t.textContent = v.toFixed(1)+"%"; svg.append(t); });
+    [0,.25,.5,.75,1].forEach(f => { const K = kMin+(kMax-kMin)*f; const t = svgEl("text",{x:X(K),y:H-8,"text-anchor":"middle"}); t.textContent = fmt(K); svg.append(t); });
+  }
+  const emTbl = h("table",{class:"data"}, h("thead",null,h("tr",null,["Expiration","DTE","ATM","Straddle","Expected move","± range","ATM IV"].map(x=>h("th",null,x)))),
+    h("tbody",null, c.em.map(e => h("tr",null, h("td",null,e.exp), h("td",null,e.dte), h("td",null,fmt(e.atm)), h("td",null,fmt(e.move,2)), h("td",null,`${fmt(e.pct,2)}%`), h("td",null,`${fmt(c.spot-e.move,1)} – ${fmt(c.spot+e.move,1)}`), h("td",null,`${fmt(e.iv*100,1)}%`)))));
+  return h("div",null, h("h2",{style:{fontSize:"12px",color:"var(--muted)",margin:"0 0 6px"}},`Implied volatility by strike — ${exp} (teal calls, coral puts)`), svg, h("h2",{style:{fontSize:"12px",color:"var(--muted)",margin:"16px 0 6px"}},"Expected move by expiration (ATM straddle)"), emTbl);
+}
+function viewFresh(){
+  const c = S.calc;
+  if (!c.fresh.length) return h("div",{class:"empty"},"Nothing unusual yet: no contract in the selected expirations has traded 1.5× its open interest today.");
+  return h("div",null,
+    h("p",{class:"hint",style:{marginTop:0}},"Contracts trading well above their open interest — new positioning being built today, not old inventory. Sorted by dollar notional."),
+    h("div",{style:{overflow:"auto"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Contract","Exp","Volume","Open int","Vol/OI","Mid","Notional","IV","Delta"].map(x=>h("th",null,x)))),
+      h("tbody",null, c.fresh.map(f => h("tr",{style:{cursor:"pointer"}, onclick:()=>{ S.inspect = {exp:f.exp, K:f.K}; renderTabs(); document.querySelector(".insp")?.scrollIntoView({behavior:"smooth", block:"nearest"}); }}, h("td",{class:f.type==="C"?"c":"p"}, `${fmt(f.K)} ${f.type==="C"?"Call":"Put"}`), h("td",null,f.exp), h("td",null,fmt(f.vol)), h("td",null,fmt(f.oi)), h("td",null,fmt(f.ratio,1)+"×"), h("td",null,fmt(f.mid,2)), h("td",null,money(f.notional)), h("td",null,fmt(f.iv*100,1)+"%"), h("td",null,fmt(f.delta,2))))))));
+}
+function viewChain(){
+  const c = S.calc, exp = S.exps[0];
+  const rows = c.contracts.filter(x=>x.exp===exp && Math.abs(x.K/c.spot-1) <= S.set.range/100);
+  const ks = [...new Set(rows.map(r=>r.K))].sort((a,b)=>b-a);
+  return h("div",{style:{overflow:"auto"}}, h("table",{class:"data"},
+    h("thead",null,h("tr",null,["Call OI","Call vol","Call IV","Call mid","Strike","Put mid","Put IV","Put vol","Put OI"].map(x=>h("th",null,x)))),
+    h("tbody",null, ks.map(K => { const C = rows.find(r=>r.K===K&&r.type==="C")||{}, P = rows.find(r=>r.K===K&&r.type==="P")||{};
+      return h("tr",{style: Math.abs(K-c.spot) < (ks[0]-ks[1]||1)/2 ? {background:"color-mix(in srgb,var(--spot) 10%,transparent)", cursor:"pointer"} : {cursor:"pointer"}, onclick:()=>{ S.inspect = {exp, K}; renderTabs(); document.querySelector(".insp")?.scrollIntoView({behavior:"smooth", block:"nearest"}); }},
+        h("td",{class:"c"},fmt(C.oi)), h("td",null,fmt(C.vol)), h("td",null,fmt((C.iv||0)*100,1)+"%"), h("td",null,fmt(C.mid,2)), h("td",{style:{textAlign:"center",fontWeight:600}},fmt(K)), h("td",null,fmt(P.mid,2)), h("td",null,fmt((P.iv||0)*100,1)+"%"), h("td",null,fmt(P.vol)), h("td",{class:"p"},fmt(P.oi))); }))));
+}
+// ---------- Morning levels: one row per ticker, ready to paste ----------
+const WATCH_KEY = "kingnode:watch";
+function getWatch(){ try { return JSON.parse(localStorage.getItem(WATCH_KEY) || "null") || ["SPX","SPY","QQQ","IWM"]; } catch { return ["SPX","SPY"]; } }
+function setWatch(l){ try { localStorage.setItem(WATCH_KEY, JSON.stringify(l.slice(0,12))); } catch {} }
+const watchCache = new Map();
+async function fetchLevels(sym){
+  const hit = watchCache.get(sym); if (hit && Date.now() - hit.at < 60e3) return hit.v;
+  let chain, demo = false;
+  try { const r = await fetch(`/api/chain?symbol=${sym}${S.token ? "&token="+encodeURIComponent(S.token) : ""}`); if (r.status === 402) return {sym, locked:true}; if (!r.ok) throw 0; chain = await r.json(); if (!chain.rows?.length) throw 0; }
+  catch { chain = synthChain(sym); demo = true; }
+  const exps = [...new Set(chain.rows.map(r=>r[0]))].sort().slice(0, 4);
+  const c = computeFrom(chain, exps, 8, S.set.model);
+  const v = {sym, demo, spot:c.spot, chg:chain.changePct||0, total:c.total, cw:c.callWall?.K, pw:c.putWall?.K, flip:c.flip, em:c.em[0], pain:c.maxPain, near:exps[0]};
+  watchCache.set(sym, {at:Date.now(), v}); return v;
+}
+function viewWatch(){
+  const list = getWatch();
+  const box = h("div",null);
+  const addIn = h("input",{placeholder:"Add ticker", maxlength:8, style:{width:"110px",background:"var(--panel2)",border:"1px solid var(--rule)",borderRadius:"8px",padding:"6px 10px",fontFamily:"var(--mono)",textTransform:"uppercase"}});
+  const add = () => { const v = addIn.value.trim().toUpperCase(); if (!v) return; if (!list.includes(v)) { list.push(v); setWatch(list); } addIn.value = ""; renderTabs(); };
+  addIn.addEventListener("keydown", e => { if (e.key==="Enter") add(); });
+  const tbl = h("table",{class:"data"}, h("thead",null,h("tr",null,["Ticker","☪","Spot","Chg","Regime","Put wall","Flip","Call wall","Max pain","Exp. move",""].map(x=>h("th",null,x)))), h("tbody",{id:"watchBody"}, list.map(sym => h("tr",{"data-sym":sym}, h("td",null,sym), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="passes"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="passes"?"✓":halalStatus(sym).s==="mixed"?"±":"~"), h("td",{colSpan:8, class:"hint"},"loading…"), h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×"))))));
+  box.append(h("div",{class:"ctl"}, h("span",null,"Levels for the nearest 4 expirations, ±8% range."), h("span",{style:{flex:1}}), addIn, h("button",{class:"btn small", onclick:add},"Add"), h("button",{class:"btn small gold", onclick:()=>copyLevels(list)},"Copy for Discord")), h("div",{style:{overflow:"auto"}}, tbl));
+  list.forEach(async sym => {
+    const v = await fetchLevels(sym); const tr = box.querySelector(`tr[data-sym="${sym}"]`); if (!tr) return;
+    const cells = v.locked ? [h("td",{colSpan:8, class:"hint"}, h("button",{class:"btn small", onclick:()=>openUpgrade(`${sym} is a Pro ticker.`)},"Pro ticker"))]
+      : [h("td",null,fmt(v.spot,2)), h("td",{class:v.chg>=0?"c":"p"},pct(v.chg)), h("td",{class:v.total>0?"c":"p"}, v.total>0?"+γ pinned":"−γ trending"), h("td",null,fmt(v.pw)), h("td",null,fmt(v.flip)), h("td",null,fmt(v.cw)), h("td",null,fmt(v.pain)), h("td",null, v.em ? `±${fmt(v.em.move,1)} (${fmt(v.em.pct,2)}%)` : "—")];
+    tr.replaceChildren(h("td",null, sym, v.demo ? h("span",{class:"badge demo", style:{marginLeft:"6px"}},"demo") : null), h("td",{class: halalStatus(sym).s==="excluded"?"p":halalStatus(sym).s==="passes"?"c":"", title:halalStatus(sym).why}, halalStatus(sym).s==="excluded"?"✕":halalStatus(sym).s==="passes"?"✓":halalStatus(sym).s==="mixed"?"±":"~"), ...cells, h("td",null,h("button",{class:"btn small", onclick:()=>{ setWatch(list.filter(x=>x!==sym)); renderTabs(); }},"×")));
+  });
+  return box;
+}
+async function copyLevels(list){
+  const rows = await Promise.all(list.map(fetchLevels));
+  const lines = [`Levels ${new Date().toLocaleDateString()} (dealer gamma, nearest 4 exp)`, ...rows.filter(v=>!v.locked).map(v => `${v.sym} ${fmt(v.spot,2)} · ${v.total>0?"+γ":"−γ"} · PW ${fmt(v.pw)} · flip ${fmt(v.flip)} · CW ${fmt(v.cw)} · EM ±${v.em?fmt(v.em.move,1):"—"}`)];
+  try { await navigator.clipboard.writeText(lines.join("\n")); notice("Copied. Paste it in your channel."); } catch { notice("Couldn't copy.", true); }
+}
+// ---------- Today's drift: how the levels moved during the session ----------
+function viewHist(){
+  const hst = readHistory();
+  if (hst.length < 2) return h("div",{class:"empty"}, S.demo ? "Drift tracking needs live data; it's off while demo data is showing." : "Keep this tab open through the session. Every few minutes the levels are recorded here so you can see the walls and flip drift.");
+  const W = 900, H = 320, pad = {l:60,r:20,t:14,b:30};
+  const vals = hst.flatMap(r => [r.spot, r.cw, r.pw, r.flip].filter(x=>x)); const vMin = Math.min(...vals), vMax = Math.max(...vals);
+  const X = i => pad.l + i/(hst.length-1)*(W-pad.l-pad.r), Y = v => H-pad.b - (v-vMin)/(vMax-vMin||1)*(H-pad.t-pad.b);
+  const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", style:"display:block"});
+  const line = (key, color, dash) => { const pts = hst.map((r,i) => r[key] ? `${X(i)},${Y(r[key])}` : null).filter(Boolean).join(" "); svg.append(svgEl("polyline",{points:pts, fill:"none", stroke:color, "stroke-width": key==="spot"?2:1.5, "stroke-dasharray": dash||""})); };
+  line("cw","var(--pos)","4 3"); line("pw","var(--neg)","4 3"); line("flip","var(--muted)","2 3"); line("spot","var(--spot)");
+  [0,.5,1].forEach(f => { const v = vMin+(vMax-vMin)*f; const t = svgEl("text",{x:pad.l-6,y:Y(v)+4,"text-anchor":"end"}); t.textContent = fmt(v); svg.append(t); });
+  [0,.5,1].forEach(f => { const i = Math.round((hst.length-1)*f); const t = svgEl("text",{x:X(i),y:H-8,"text-anchor":"middle"}); t.textContent = new Date(hst[i].t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}); svg.append(t); });
+  const first = hst[0], last = hst[hst.length-1];
+  const d = (a,b) => a && b ? (b-a >= 0 ? "+" : "") + fmt(b-a) : "—";
+  return h("div",null, svg,
+    h("div",{class:"legend"}, h("span",null,h("i",{style:{background:"var(--spot)"}}),"spot"), h("span",null,h("i",{style:{background:"var(--pos)"}}),"call wall"), h("span",null,h("i",{style:{background:"var(--neg)"}}),"put wall"), h("span",null,h("i",{style:{background:"var(--muted)"}}),"flip")),
+    h("table",{class:"data",style:{marginTop:"12px"}}, h("thead",null,h("tr",null,["Since open","Spot","Call wall","Put wall","Flip","Net gamma"].map(x=>h("th",null,x)))),
+      h("tbody",null, h("tr",null, h("td",null,`${hst.length} snapshots`), h("td",null,d(first.spot,last.spot)), h("td",null,d(first.cw,last.cw)), h("td",null,d(first.pw,last.pw)), h("td",null,d(first.flip,last.flip)), h("td",{class:last.total>=0?"c":"p"}, money(last.total)+(first.total*last.total<0?" (flipped)":""))))));
+}
+// ---------- Chart: price bars with the levels drawn on ----------
+async function loadBars(){
+  const sym = S.sym, iv = S.set.interval, rg = S.set.chartRange;
+  S.view = null; // new bars → reset the window
+  const ext = S.set.extended && iv !== "1d";
+  let got = null;
+  try { const r = await fetch(`/api/bars?symbol=${sym}&interval=${iv}&range=${rg}&extended=${ext?1:0}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) got = j; } } catch {}
+  if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
+  if (!got){ const snap = await snapshotJson(iv === "1d" ? `${sym}-daily.json` : `${sym}-bars.json`, iv === "1d" ? 24*60 : 20); if (snap && snap.bars?.length){ let bars = snap.bars; if (iv !== "1d" && iv !== "5m"){ const mins = {"1m":5,"15m":15,"30m":30,"1h":60}[iv]||5; if (mins > 5){ const out = []; let cur = null; for (const b of bars){ const bk = Math.floor(b[0]/(mins*60000))*mins*60000; if (!cur || cur[0] !== bk){ cur = [bk,b[1],b[2],b[3],b[4],b[5]]; out.push(cur); } else { cur[2]=Math.max(cur[2],b[2]); cur[3]=Math.min(cur[3],b[3]); cur[4]=b[4]; cur[5]+=b[5]; } } bars = out; } } got = { bars, source:"snapshot", session:snap.session||null }; } }
+  if (got && got.source) S.barsSrc = got.source;
+  if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
+  if (!got) got = await cboeBars(sym, iv, rg);
+  if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; S.barsAt = Date.now(); S.barsMissing = false; }
+  else if (S.demo){ S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; S.barsMissing = false; }
+  else { S.bars = null; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.barsMissing = true; }
+  updateAh(); renderStatus();
+  if (S.tab === "chart" || S.tab === "quant") renderTabs();
+  const fb = document.querySelector("#tvChart .tvfb"); if (fb){ const msg = fb.querySelector(".hint")?.textContent || ""; tvFallback(msg); }
+}

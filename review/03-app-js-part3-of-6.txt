@@ -1,0 +1,359 @@
+// KINGNODE app.html — JavaScript part 3 of 6 (see 00-overview.md)
+function synthBars(spot, iv){
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const mins = {"1m":1,"5m":5,"15m":15,"30m":30,"1h":60,"1d":390}[iv] || 5, perDay = Math.max(1, Math.round(390/mins)), days = iv==="1d" ? 260 : Math.min(10, Math.ceil(400/perDay)+1);
+  const bars = []; let px = spot * (1 - 0.02);
+  const ymd = dt => dt.toISOString().slice(0,10); const first = new Date(); first.setUTCDate(first.getUTCDate() - Math.round(days*7/5));
+  let d = 0, made = 0;
+  while (made < days){ const dayD = new Date(first.getTime() + d*86400000); d++; if (dayD.getUTCDay() % 6 === 0) continue; const day = new Date(`${ymd(dayD)}T09:30:00-04:00`); if (day > Date.now()) break; made++;
+    for (let i = 0; i < perDay; i++){ const t = day.getTime() + i*mins*60000, o = px, drift = (spot - px) * 0.01, r = (rnd() - 0.5) * spot * 0.0012 * Math.sqrt(mins/5);
+      const c = o + drift + r, hi = Math.max(o,c) + rnd()*spot*0.0004*Math.sqrt(mins/5), lo = Math.min(o,c) - rnd()*spot*0.0004*Math.sqrt(mins/5);
+      bars.push([t, o, hi, lo, c, Math.round(20000 + rnd()*80000 * (i<6||i>perDay-7 ? 2.2 : 1))]); px = c; } }
+  const off = spot - bars[bars.length-1][4], n = bars.length;
+  return bars.map((b,i) => { const k = off * (i+1)/n; return [b[0], b[1]+k, b[2]+k, b[3]+k, b[4]+k, b[5]]; });
+}
+function sma(vals, n){ const out = new Array(vals.length).fill(null); let sum = 0; for (let i = 0; i < vals.length; i++){ sum += vals[i]; if (i >= n) sum -= vals[i-n]; if (i >= n-1) out[i] = sum/n; } return out; }
+function bollinger(vals, n=20, k=2){ const m = sma(vals, n); return m.map((mu,i) => { if (mu == null) return null; let v = 0; for (let j = i-n+1; j <= i; j++) v += (vals[j]-mu)**2; const sd = Math.sqrt(v/n); return [mu-k*sd, mu, mu+k*sd]; }); }
+function rsi(vals, n=14){ const out = new Array(vals.length).fill(null); let g = 0, l = 0; for (let i = 1; i < vals.length; i++){ const d = vals[i]-vals[i-1]; if (i <= n){ if (d>0) g += d; else l -= d; if (i === n){ g/=n; l/=n; out[i] = l ? 100-100/(1+g/l) : 100; } } else { g = (g*(n-1) + Math.max(d,0))/n; l = (l*(n-1) + Math.max(-d,0))/n; out[i] = l ? 100-100/(1+g/l) : 100; } } return out; }
+function isRegular(t){ const et = new Date(new Date(t).toLocaleString("en-US",{timeZone:"America/New_York"})); const m = et.getHours()*60+et.getMinutes(); return m >= 570 && m < 960; }
+function ema(vals, n){ const k = 2/(n+1); const out = new Array(vals.length).fill(null); let e = null; for (let i = 0; i < vals.length; i++){ e = e == null ? vals[i] : vals[i]*k + e*(1-k); if (i >= n-1) out[i] = e; } return out; }
+function vwap(bars){ const out = []; let pv = 0, v = 0, day = null; for (const b of bars){ const dd = new Date(b[0]).toDateString(); if (dd !== day){ day = dd; pv = 0; v = 0; } const tp = (b[2]+b[3]+b[4])/3; pv += tp*b[5]; v += b[5]; out.push(v ? pv/v : tp); } return out; }
+function chartControls(){
+  if (window.innerWidth < 700){ const d = h("details",{class:"chartctl-mobile"}, h("summary",null,"Chart options")); d.append(chartControlsInner()); return d; }
+  return chartControlsInner();
+}
+function chartControlsInner(){
+  const st = S.set, again = (k, v, reload) => { st[k] = v; saveSettings(); if (reload) loadBars(); else { renderTabs(); const fb = document.querySelector("#tvChart .tvfb"); if (fb) tvFallback(fb.querySelector(".hint")?.textContent || ""); } };
+  const grp = (key, opts, reload) => h("div",{class:"grp"}, opts.map(o => h("button",{type:"button","aria-pressed":String(st[key]===o), onclick:()=>again(key, o, reload)}, o)));
+  const chk = (key, label) => h("label",null, h("input",{type:"checkbox", checked:!!st[key], onchange:e=>again(key, e.target.checked)}), label);
+  const emaSel = h("input",{value:(st.ema||[]).join(","), title:"EMA lengths, comma-separated", style:{width:"90px",background:"var(--panel2)",border:"1px solid var(--rule)",borderRadius:"6px",padding:"3px 6px",color:"var(--ink)",fontFamily:"var(--mono)",fontSize:"12px"},
+    onchange:e=>{ const v = e.target.value.split(/[,\s]+/).map(Number).filter(n=>n>1&&n<1000).slice(0,5); again("ema", v.length ? v : DEFAULTS.ema); }});
+  return h("div",{class:"chartctl"},
+    grp("interval", ["1m","5m","15m","30m","1h","1d"], true),
+    h("div",{class:"grp"}, ["1d","5d","1mo","3mo","1y"].map(o => h("button",{type:"button","aria-pressed":String(st.chartRange===o), onclick:()=>{ st.chartRange = o; st.bars = 100000; saveSettings(); loadBars(); }}, o))),
+    h("label",null,"Show", h("select",{onchange:e=>{ const v = e.target.value; if (v === "all"){ S.view = {sym:S.sym, n:S.bars.length, from:0, to:S.bars.length}; renderTabs(); const fb = document.querySelector("#tvChart .tvfb"); if (fb) tvFallback(fb.querySelector(".hint")?.textContent||""); } else { S.view = null; again("bars", Number(v)); } }}, [["all","whole range"],[80,"80 bars"],[160,"160 bars"],[300,"300 bars"],[500,"500 bars"],[1000,"1000 bars"]].map(([v,l])=>h("option",{value:v, selected:st.bars===v}, l)))),
+    h("span",{class:"hint"},"scroll to zoom · drag to pan"),
+    chk("showPdl","Prior day H/L/C"), chk("showOr","Opening range"), h("span",{class:"hint"},"click chart = horizontal line, ×2 to remove"),
+    chk("showEma","EMA"), emaSel, chk("showVwap","VWAP"), chk("showBb","Bollinger"), chk("showRsi","RSI"), chk("showVolume","Volume"), chk("showLevels","Walls & flip"), chk("showEm","Expected move"), chk("showPain","Max pain"),
+    h("label",{title:"Show pre-market and after-hours bars (shaded)"}, h("input",{type:"checkbox", checked:!!st.extended, onchange:e=>again("extended", e.target.checked, true)}), "Extended hours"));
+}
+const EMA_COLORS = ["#F5B942","#7DD3FC","#C084FC","#FB923C","#A3E635"];
+function viewChart(){
+  const c = S.calc, all = S.bars; const box = h("div",null, chartControls());
+  if (!all) { box.append(h("div",{class:"empty"}, S.barsMissing ? h("div",null, h("div",{style:{fontWeight:600,marginBottom:"6px"}}, `No price bars for ${S.sym} yet.`), h("div",{class:"hint"},"The feed covers the ~230 tickers in the app; this one isn't in it, or the bars request failed. Add it to BAR_SYMBOLS in scripts/snapshot.mjs, set a data proxy in ⚙ Settings, or run the desktop server — then any ticker charts.")) : "Loading bars…")); return box; }
+  const st = S.set;
+  if (!S.view || S.view.n !== all.length || S.view.sym !== S.sym){ const n = Math.min(all.length, st.bars); S.view = {sym:S.sym, n:all.length, from:all.length-n, to:all.length}; }
+  const view = S.view, bars = all.slice(view.from, view.to), off = view.from;
+  const closes = all.map(b=>b[4]);
+  const emas = st.showEma ? st.ema.map(n => ema(closes, n)) : [];
+  const vw = st.showVwap && st.interval !== "1d" ? vwap(all) : null;
+  const phone = window.innerWidth < 700;
+  const RH = st.showRsi ? 80 : 0, W = phone ? 640 : 1100, H = (phone ? 560 : 460) + RH, VH = st.showVolume ? 70 : 0, pad = {l:phone ? 48 : 64, r:phone ? 96 : 118, t:12, b:24 + VH + RH};
+  const lows = bars.map(b=>b[3]), highs = bars.map(b=>b[2]);
+  const bLo = Math.min(...lows), bHi = Math.max(...highs), span = Math.max(bHi-bLo, c.spot*0.004);
+  const near = x => x && x > bLo - span*0.6 && x < bHi + span*0.6; // only stretch the scale for levels near the price action
+  const lv = st.showLevels ? [c.callWall?.K, c.putWall?.K, c.flip].filter(near) : [];
+  if (st.showPain && near(c.maxPain)) lv.push(c.maxPain);
+  const em = st.showEm ? c.em[0] : null;
+  let yMin = Math.min(...lows, ...lv, em ? c.spot-em.move : Infinity), yMax = Math.max(...highs, ...lv, em ? c.spot+em.move : -Infinity);
+  emas.forEach(e => e.slice(off).forEach(v => { if (v != null){ yMin = Math.min(yMin, v); yMax = Math.max(yMax, v); } }));
+  const bb = st.showBb ? bollinger(closes, 20, 2) : null;
+  if (bb) bb.slice(off).forEach(v => { if (v){ yMin = Math.min(yMin, v[0]); yMax = Math.max(yMax, v[2]); } });
+  const padY = (yMax-yMin)*0.05; yMin -= padY; yMax += padY;
+  const plotH = H-pad.t-pad.b;
+  const Y = v => pad.t + (yMax-v)/(yMax-yMin)*plotH, X = i => pad.l + (i+0.5)/bars.length*(W-pad.l-pad.r), bw = Math.max(1.2, (W-pad.l-pad.r)/bars.length*0.66);
+  const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", style:"display:block; max-height:66vh; cursor:crosshair"});
+  // grid
+  const ticks = 6; for (let k = 0; k <= ticks; k++){ const v = yMin + (yMax-yMin)*k/ticks; svg.append(svgEl("line",{x1:pad.l,y1:Y(v),x2:W-pad.r,y2:Y(v),stroke:"var(--rule)",opacity:.5})); const t = svgEl("text",{x:pad.l-6,y:Y(v)+4,"text-anchor":"end"}); t.textContent = fmt(v, (yMax-yMin) < 30 ? 2 : 0); svg.append(t); }
+  // extended-hours shading
+  if (st.extended && st.interval !== "1d"){ let run = null; bars.forEach((b,i) => { const reg = isRegular(b[0]); if (!reg && run == null) run = i; if ((reg || i === bars.length-1) && run != null){ const end = reg ? i : i+1; svg.append(svgEl("rect",{x:X(run)-bw, y:pad.t, width:X(end-1)-X(run)+bw*1.5, height:H-pad.b-pad.t, fill:"var(--muted)", opacity:.08})); run = null; } }); }
+  if (em) svg.append(svgEl("rect",{x:pad.l, y:Y(c.spot+em.move), width:W-pad.l-pad.r, height:Math.max(0,Y(c.spot-em.move)-Y(c.spot+em.move)), fill:"var(--gold)", opacity:.07}));
+  bars.forEach((b,i) => { if (i>0 && new Date(b[0]).toDateString() !== new Date(bars[i-1][0]).toDateString()) svg.append(svgEl("line",{x1:X(i)-bw, y1:pad.t, x2:X(i)-bw, y2:H-24, stroke:"var(--rule)"})); });
+  // volume
+  if (st.showVolume){ const vmax = Math.max(1, ...bars.map(b=>b[5])); bars.forEach((b,i) => { const vh = b[5]/vmax*(VH-8); svg.append(svgEl("rect",{x:X(i)-bw/2, y:H-24-vh, width:bw, height:vh, fill: b[4]>=b[1] ? "var(--pos)" : "var(--neg)", opacity:.35})); }); const t = svgEl("text",{x:pad.l-6,y:H-24-VH+16,"text-anchor":"end"}); t.textContent = "vol " + (vmax>=1e6 ? (vmax/1e6).toFixed(1)+"M" : vmax>=1e3 ? (vmax/1e3).toFixed(0)+"K" : vmax); svg.append(t); }
+  // candles
+  bars.forEach((b,i) => { const [,o,hi,lo,cl] = b, col = cl >= o ? "var(--pos)" : "var(--neg)";
+    svg.append(svgEl("line",{x1:X(i), y1:Y(hi), x2:X(i), y2:Y(lo), stroke:col, "stroke-width":1}));
+    svg.append(svgEl("rect",{x:X(i)-bw/2, y:Y(Math.max(o,cl)), width:bw, height:Math.max(1, Math.abs(Y(o)-Y(cl))), fill:col})); });
+  // overlays
+  const line = (arr, color, width, dash) => { const pts = arr.map((v,i) => v == null ? null : `${X(i)},${Y(v)}`).filter(Boolean).join(" "); if (pts) svg.append(svgEl("polyline",{points:pts, fill:"none", stroke:color, "stroke-width":width, "stroke-dasharray":dash||""})); };
+  if (bb){ const s0 = bb.slice(off); line(s0.map(v=>v&&v[0]), "#94A3B8", 1, "3 3"); line(s0.map(v=>v&&v[2]), "#94A3B8", 1, "3 3"); line(s0.map(v=>v&&v[1]), "#94A3B8", 1); }
+  emas.forEach((e,k) => line(e.slice(off), EMA_COLORS[k%EMA_COLORS.length], 1.4));
+  if (st.showRsi){ const r = rsi(closes, 14).slice(off), top = H-24-VH-RH+8, bot = H-24-VH-4, RY = v => bot - (v/100)*(bot-top);
+    [30,50,70].forEach(v => { svg.append(svgEl("line",{x1:pad.l,y1:RY(v),x2:W-pad.r,y2:RY(v),stroke:"var(--rule)","stroke-dasharray": v===50?"":"2 3"})); const t = svgEl("text",{x:pad.l-6,y:RY(v)+4,"text-anchor":"end"}); t.textContent = v; svg.append(t); });
+    const pts = r.map((v,i) => v == null ? null : `${X(i)},${RY(v)}`).filter(Boolean).join(" "); svg.append(svgEl("polyline",{points:pts, fill:"none", stroke:"#C084FC", "stroke-width":1.4}));
+    const lbl = svgEl("text",{x:W-pad.r+4,y:top+10}); lbl.textContent = "RSI 14" + (r.at(-1)!=null ? " " + r.at(-1).toFixed(0) : ""); lbl.style.fill = "#C084FC"; svg.append(lbl); }
+  if (vw) line(vw.slice(off), "#E879F9", 1.2, "3 2");
+  const marks = [];
+  if (st.showPdl && st.interval !== "1d"){ const days = [...new Set(all.map(b => new Date(b[0]).toDateString()))]; const prev = days[days.length-2]; if (prev){ const pb = all.filter(b => new Date(b[0]).toDateString() === prev && isRegular(b[0])); if (pb.length){ marks.push([Math.max(...pb.map(b=>b[2])),"PDH","#94A3B8"],[Math.min(...pb.map(b=>b[3])),"PDL","#94A3B8"],[pb.at(-1)[4],"PDC","#94A3B8"]); } } }
+  if (st.showOr && st.interval !== "1d"){ const lastDay = new Date(all.at(-1)[0]).toDateString(); const first = all.filter(b => new Date(b[0]).toDateString() === lastDay && isRegular(b[0])).slice(0, Math.max(1, Math.round(15/({"1m":1,"5m":5,"15m":15,"30m":30,"1h":60}[st.interval]||5)))); if (first.length){ marks.push([Math.max(...first.map(b=>b[2])),"OR high","#E879F9"],[Math.min(...first.map(b=>b[3])),"OR low","#E879F9"]); } }
+  (S.lines?.[S.sym]||[]).forEach(v => marks.push([v,"line","var(--blue)"]));
+  if (st.showLevels){ marks.push([c.callWall?.K,"call wall","var(--pos)"],[c.putWall?.K,"put wall","var(--neg)"],[c.flip,"flip","var(--muted)"]); }
+  if (st.showPain) marks.push([c.maxPain,"max pain","var(--gold)"]);
+  marks.push([c.spot,"spot","var(--spot)"]);
+  marks.filter(m => m[0] && (m[0] > yMax || m[0] < yMin)).forEach((m,i) => { const up = m[0] > yMax; const t = svgEl("text",{x:W-pad.r+4, y: up ? pad.t+12+i*13 : H-pad.b-4-i*13}); t.textContent = `${up?"↑":"↓"} ${m[1]} ${fmt(m[0], c.spot<200?2:0)}`; t.style.fill = m[2]; svg.append(t); });
+  const ms = marks.filter(m=>m[0] && m[0] >= yMin && m[0] <= yMax).map(m=>({K:m[0],label:m[1],color:m[2],y:Y(m[0]),ly:Y(m[0])})).sort((a,b)=>a.y-b.y);
+  for (let i = 1; i < ms.length; i++) if (ms[i].ly - ms[i-1].ly < 13) ms[i].ly = ms[i-1].ly + 13;
+  for (const m of ms){ svg.append(svgEl("line",{x1:pad.l, y1:m.y, x2:W-pad.r, y2:m.y, stroke:m.color, "stroke-dasharray": m.label==="spot" ? "" : "5 4"})); const t = svgEl("text",{x:W-pad.r+4, y:m.ly+4}); t.textContent = `${m.label} ${fmt(m.K, c.spot<200?2:0)}`; t.style.fill = m.color; t.setAttribute("font-weight","600"); svg.append(t); }
+  if (em){ const t = svgEl("text",{x:pad.l+6, y:Y(c.spot+em.move)+12}); t.textContent = `expected move ±${fmt(em.move,1)}`; t.style.fill = "var(--gold)"; svg.append(t); }
+  [0,.2,.4,.6,.8,1].forEach(f => { const i = Math.min(bars.length-1, Math.round((bars.length-1)*f)); const t = svgEl("text",{x:X(i), y:H-8, "text-anchor": f===0?"start":f===1?"end":"middle"}); const d = new Date(bars[i][0]); t.textContent = st.interval==="1d" ? d.toLocaleDateString([],{month:"short",day:"numeric"}) : d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}); svg.append(t); });
+  // last price tag on the axis
+  { const lp = bars.at(-1)[4], y = Y(lp); const up = bars.at(-1)[4] >= bars.at(-1)[1]; const w = 62; svg.append(svgEl("line",{x1:pad.l,y1:y,x2:W-pad.r,y2:y,stroke: up?"var(--pos)":"var(--neg)","stroke-dasharray":"2 3",opacity:.8})); svg.append(svgEl("rect",{x:pad.l-w-2,y:y-9,width:w,height:18,rx:3,fill: up?"var(--pos)":"var(--neg)"})); const t = svgEl("text",{x:pad.l-w/2-2,y:y+4,"text-anchor":"middle"}); t.textContent = fmt(lp, lp<200?2:(yMax-yMin)<30?2:0); t.style.fill = "#061013"; t.setAttribute("font-weight","700"); svg.append(t); }
+  // session/date separators with the date written at the top
+  { let lastDay = null, lastLx = -999; bars.forEach((b,i) => { const dd = new Date(b[0]); const key = dd.toDateString(); if (key !== lastDay){ if (lastDay !== null){ svg.append(svgEl("line",{x1:X(i)-bw,y1:pad.t,x2:X(i)-bw,y2:H-24,stroke:"var(--rule2)"})); } if (st.interval !== "1d" && X(i) - lastLx > 80){ const t = svgEl("text",{x:X(i)+3,y:pad.t+10}); t.textContent = dd.toLocaleDateString([],{weekday:"short",month:"numeric",day:"numeric"}); t.style.fill = "var(--muted)"; t.setAttribute("font-size","10"); svg.append(t); lastLx = X(i); } lastDay = key; } }); }
+  // crosshair
+  const ohlc = h("div",{class:"ohlc"}, `${S.sym} · ${st.interval} · ${bars.length} bars${S.barsDemo ? " · demo bars" : S.barsMeta?.src==="yahoo-proxy" ? " · live" : " · delayed"}`);
+  const cross = svgEl("g",{style:"display:none"}); const cv = svgEl("line",{y1:pad.t,y2:H-24,stroke:"var(--muted)","stroke-dasharray":"2 3"}); const ch = svgEl("line",{x1:pad.l,x2:W-pad.r,stroke:"var(--muted)","stroke-dasharray":"2 3"}); const cpr = svgEl("rect",{x:pad.l-64,width:62,height:16,rx:3,fill:"var(--panel2)",stroke:"var(--rule2)"}); const cpt = svgEl("text",{x:pad.l-33,"text-anchor":"middle"}); cpt.style.fill = "var(--ink)"; const ctr = svgEl("rect",{y:H-22,width:92,height:16,rx:3,fill:"var(--panel2)",stroke:"var(--rule2)"}); const ctt = svgEl("text",{y:H-10,"text-anchor":"middle"}); ctt.style.fill = "var(--ink)"; cross.append(cv, ch, cpr, cpt, ctr, ctt); svg.append(cross);
+  svg.addEventListener("mousemove", ev => { const r = svg.getBoundingClientRect(); const x = (ev.clientX-r.left)/r.width*W, y = (ev.clientY-r.top)/r.height*H; const i = Math.max(0, Math.min(bars.length-1, Math.floor((x-pad.l)/(W-pad.l-pad.r)*bars.length))); const b = bars[i]; if (!b) return; cross.style.display = ""; cv.setAttribute("x1",X(i)); cv.setAttribute("x2",X(i)); ch.setAttribute("y1",y); ch.setAttribute("y2",y);
+    const d = new Date(b[0]); const px = yMax - (y-pad.t)/plotH*(yMax-yMin);
+    cpr.setAttribute("y", y-8); cpt.setAttribute("y", y+4); cpt.textContent = fmt(px, px<200?2:(yMax-yMin)<30?2:0); ctr.setAttribute("x", Math.max(pad.l, Math.min(W-pad.r-92, X(i)-46))); ctt.setAttribute("x", Math.max(pad.l, Math.min(W-pad.r-92, X(i)-46))+46); ctt.textContent = st.interval==="1d" ? d.toLocaleDateString([],{month:"short",day:"numeric"}) : d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+    const extra = emas.map((e,k) => e[off+i] != null ? ` EMA${st.ema[k]} ${fmt(e[off+i],2)}` : "").join("") + (vw && vw[off+i] ? ` VWAP ${fmt(vw[off+i],2)}` : "");
+    ohlc.textContent = `${d.toLocaleDateString([],{month:"short",day:"numeric"})} ${d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}  O ${fmt(b[1],2)} H ${fmt(b[2],2)} L ${fmt(b[3],2)} C ${fmt(b[4],2)}  Vol ${fmt(b[5])}  · cursor ${fmt(px,2)}${extra}`; });
+  // zoom + pan
+  const rerender = () => { if (S.tab === "chart") renderTabs(); const fb = document.querySelector("#tvChart .tvfb"); if (fb) tvFallback(fb.querySelector(".hint")?.textContent || ""); };
+  svg.addEventListener("wheel", ev => { ev.preventDefault(); const r = svg.getBoundingClientRect(); const fx = Math.max(0, Math.min(1, ((ev.clientX-r.left)/r.width*W - pad.l)/(W-pad.l-pad.r))); const n = view.to - view.from, factor = ev.deltaY > 0 ? 1.15 : 1/1.15; const nn = Math.max(20, Math.min(all.length, Math.round(n*factor))); const anchor = view.from + fx*n; let from = Math.round(anchor - fx*nn); from = Math.max(0, Math.min(all.length-nn, from)); S.view = {sym:S.sym, n:all.length, from, to:from+nn}; rerender(); }, {passive:false});
+  let drag = null;
+  svg.addEventListener("mousedown", ev => { drag = {x:ev.clientX, y:ev.clientY, from:view.from, moved:false}; });
+  svg.addEventListener("click", ev => { if (drag?.moved) return; const r = svg.getBoundingClientRect(); const y = (ev.clientY-r.top)/r.height*H; if (y < pad.t || y > H-pad.b) return; const px = yMax - (y-pad.t)/plotH*(yMax-yMin); S.lines = S.lines || {}; const L = S.lines[S.sym] = S.lines[S.sym] || []; const tol = (yMax-yMin)*0.01; const i = L.findIndex(v => Math.abs(v-px) < tol); if (i >= 0) L.splice(i,1); else L.push(+px.toFixed(2)); try { localStorage.setItem("kingnode:lines", JSON.stringify(S.lines)); } catch {} rerender(); });
+  window.addEventListener("mouseup", () => { drag = null; }, {once:true});
+  svg.addEventListener("mousemove", ev => { if (!drag) return; if (Math.abs(ev.clientX-drag.x) > 3) drag.moved = true; const r = svg.getBoundingClientRect(); const n = view.to - view.from; const dBars = Math.round((drag.x - ev.clientX)/r.width*W/(W-pad.l-pad.r)*n); if (!dBars) return; let from = Math.max(0, Math.min(all.length-n, drag.from + dBars)); if (from === view.from) return; S.view = {sym:S.sym, n:all.length, from, to:from+n}; drag = {x:ev.clientX, from}; rerender(); });
+  svg.addEventListener("mouseleave", () => { cross.style.display = "none"; ohlc.textContent = `${S.sym} · ${st.interval} · ${bars.length} bars${S.barsDemo ? " · demo bars" : " · delayed"}`; });
+  const legend = h("div",{class:"legend"}, st.extended && st.interval !== "1d" ? h("span",null, h("i",{style:{background:"var(--muted)",opacity:.3}}), "pre/after hours") : null, bb ? h("span",null, h("i",{style:{background:"#94A3B8"}}), "Bollinger 20/2") : null, ...emas.map((e,k) => h("span",null, h("i",{style:{background:EMA_COLORS[k%EMA_COLORS.length]}}), "EMA " + st.ema[k])), vw ? h("span",null, h("i",{style:{background:"#E879F9"}}), "VWAP") : null, em ? h("span",null, h("i",{style:{background:"var(--gold)",opacity:.35}}), "expected move") : null, S.barsDemo ? h("span",{class:"badge demo"},"demo bars") : null);
+  if (st.showEma && st.ema.some(n => n >= all.length)) legend.append(h("span",{class:"hint"}, `EMA ${st.ema.filter(n=>n>=all.length).join("/")} needs more bars — pick a longer range.`));
+  box.append(ohlc, svg, legend);
+  return box;
+}
+
+// After-hours / pre-market price from the extended bars (Yahoo/Polygon), shown next to the regular quote.
+function updateAh(){
+  const el = document.getElementById("ahq"); if (!el) return; el.hidden = true;
+  const m = S.barsMeta, b = S.bars; if (!b || !m || m.sym !== S.sym || !m.ext || S.barsDemo) return;
+  const last = b[b.length-1], t = new Date(last[0]), et = new Date(t.toLocaleString("en-US",{timeZone:"America/New_York"}));
+  const mins = et.getHours()*60 + et.getMinutes(), regular = mins >= 570 && mins < 960, fresh = Date.now() - last[0] < 6*3600e3;
+  if (regular || !fresh) return;
+  const ref = S.chain?.spot || last[4], chg = last[4] - ref;
+  el.textContent = `${mins < 570 ? "PRE" : "AH"} ${fmt(last[4],2)} (${chg>=0?"+":""}${fmt(chg,2)})`; el.className = "badge " + (chg >= 0 ? "up" : "dn"); el.hidden = false;
+}
+
+// ---------- Derived flow: when there's no trade feed, build the tape from volume changes between chain refreshes ----------
+const DF_KEY = () => `kingnode:dflow:${S.sym}:${new Date().toISOString().slice(0,10)}`;
+function deriveFlow(prev, next){
+  if (!prev || prev.symbol !== next.symbol || !prev.rows?.length) return [];
+  const key = r => `${r[0]}|${r[1]}|${r[2]}`; const pm = new Map(prev.rows.map(r => [key(r), r]));
+  const out = []; const now = Date.now();
+  for (const r of next.rows){ const p = pm.get(key(r)); if (!p) continue; const dv = r[4] - p[4]; if (dv <= 0) continue;
+    const px = r[10] || (r[8]+r[9])/2; if (!px) continue;
+    const bid = p[8], ask = p[9]; const side = ask && px >= ask - 0.005 ? "A" : bid && px <= bid + 0.005 ? "B" : "M";
+    let t = now; if (r[11]){ const d = Date.parse(String(r[11]).replace(" ","T") + (/[+-]\d\d:?\d\d$|Z$/.test(String(r[11])) ? "" : "-04:00")); if (isFinite(d)) t = d; }
+    const prem = Math.round(px*dv*100); const kind = dv >= 500 ? "block" : (dv >= 50 && side !== "M" && (r[9]-r[8]) <= px*0.1) ? "sweep" : "trade";
+    out.push({ t, u:next.symbol, o:`${next.symbol}${r[0]}${r[1]}${r[2]}`, exp:r[0], K:r[2], cp:r[1], px:+px.toFixed(2), sz:dv, prem, side, kind, ex:0, derived:true }); }
+  return out;
+}
+function loadDerived(){ try { return JSON.parse(localStorage.getItem(DF_KEY())||"[]"); } catch { return []; } }
+function saveDerived(list){ try { localStorage.setItem(DF_KEY(), JSON.stringify(list.slice(-3000))); } catch {} }
+function recordDerived(prev, next){
+  const fresh = deriveFlow(prev, next); if (!fresh.length) return 0;
+  const list = loadDerived().concat(fresh); saveDerived(list); S.derivedCount = list.length;
+  if (S.flow && S.flow.derived){ S.flow = { at:Date.now(), live:true, sym:S.sym, derived:true, trades:list }; if (["flow","cflow","play"].includes(S.tab)) renderTabs(); checkFlowAlerts(); }
+  return fresh.length;
+}
+
+// ---------- Flow tape ----------
+let flowTimer = null;
+async function loadFlow(){
+  clearTimeout(flowTimer);
+  const had = S.flow && S.flow.sym === S.sym;
+  let changed = !had;
+  try { const r = await fetch(`/api/flow?symbol=${S.sym}`); if (!r.ok) throw 0; const j = await r.json(); if (!j.trades?.length) throw 0; changed = !had || j.at !== S.flow.at; S.flow = {...j, sym:S.sym}; S.flowDemo = false; }
+  catch { const d = S.demo ? [] : loadDerived(); if (d.length){ if (!had || !S.flow.derived || S.flow.trades.length !== d.length){ S.flow = { at:Date.now(), live:true, sym:S.sym, derived:true, trades:d }; S.flowDemo = false; changed = true; } }
+    else if (!had || !S.flowDemo){ S.flow = { at:Date.now(), live:false, sym:S.sym, trades: synthFlow() }; S.flowDemo = true; changed = true; } }
+  if (changed) checkFlowAlerts();
+  if (S.tab === "flow" || S.tab === "cflow" || S.tab === "play"){ if (changed) renderTabs(); flowTimer = setTimeout(loadFlow, S.flowDemo ? 60000 : 10000); }
+}
+function synthFlow(){
+  const c = S.calc; if (!c) return [];
+  let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const out = []; const now = Date.now(); const step = c.spot > 2000 ? 25 : c.spot > 500 ? 5 : c.spot > 200 ? 2.5 : 1;
+  for (let i = 0; i < 120; i++){
+    const cp = rnd() < 0.55 ? "C" : "P", K = Math.round((c.spot * (1 + (rnd()-0.5)*0.03)) / step) * step, exp = (rnd() < 0.6 ? S.exps[Math.floor(rnd()*Math.min(3,S.exps.length))] : S.allExps[Math.floor(rnd()*S.allExps.length)]) || S.exps[0];
+    const ct = c.contracts.find(x => x.exp===exp && x.K===K && x.type===cp); const px = ct ? Math.max(0.05, ct.mid * (0.9 + rnd()*0.2)) : 5 + rnd()*20;
+    const sz = rnd() < 0.15 ? 500 + Math.floor(rnd()*3000) : 20 + Math.floor(rnd()*400); const kind = rnd() < 0.25 ? "sweep" : sz >= 500 ? "block" : "trade";
+    out.push({ t: now - Math.floor(rnd()*5.5*3600e3), u:S.sym, exp, K, cp, px:+px.toFixed(2), sz, prem: Math.round(px*sz*100), side: rnd() < 0.45 ? "A" : rnd() < 0.8 ? "B" : "M", kind, ex: 300 + Math.floor(rnd()*20) });
+  }
+  return out.sort((a,b)=>a.t-b.t);
+}
+function viewFlow(){
+  const f = S.flow; const box = h("div",null);
+  const filt = h("div",{class:"ctl"},
+    h("label",null,"Min premium", h("select",{onchange:e=>{S.flowMinPrem=Number(e.target.value); renderTabs();}}, [[25000,"$25K"],[50000,"$50K"],[100000,"$100K"],[250000,"$250K"],[1000000,"$1M"]].map(([v,l])=>h("option",{value:v, selected:S.flowMinPrem===v}, l)))),
+    h("label",null,"Type", h("select",{onchange:e=>{S.flowKind=e.target.value; renderTabs();}}, [["all","All"],["sweep","Sweeps"],["block","Blocks"]].map(([v,l])=>h("option",{value:v, selected:S.flowKind===v}, l)))),
+    h("label",null,"Side", h("select",{onchange:e=>{S.flowSide=e.target.value; renderTabs();}}, [["all","All"],["A","Ask (bought)"],["B","Bid (sold)"]].map(([v,l])=>h("option",{value:v, selected:S.flowSide===v}, l)))),
+    h("label",null,"Calls/Puts", h("select",{onchange:e=>{S.flowCp=e.target.value; renderTabs();}}, [["all","Both"],["C","Calls"],["P","Puts"]].map(([v,l])=>h("option",{value:v, selected:S.flowCp===v}, l)))),
+    h("label",null,"Expiry", h("select",{onchange:e=>{S.flowExp=e.target.value; renderTabs();}}, [["all","All"], ...[...new Set((f?.trades||[]).map(t=>t.exp))].sort().map(e=>[e,e.slice(5)])].map(([v,l])=>h("option",{value:v, selected:S.flowExp===v}, l)))),
+    h("span",{style:{flex:1}}),
+    f ? h("span",{class:"badge"+(S.flowDemo?" demo":(f.live?" pro":""))}, S.flowDemo ? "Demo flow" : f.derived ? "Derived from volume · 15-min delayed" : f.live ? "Live" : "Collector offline") : null);
+  box.append(filt);
+  if (!f){ box.append(h("div",{class:"empty"},"Loading tape…")); return box; }
+  const rows = f.trades.filter(t => t.prem >= S.flowMinPrem && (S.flowKind==="all" || t.kind===S.flowKind) && (S.flowSide==="all" || t.side===S.flowSide) && (S.flowCp==="all" || t.cp===S.flowCp) && (S.flowExp==="all" || t.exp===S.flowExp)).sort((a,b)=>b.t-a.t);
+  // net premium timeline (bullish − bearish, cumulative through the session)
+  const chron = [...rows].sort((a,b)=>a.t-b.t); let cum = 0; const pts = chron.map(t => { const bullish = (t.cp==="C"&&t.side==="A")||(t.cp==="P"&&t.side==="B"), bearish = (t.cp==="P"&&t.side==="A")||(t.cp==="C"&&t.side==="B"); cum += bullish ? t.prem : bearish ? -t.prem : 0; return [t.t, cum]; });
+  const tl = (() => { if (pts.length < 2) return null; const W = 900, H = 120, pad = {l:56,r:10,t:8,b:20}; const t0 = pts[0][0], t1 = pts.at(-1)[0], vmax = Math.max(1, ...pts.map(p=>Math.abs(p[1])));
+    const X = t => pad.l + (t-t0)/((t1-t0)||1)*(W-pad.l-pad.r), Y = v => pad.t + (1 - (v+vmax)/(2*vmax))*(H-pad.t-pad.b);
+    const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:"100%", style:"display:block"});
+    svg.append(svgEl("line",{x1:pad.l,y1:Y(0),x2:W-pad.r,y2:Y(0),stroke:"var(--rule2)"}));
+    const path = pts.map((p,i)=>`${i?"L":"M"}${X(p[0])},${Y(p[1])}`).join(" "); const last = pts.at(-1)[1];
+    svg.append(svgEl("path",{d:path+` L${X(t1)},${Y(0)} L${X(t0)},${Y(0)} Z`, fill: last>=0?"var(--pos)":"var(--neg)", opacity:.15}));
+    svg.append(svgEl("path",{d:path, fill:"none", stroke: last>=0?"var(--pos)":"var(--neg)", "stroke-width":1.6}));
+    [[vmax,"+"+money(vmax)],[0,"0"],[-vmax,"-"+money(vmax)]].forEach(([v,l]) => { const t = svgEl("text",{x:pad.l-6,y:Y(v)+4,"text-anchor":"end"}); t.textContent = l; svg.append(t); });
+    [0,.5,1].forEach(fr => { const t = t0+(t1-t0)*fr; const tx = svgEl("text",{x:X(t),y:H-6,"text-anchor":"middle"}); tx.textContent = new Date(t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}); svg.append(tx); });
+    return svg; })();
+  const callP = rows.filter(t=>t.cp==="C").reduce((a,t)=>a+t.prem,0), putP = rows.filter(t=>t.cp==="P").reduce((a,t)=>a+t.prem,0), askP = rows.filter(t=>t.side==="A").reduce((a,t)=>a+t.prem,0), tot = callP+putP || 1;
+  const agg = new Map(); for (const t of rows){ const k = `${t.exp}|${t.K}|${t.cp}`; const a = agg.get(k) || {exp:t.exp,K:t.K,cp:t.cp,prem:0,n:0,ask:0}; a.prem += t.prem; a.n++; if (t.side==="A") a.ask += t.prem; agg.set(k,a); }
+  const top = [...agg.values()].sort((a,b)=>b.prem-a.prem).slice(0,8);
+  if (tl) box.append(h("div",{class:"card", style:{marginBottom:"12px"}}, h("h2",null,"Net premium through the session (bullish − bearish)"), tl, h("p",{class:"hint",style:{margin:"6px 0 0"}},"Rising = calls bought / puts sold outweighing the reverse. A line that keeps rolling over on rallies is what \"moves getting sold\" looks like in the tape.")));
+  box.append(h("div",{class:"grid2", style:{marginBottom:"12px"}},
+    h("div",{class:"card", style:{background:"var(--panel2)"}}, h("h2",null,"Premium, filtered tape"),
+      h("div",{style:{display:"flex",height:"10px",borderRadius:"5px",overflow:"hidden",margin:"6px 0 8px"}}, h("div",{style:{width:(callP/tot*100)+"%",background:"var(--pos)"}}), h("div",{style:{flex:1,background:"var(--neg)"}})),
+      h("div",{class:"num",style:{fontSize:"12px",display:"flex",justifyContent:"space-between"}}, h("span",{class:"c"},`Calls ${money(callP)}`), h("span",null,`${fmt(askP/tot*100,0)}% at the ask`), h("span",{class:"p"},`Puts ${money(putP)}`)),
+      h("p",{class:"hint",style:{margin:"8px 0 0"}}, `${rows.length} prints ≥ ${money(S.flowMinPrem)} · ${rows.filter(t=>t.kind==="sweep").length} sweeps · ${rows.filter(t=>t.kind==="block").length} blocks`)),
+    h("div",{class:"card", style:{background:"var(--panel2)"}}, h("h2",null,"Most active contracts"),
+      h("table",{class:"data"}, h("tbody",null, top.map(a => h("tr",{style:{cursor:"pointer"}, onclick:()=>{ S.inspect={exp:a.exp,K:a.K}; S.tab="heat"; renderTabs(); }}, h("td",{class:a.cp==="C"?"c":"p"},`${fmt(a.K)} ${a.cp} ${a.exp.slice(5)}`), h("td",null,money(a.prem)), h("td",null,`${a.n} prints`), h("td",null,`${fmt(a.ask/a.prem*100,0)}% ask`))))))));
+  box.append(h("div",{style:{overflow:"auto", maxHeight:"56vh"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Time","Contract","Side","Size","Price","Premium","Type","Spot Δ"].map(x=>h("th",null,x)))),
+    h("tbody",null, rows.slice(0,400).map(t => { const id = `${t.t}|${t.o||t.K}|${t.sz}`; const isNew = !S.flowSeen.has(id) && S.flowSeen.size > 0; S.flowSeen.add(id);
+      return h("tr",{class: isNew ? "fresh" : "", style:{cursor:"pointer"}, onclick:()=>{ S.inspect={exp:t.exp,K:t.K}; S.tab="heat"; renderTabs(); }},
+      h("td",null,new Date(t.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit",second:"2-digit"})), h("td",{class:t.cp==="C"?"c":"p"},`${t.u} ${fmt(t.K)} ${t.cp==="C"?"Call":"Put"} ${t.exp.slice(5)}`),
+      h("td",{class:t.side==="A"?"c":t.side==="B"?"p":""}, t.side==="A"?"ASK":t.side==="B"?"BID":"MID"), h("td",null,fmt(t.sz)), h("td",null,fmt(t.px,2)), h("td",{style:{fontWeight:600}},money(t.prem)),
+      h("td",null, t.kind==="sweep" ? h("span",{class:"badge pro"},"SWEEP") : t.kind==="block" ? h("span",{class:"badge"},"BLOCK") : ""), h("td",null, S.calc ? pct((t.K/S.calc.spot-1)*100) : "")); })))));
+  if (S.flowSeen.size === 0) rows.forEach(t => S.flowSeen.add(`${t.t}|${t.o||t.K}|${t.sz}`));
+  if (S.flowDemo) box.append(h("p",{class:"hint"},S.demo ? "Demo prints." : "No prints yet. On the free feed the tape is built from volume changes between refreshes — leave the tab open and it fills in as contracts trade. Side is inferred from the last trade vs the previous bid/ask."));
+  else if (f.derived) box.append(h("p",{class:"hint"},"Derived tape: each print is a contract whose volume rose since the last refresh; size = the change, side = last trade vs prior bid/ask. Good for direction and size, not for exact timing."));
+  return box;
+}
+
+// ---------- Heatseeker: how positioning moved through the session (strike × time) ----------
+function seekerKey(){ return `kingnode:seeker:${S.sym}:${new Date().toISOString().slice(0,10)}`; }
+function recordSeeker(){
+  const c = S.calc; const row = { t: Date.now(), spot: c.spot, k: c.strikes.map(s => [s.K, Math.round(s.gex/1e5), Math.round(s.vex/1e4), Math.round(s.dex/1e6)]) };
+  if (S.demo){ if (!S.seekerHist.length || S.seekerHist[0].demo !== S.sym) S.seekerHist = synthSeeker(c); return; }
+  let hist = []; try { hist = JSON.parse(localStorage.getItem(seekerKey()) || "[]"); } catch {}
+  const last = hist[hist.length-1]; if (!last || Date.now() - last.t > 3*60e3){ hist.push(row); hist = hist.slice(-160); try { localStorage.setItem(seekerKey(), JSON.stringify(hist)); } catch {} }
+  S.seekerHist = hist;
+}
+function synthSeeker(c){
+  let seed = 9; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const out = []; const start = new Date(`${new Date().toISOString().slice(0,10)}T09:30:00-04:00`).getTime(); const n = 78; let px = c.spot * 0.996;
+  const base = new Map(c.strikes.map(s => [s.K, s])); const wob = c.strikes.map(() => rnd()*Math.PI*2);
+  for (let i = 0; i < n; i++){ px += (c.spot - px)*0.03 + (rnd()-0.5)*c.spot*0.0015; const ph = i/n;
+    out.push({ demo:S.sym, t: start + i*5*60e3, spot: px, k: c.strikes.map((s,si) => { const near = Math.exp(-Math.pow((s.K-px)/(c.spot*0.012),2)); const w = 1 + 0.25*Math.sin(ph*6 + wob[si]) + 0.6*near*(0.6+0.4*Math.sin(ph*4)); const b = base.get(s.K);
+      return [s.K, Math.round(b.gex/1e5*w), Math.round(b.vex/1e4*(0.8+0.3*Math.sin(ph*5+wob[si]))), Math.round(b.dex/1e6*(0.9+0.2*Math.cos(ph*3+wob[si])))]; }) }); }
+  return out;
+}
+function seekerColor(v){ // v in [-1,1] → rgba; same muted scale as the grid: teal→mint for dealers long, indigo→lavender for dealers short
+  const a = Math.min(1, Math.abs(v)), e = Math.pow(a, 0.6);
+  const mix = (c1, c2, f) => c1.map((x,i) => Math.round(x + (c2[i]-x)*f));
+  const col = v >= 0 ? (e < 0.55 ? mix([11,15,20],[22,78,74],e/0.55) : mix([22,78,74],[120,196,170],(e-0.55)/0.45))
+                     : (e < 0.55 ? mix([11,13,22],[48,52,110],e/0.55) : mix([48,52,110],[170,140,210],(e-0.55)/0.45));
+  return [col[0], col[1], col[2], 255];
+}
+function etTime(t){ return new Date(t).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",timeZone:"America/New_York"}); }
+const SK = { scrub:null, full:false, scope:"sel", cache:null };
+function seekerScopeHist(){
+  // "sel" = expirations selected on Positioning (recorded); "delta" reuses the same data, differenced from the first snapshot
+  return S.seekerHist;
+}
+function viewSeekerSession(){
+  const c = S.calc, hist = seekerScopeHist(); const box = h("div",{class: SK.full ? "seeker-full" : ""});
+  const mode = S.seekerMode, isDelta = mode === "dgex", mi = {gex:1, vex:2, dex:3, dgex:1}[mode], label = {gex:"Gamma",vex:"Vanna",dex:"Delta",dgex:"Δ Gamma since open"}[mode], unit = {gex:1e5,vex:1e4,dex:1e6,dgex:1e5}[mode];
+  const btn = (v,l) => h("button",{type:"button","aria-pressed":String(S.seekerMode===v), onclick:()=>{S.seekerMode=v; SK.scrub=null; renderTabs();}}, l);
+  // ---- header ----
+  box.append(h("div",{class:"sk-head"},
+    h("div",{class:"grp"}, btn("gex","GEX"), btn("vex","VEX"), btn("dex","DEX"), btn("dgex","Δ GEX")),
+    h("select",{class:"sk-sel", onchange:e=>{S.seekerRange=Number(e.target.value); renderTabs();}}, [1.5,2,3,4,6,8].map(v=>h("option",{value:v, selected:S.seekerRange===v}, "±"+v+"%"))),
+    h("span",{class:"sk-title"}, S.sym, h("span",{class:"hint"}, " · " + label)),
+    h("span",{style:{flex:1}}),
+    S.demo ? h("span",{class:"badge demo"},"Demo session") : h("span",{class:"hint"},`${hist.length} snapshots`),
+    h("button",{class:"btn small", onclick:()=>{ SK.full = !SK.full; renderTabs(); }}, SK.full ? "Exit" : "Full screen")));
+  if (hist.length < 2){ box.append(h("div",{class:"empty"},"Recording. Snapshots are taken every few minutes while the tab is open.")); return box; }
+  // ---- data ----
+  let strikes = [...new Set(hist.flatMap(r => r.k.map(x=>x[0])))].sort((a,b)=>b-a).filter(K => Math.abs(K/c.spot-1) <= S.seekerRange/100);
+  const maxRows = SK.full ? 60 : 40; const binN = strikes.length > maxRows ? Math.ceil(strikes.length/maxRows) : 1;
+  const bins = []; for (let i = 0; i < strikes.length; i += binN) bins.push(strikes.slice(i, i+binN));
+  const rowK = bins.map(b => b[0]), rows = bins.length, cols = hist.length;
+  const raw = hist.map(r => { const m = new Map(r.k.map(x => [x[0], x[mi]])); return bins.map(b => b.reduce((a,K) => a + (m.get(K)||0), 0)); });
+  const grid = isDelta ? raw.map(col => col.map((v,ri) => v - raw[0][ri])) : raw;
+  const kt = [0.2,0.6,0.2], ks = [0.06,0.24,0.4,0.24,0.06];
+  const g1 = grid.map((col,ci) => col.map((_,ri) => kt.reduce((a,w,k) => a + w*((grid[ci+k-1]||grid[ci])[ri]), 0)));
+  const sm = g1.map(col => col.map((_,ri) => ks.reduce((a,w,k) => a + w*(col[ri+k-2] ?? col[ri]), 0)));
+  const vmax = Math.max(1e-9, ...sm.flat().map(Math.abs));
+  const lastCol = grid[cols-1], pmax = Math.max(1e-9, ...lastCol.map(Math.abs)), spotNow = hist.at(-1).spot;
+  const nodes = lastCol.map((v,ri)=>({v,ri,K:rowK[ri]})).sort((a,b)=>Math.abs(b.v)-Math.abs(a.v));
+  const king = nodes.find(n => n.v > 0), short = nodes.find(n => n.v < 0);
+  const above = nodes.filter(n => n.v > 0 && n.K > spotNow && n.v > pmax*0.15).sort((a,b)=>a.K-b.K)[0], below = nodes.filter(n => n.v > 0 && n.K < spotNow && n.v > pmax*0.15).sort((a,b)=>b.K-a.K)[0];
+  // ---- layout ----
+  const ladderW = 300, availW = Math.max(700, (SK.full ? window.innerWidth : (document.getElementById("panel")?.clientWidth || 900)) - 28);
+  const L = 66, T = 14, R = 12, B = 30, W = availW - ladderW - 12, plotW = W - L - R, rh = Math.max(11, Math.min(SK.full ? 20 : 15, Math.floor((SK.full ? window.innerHeight - 220 : 540)/rows))), plotH = rows*rh, H = T + plotH + B, dpr = Math.min(2, window.devicePixelRatio||1);
+  const wrap = h("div",{style:{position:"relative", width:W+"px", height:H+"px", flex:"none"}});
+  const cv = h("canvas",{width:W*dpr, height:H*dpr, style:{width:W+"px", height:H+"px", display:"block"}}); const g = cv.getContext("2d"); g.scale(dpr,dpr);
+  const ov = h("canvas",{width:W*dpr, height:H*dpr, style:{width:W+"px", height:H+"px", display:"block", position:"absolute", left:0, top:0, cursor:"crosshair"}}); const og2 = ov.getContext("2d"); og2.scale(dpr,dpr);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  g.fillStyle = css("--bg"); g.fillRect(0,0,W,H);
+  const off = document.createElement("canvas"); off.width = cols; off.height = rows; const ogx = off.getContext("2d"); const img = ogx.createImageData(cols, rows);
+  for (let ci = 0; ci < cols; ci++) for (let ri = 0; ri < rows; ri++){ const [r,gg,b] = seekerColor(sm[ci][ri]/vmax); const p = (ri*cols + ci)*4; img.data[p]=r; img.data[p+1]=gg; img.data[p+2]=b; img.data[p+3]=255; }
+  ogx.putImageData(img, 0, 0); g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high"; g.drawImage(off, 0, 0, cols, rows, L, T, plotW, plotH);
+  const X = ci => L + (ci + 0.5)/cols*plotW, yOfK = K => { const i = rowK.findIndex(k => k <= K); const k0 = rowK[i] ?? rowK.at(-1), k1 = rowK[i-1] ?? k0; const f = k1===k0 ? 0.5 : (K-k0)/(k1-k0); return T + (Math.max(0,i) - f + 0.5)*rh; };
+  // strike labels (sparse) + faint gridlines
+  g.font = "11px " + css("--mono"); g.textBaseline = "middle"; g.textAlign = "right"; const every = Math.max(1, Math.ceil(rows/16));
+  rowK.forEach((K,ri) => { if (ri % every) return; const y = T + ri*rh + rh/2; g.fillStyle = css("--muted"); g.fillText(fmt(K), L-8, y); g.strokeStyle = "rgba(255,255,255,.05)"; g.beginPath(); g.moveTo(L, y); g.lineTo(L+plotW, y); g.stroke(); });
+  // time axis in ET
+  g.textAlign = "center"; g.textBaseline = "alphabetic"; let lastLbl = -Infinity;
+  hist.forEach((r,ci) => { const min = Number(new Intl.DateTimeFormat("en-US",{minute:"numeric",timeZone:"America/New_York"}).format(new Date(r.t))); if ((min === 0 || min === 30) && ci - lastLbl >= cols/12){ lastLbl = ci; g.strokeStyle = "rgba(255,255,255,.07)"; g.beginPath(); g.moveTo(X(ci), T); g.lineTo(X(ci), T+plotH); g.stroke(); g.fillStyle = css("--muted"); g.fillText(etTime(r.t), X(ci), H-10); } });
+  // key levels: thin dashed lines, no text on the map — the ladder carries the words
+  const line = (K, col, dash) => { if (!K || K > rowK[0] || K < rowK.at(-1)) return; const y = yOfK(K); g.strokeStyle = col; g.setLineDash(dash); g.lineWidth = 1; g.beginPath(); g.moveTo(L,y); g.lineTo(L+plotW,y); g.stroke(); g.setLineDash([]); };
+  line(c.callWall?.K, "rgba(94,234,212,.7)", [5,4]); line(c.putWall?.K, "rgba(252,165,165,.7)", [5,4]); line(c.flip, "rgba(200,208,220,.6)", [2,3]);
+  if (king){ const y = T + king.ri*rh; g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 1.5; g.strokeRect(L+0.5, y+0.5, plotW-1, rh-1); g.fillStyle = "#fff"; g.font = "700 11px " + css("--sans"); g.textAlign = "left"; g.textBaseline = "middle"; g.fillText("♛", L+6, y+rh/2); }
+  // price
+  g.lineJoin = "round"; g.lineCap = "round"; const path = () => { g.beginPath(); hist.forEach((r,ci) => { const y = yOfK(r.spot); ci ? g.lineTo(X(ci),y) : g.moveTo(X(ci),y); }); };
+  g.strokeStyle = "rgba(0,0,0,.6)"; g.lineWidth = 5; path(); g.stroke(); g.strokeStyle = "#FFFFFF"; g.lineWidth = 2; path(); g.stroke();
+  const lastY = yOfK(spotNow); g.fillStyle = "#FFFFFF"; g.beginPath(); g.arc(X(cols-1), lastY, 4, 0, Math.PI*2); g.fill();
+  { const txt = fmt(spotNow, 2); g.font = "700 11px " + css("--mono"); const w = g.measureText(txt).width + 10; g.fillStyle = "#FFFFFF"; roundRect(g, L+plotW-w-4, lastY-9, w, 18, 3); g.fill(); g.fillStyle = "#131722"; g.textAlign = "left"; g.textBaseline = "middle"; g.fillText(txt, L+plotW-w+1, lastY); }
+  // ---- overlay ----
+  const tip = document.getElementById("tip");
+  const drawOverlay = ci => { og2.clearRect(0,0,W,H); if (ci == null) return; const x = X(ci), r = hist[ci]; og2.strokeStyle = "rgba(255,255,255,.55)"; og2.lineWidth = 1; og2.setLineDash([3,3]); og2.beginPath(); og2.moveTo(x, T); og2.lineTo(x, T+plotH); og2.stroke(); og2.setLineDash([]); og2.fillStyle = "#fff"; og2.beginPath(); og2.arc(x, yOfK(r.spot), 3.5, 0, Math.PI*2); og2.fill();
+    const txt = `${etTime(r.t)} · ${fmt(r.spot,2)}`; og2.font = "600 11px " + css("--mono"); const w = og2.measureText(txt).width + 12; const bx = Math.min(L+plotW-w, Math.max(L, x - w/2)); og2.fillStyle = "rgba(19,23,34,.95)"; og2.strokeStyle = "rgba(255,255,255,.3)"; roundRect(og2, bx, T+plotH+4, w, 18, 4); og2.fill(); og2.stroke(); og2.fillStyle = "#fff"; og2.textAlign = "left"; og2.textBaseline = "middle"; og2.fillText(txt, bx+6, T+plotH+13); ladder(ci); };
+  const locate = ev => { const rct = ov.getBoundingClientRect(); const x = ev.clientX-rct.left, y = ev.clientY-rct.top; const ci = Math.floor((x-L)/plotW*cols), ri = Math.floor((y-T)/rh); return {ci, ri, inside: ci>=0 && ci<cols && ri>=0 && ri<rows}; };
+  ov.addEventListener("mousemove", ev => { const p = locate(ev); if (!p.inside){ tip.style.display="none"; drawOverlay(SK.scrub); return; } drawOverlay(p.ci);
+    const row = hist[p.ci], K = rowK[p.ri], m = new Map(row.k.map(v=>[v[0],v])); const xs = bins[p.ri].map(k => m.get(k)).filter(Boolean); const sum = i => xs.reduce((a,v)=>a+v[i],0);
+    tip.style.display="block"; tip.style.left=(ev.clientX+14)+"px"; tip.style.top=(ev.clientY+14)+"px"; tip.textContent = `${fmt(K)} at ${etTime(row.t)}\n${sum(1) >= 0 ? "dealers long" : "dealers short"} ${money(sum(1)*1e5)}${isDelta ? `  (Δ ${money(grid[p.ci][p.ri]*1e5)})` : ""}\nVEX ${money(sum(2)*1e4)}  DEX ${money(sum(3)*1e6)}`; });
+  ov.addEventListener("mouseleave", () => { tip.style.display="none"; drawOverlay(SK.scrub); });
+  ov.addEventListener("click", ev => { const p = locate(ev); SK.scrub = p.inside && SK.scrub !== p.ci ? p.ci : null; drawOverlay(SK.scrub); });
+  wrap.append(cv, ov);
+  // replay: step through the session, ladder follows
+  const replayBtn = h("button",{class:"btn small", onclick:()=>{ if (SK.timer){ clearInterval(SK.timer); SK.timer = null; replayBtn.textContent = "▶ Replay"; return; } let i = 0; replayBtn.textContent = "■ Stop"; SK.timer = setInterval(() => { SK.scrub = i; drawOverlay(i); i++; if (i >= cols){ clearInterval(SK.timer); SK.timer = null; replayBtn.textContent = "▶ Replay"; } }, 120); }}, "▶ Replay");
+  box.querySelector(".sk-head")?.append(replayBtn);
+  // ---- ladder (HTML): prices top to bottom, one line each, with the action ----
+  const ladderEl = h("div",{class:"ladder"});
+  const ladder = ci => {
+    const col = ci == null ? lastCol : grid[ci], sp = ci == null ? spotNow : hist[ci].spot, t = ci == null ? "now" : etTime(hist[ci].t);
+    const rowsL = [];
+    const push = (K, name, kind, size) => { if (!K) return; if (rowsL.some(r => r.K === K)) { const r = rowsL.find(r => r.K === K); r.name += " · " + name; return; } rowsL.push({K, name, kind, size}); };
+    const sizeAt = K => { const ri = rowK.findIndex(k => k <= K); return ri >= 0 ? col[ri]*unit : null; };
+    push(c.callWall?.K, "Call wall", "sell", sizeAt(c.callWall?.K)); if (above) push(above.K, "Long node above", "sell", above.v*unit);
+    if (king) push(king.K, "King node", king.K > sp ? "sell" : "buy", king.v*unit);
+    push(sp, "Spot", "spot", null);
+    push(c.flip, "Gamma flip", sp > c.flip ? "line" : "reclaim", sizeAt(c.flip));
+    if (below) push(below.K, "Long node below", "buy", below.v*unit); push(c.putWall?.K, "Put wall", "buy", sizeAt(c.putWall?.K));
+    if (short) push(short.K, "Short node", "avoid", short.v*unit);
+    rowsL.forEach(r => { if (r.kind !== "spot" && r.size != null && r.size < 0 && !/flip/i.test(r.name)) r.kind = "avoid"; });
+    rowsL.sort((a,b)=>b.K-a.K);
+    const verb = {sell:["SELL / TP","#FCA5A5"], buy:["BUY DIP","#5EEAD4"], spot:["NOW","#FFFFFF"], line:["HOLD ABOVE","#C8D0DC"], reclaim:["RECLAIM","#C8D0DC"], avoid:["DON'T FADE","#FCA5A5"]};
+    ladderEl.replaceChildren(h("div",{class:"ladder-head"}, h("span",null,"Price ladder"), h("span",{class:"hint"}, t)),
+      ...rowsL.map(r => { const [v,col] = verb[r.kind]; return h("div",{class:"lrow"+(r.kind==="spot"?" spot":""), onclick:()=>{ if (r.kind !== "spot"){ S.inspect = {exp:S.exps[0], K:r.K}; } }},
+        h("span",{class:"num lpx"}, fmt(r.K, r.kind==="spot"?2:0)), h("span",{class:"lname"}, r.name, r.size != null ? h("small",null, " " + (r.size>=0?"long ":"short ") + money(Math.abs(r.size))) : null), h("span",{class:"lverb", style:{color:col}}, v)); }),
+      h("div",{class:"ladder-foot"}, c.em[0] ? `Expected range ${fmt(c.spot - c.em[0].move)} – ${fmt(c.spot + c.em[0].move)}` : "", h("br"), c.total > 0 ? "Positive gamma: dips get bought, rallies get sold." : "Negative gamma: moves extend — trade with the break, not against it."));
+  };
+  ladder(null); if (SK.scrub != null && SK.scrub < cols) drawOverlay(SK.scrub);
+  box.append(h("div",{class:"sk-body"}, h("div",{class:"heat", style:{padding:"4px", overflow:"auto", flex:"none"}}, wrap), ladderEl));
+  // legend under the map, one line
+  box.append(h("div",{class:"sk-legend"}, h("span",null, h("i",{style:{background:"#78C4AA"}}), isDelta ? "strengthening" : "dealers long — support, pins"), h("span",null, h("i",{style:{background:"#AA8CD2"}}), isDelta ? "unwinding" : "dealers short — accelerates"), h("span",null, h("i",{style:{background:"#fff"}}), "price"), h("span",null,"♛ king node"), h("span",{class:"hint"},"hover for size · click a column to pin a time · times in ET")));
+  return box;
+}

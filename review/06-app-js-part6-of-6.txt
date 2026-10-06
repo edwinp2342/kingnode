@@ -1,0 +1,254 @@
+// KINGNODE app.html — JavaScript part 6 of 6 (see 00-overview.md)
+function paintHalalBtn(){ const b = document.getElementById("halalBtn"); if (!b) return; const on = halalOnly(); b.style.background = on ? "var(--pos)" : ""; b.style.color = on ? "#061013" : ""; b.textContent = on ? "☪ Halal only" : "☪ Halal"; }
+
+// ---------- Playbook: event-driven, flow-tailing swing setups with the sizing rules baked in ----------
+const JR_KEY = "kingnode:journal";
+function getJournal(){ try { return JSON.parse(localStorage.getItem(JR_KEY)||"[]"); } catch { return []; } }
+function setJournal(l){ try { localStorage.setItem(JR_KEY, JSON.stringify(l.slice(-500))); } catch {} }
+function chainSnapshot(){ const c = S.calc; if (!c) return null; const tr = (S.flow?.trades||[]).filter(t=>t.u===S.sym); const b = tr.filter(t=>(t.cp==="C"&&t.side==="A")||(t.cp==="P"&&t.side==="B")).reduce((a,t)=>a+t.prem,0), sl = tr.filter(t=>(t.cp==="P"&&t.side==="A")||(t.cp==="C"&&t.side==="B")).reduce((a,t)=>a+t.prem,0);
+  const rvInfo = realizedVol(S.bars); return { sym:S.sym, spot:c.spot, cw:c.callWall?.K||null, pw:c.putWall?.K||null, flip:c.flip, king:c.top[0] ? `${c.top[0].K} ${c.top[0].exp}` : null, gex:c.total, vex:c.totalVex, em:c.em[0]?.move||null, iv30:ivAt(30), rv:rvInfo?.rv||null, flowLean:(b-sl)/((b+sl)||1), demo:S.demo, t:Date.now() }; }
+function journalOpen(pos){ const j = getJournal(); j.push({ id: pos.id || (pos.id = uidj()), opened:Date.now(), sym:pos.sym, contract:`${pos.sym} ${pos.exp} ${fmt(pos.K)}${pos.cp}`, entry:pos.entry, qty:pos.qty, thesis:pos.thesis||"", snap:chainSnapshot(), notes:"" }); setJournal(j); }
+function journalClose(pos, exitPx, why){ const j = getJournal(); const e = j.find(x => x.id === pos.id); if (!e) return; e.closed = Date.now(); e.exit = exitPx; e.pnl = (exitPx - pos.entry)*pos.qty*100; e.pnlPct = (exitPx/pos.entry-1)*100; e.why = why||""; e.snapExit = chainSnapshot(); setJournal(j); }
+function uidj(){ return Math.random().toString(36).slice(2,10); }
+const PB_KEY = "kingnode:playbook";
+const PB_DEF = {account:25000, maxRiskPct:5, maxPositions:3, minDte:30, stopPct:20, positions:[]};
+function getPb(){ try { return {...PB_DEF, ...JSON.parse(localStorage.getItem(PB_KEY)||"{}")}; } catch { return {...PB_DEF}; } }
+function setPb(p){ try { localStorage.setItem(PB_KEY, JSON.stringify(p)); } catch {} }
+function flowSetups(){
+  const c = S.calc, tr = (S.flow?.trades||[]).filter(t => t.u === S.sym), pb = getPb();
+  const agg = new Map();
+  for (const t of tr){ const k = `${t.exp}|${t.K}|${t.cp}`; const a = agg.get(k) || {exp:t.exp, K:t.K, cp:t.cp, prem:0, n:0, ask:0, sweeps:0, blocks:0, last:0, sz:0}; a.prem += t.prem; a.n++; a.sz += t.sz; if (t.side==="A") a.ask += t.prem; if (t.kind==="sweep") a.sweeps++; if (t.kind==="block") a.blocks++; a.last = Math.max(a.last, t.t); agg.set(k,a); }
+  const out = [];
+  for (const a of agg.values()){
+    const d = dte(a.exp); if (d < pb.minDte) continue;                       // 30+ DTE only — that's the rule
+    const ct = c.allContracts.find(x => x.exp===a.exp && x.K===a.K && x.type===a.cp); const oi = ct?.oi || 0, vol = ct?.vol || 0, volOi = oi ? vol/oi : 0;
+    const askPct = a.ask/a.prem; if (askPct < 0.55) continue;                  // paid up, not sold
+    const bullish = a.cp === "C";
+    const aligned = bullish ? (c.spot > (c.flip||0) && (c.callWall?.K||Infinity) > a.K*0.98) : (c.spot < (c.flip||Infinity) || (c.putWall?.K||0) < a.K);
+    const score = Math.round(Math.min(100, a.prem/2e5*20 + askPct*25 + Math.min(20, volOi*5) + a.sweeps*6 + a.blocks*4 + (aligned ? 15 : 0)));
+    out.push({...a, dte:d, oi, vol, volOi, askPct, score, aligned, bullish, mid:ct?.mid||0, delta:ct?.delta||0, iv:ct?.iv||0});
+  }
+  return out.sort((a,b)=>b.score-a.score).slice(0,12);
+}
+function viewPlaybook(){
+  const c = S.calc, pb = getPb(), box = h("div",null);
+  const risk$ = pb.account * pb.maxRiskPct/100, open = pb.positions.filter(p=>!p.closed);
+  const field = (label, key, step=1) => h("label",{class:"hint",style:{display:"flex",flexDirection:"column",gap:"3px"}}, label, h("input",{type:"number", step, value:pb[key], style:{width:"120px",background:"var(--bg)",border:"1px solid var(--rule2)",borderRadius:"4px",padding:"5px 8px",color:"var(--ink)",fontFamily:"var(--mono)"}, onchange:e=>{ pb[key] = Number(e.target.value)||pb[key]; setPb(pb); renderTabs(); }}));
+  box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,"Your rules"),
+    h("div",{style:{display:"flex",gap:"16px",flexWrap:"wrap",alignItems:"flex-end"}}, field("Account $","account",100), field("Max risk per trade %","maxRiskPct",0.5), field("Max open positions","maxPositions"), field("Min DTE for directional","minDte"), field("Premium stop %","stopPct"),
+      h("div",{class:"num",style:{marginLeft:"auto",textAlign:"right"}}, h("div",{style:{fontSize:"20px",fontWeight:600}}, money(risk$)), h("div",{class:"hint"},"max risk per trade"), h("div",{class:"hint",style:{color: open.length >= pb.maxPositions ? "var(--neg)" : "var(--pos)"}}, `${open.length} / ${pb.maxPositions} positions open`)))));
+  // setups
+  const setups = flowSetups();
+  box.append(h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,`Flow-tail candidates on ${S.sym} — ${pb.minDte}+ DTE, paid at the ask, ranked`),
+    setups.length ? h("div",{style:{overflow:"auto"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Score","Contract","DTE","Premium","Prints","At ask","Vol/OI","Sweeps","Positioning","Size at max risk",""].map(x=>h("th",null,x)))),
+      h("tbody",null, setups.map(sp => { const contracts = sp.mid ? Math.max(1, Math.floor(risk$ / (sp.mid*100*pb.stopPct/100))) : 0; // sizing uses your premium stop
+        return h("tr",null, h("td",{class:"num",style:{fontWeight:700,color: sp.score>=70?"var(--pos)":sp.score>=45?"var(--gold)":"var(--muted)"}}, sp.score), h("td",{class:sp.cp==="C"?"c":"p"},`${S.sym} ${fmt(sp.K)} ${sp.cp==="C"?"Call":"Put"} ${sp.exp}`), h("td",null,sp.dte), h("td",null,money(sp.prem)), h("td",null,sp.n), h("td",null,fmt(sp.askPct*100,0)+"%"), h("td",null,sp.volOi ? fmt(sp.volOi,1)+"×" : "—"), h("td",null,sp.sweeps||""),
+          h("td",{class:sp.aligned?"c":"p"}, sp.aligned ? "aligned" : "against"), h("td",null, sp.mid ? `${contracts} @ ${fmt(sp.mid,2)}` : "—"),
+          h("td",null, h("button",{class:"btn small", onclick:()=>{ planTrade(sp, contracts); }},"Plan"))); }))))
+    : h("p",{class:"hint",style:{margin:0}},`Nothing qualifies yet: no ${pb.minDte}+ DTE contract on ${S.sym} has been bought at the ask with real size today. Check back after the open, or lower Min DTE for a look at shorter-dated flow.`)));
+  // plan
+  if (S.plan) box.append(S.plan);
+  // positions
+  box.append(h("div",{class:"card"}, h("h2",null,"Positions (your three-position limit)"),
+    open.length ? h("div",{style:{overflow:"auto"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Contract","Entry","Mark","P&L","Qty","Δ","Θ/day","Weekend","Next event","Breakeven","+1% today","flat 3d","−1% today","Stop","Invalidation","Target","DTE",""].map(x=>h("th",null,x)))),
+      h("tbody",null, open.map(p => { if (p.shares){ const px = p.sym === S.sym ? c.spot : null; return h("tr",null, h("td",{class:"c"},`${p.sym} shares`), h("td",null,fmt(p.entry,2)), h("td",null, px ? fmt(px,2) : h("span",{class:"hint"},"switch ticker")), h("td",{class: px==null?"":px>=p.entry?"c":"p", style:{fontWeight:600}}, px ? `${px>=p.entry?"+":""}${fmt((px/p.entry-1)*100,1)}%` : "—"), h("td",null,p.qty), h("td",null,"1.00"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,"—"), h("td",null,h("button",{class:"btn small", onclick:()=>{ const ex = Number(prompt("Exit price per share:", px ? fmt(px,2) : "")); if (!ex) return; journalClose({...p, entry:p.entry/100, qty:p.qty}, ex/100, prompt("Why?","")); p.closed = Date.now(); p.exit = ex; setPb(pb); renderTabs(); }},"Close"))); }
+        const live = p.sym === S.sym ? (c.allContracts||[]).find(y => y.exp===p.exp && y.K===p.K && y.type===p.cp) : null; const mark = live?.mid ?? null; const pl = mark != null ? (mark/p.entry-1)*100 : null;
+        const T0 = Math.max(0.5, dte(p.exp))/365, iv = live?.iv || 0.2, base = live ? bsPrice(c.spot, p.K, T0, iv, p.cp) : 0, ratio = live && base ? mark/base : 1;
+        const sc = (pxPct, days) => live ? bsPrice(c.spot*(1+pxPct/100), p.K, Math.max(0,T0-days/365), iv, p.cp)*ratio : null; const sv = v => v == null ? "—" : `${fmt(v,2)} (${(v/p.entry-1)>=0?"+":""}${fmt((v/p.entry-1)*100,0)}%)`;
+        const theta = live ? (bsPrice(c.spot, p.K, Math.max(0,T0-1/365), iv, p.cp) - base)*ratio : null;
+        return h("tr",null, h("td",{class:p.cp==="C"?"c":"p"},`${p.sym} ${fmt(p.K)} ${p.cp} ${p.exp}`), h("td",null,fmt(p.entry,2)), h("td",null, mark != null ? fmt(mark,2) : h("span",{class:"hint"},"switch ticker")), h("td",{class:pl==null?"":pl>=0?"c":"p", style:{fontWeight:600}}, pl == null ? "—" : `${pl>=0?"+":""}${fmt(pl,1)}%`), h("td",null,p.qty), h("td",null, live ? fmt(live.delta,2) : "—"), h("td",{class:"p"}, theta != null ? fmt(theta,2) : "—"), h("td",{class:"p", title:"Theta × 3 nights, as % of the current mark"}, theta != null && mark ? `${fmt(theta*3*p.qty*100,0)} (${fmt(theta*3/mark*100,0)}%)` : "—"), h("td",{class: nextEventBefore(p.exp) && nextEventBefore(p.exp).days <= 3 ? "p" : ""}, nextEventBefore(p.exp) ? `${nextEventBefore(p.exp).name} in ${nextEventBefore(p.exp).days}d` : "none before expiry"), h("td",null, fmt(p.cp==="C" ? p.K+p.entry : p.K-p.entry,2)),
+          h("td",{class:"c"},sv(sc(1,0))), h("td",null,sv(sc(0,3))), h("td",{class:"p"},sv(sc(-1,0))), h("td",null,fmt(p.entry*(1-pb.stopPct/100),2)), h("td",null,p.inval ? fmt(p.inval) : "—"), h("td",null,fmt(p.target)), h("td",{class:dte(p.exp)<21?"p":""},dte(p.exp)), h("td",null,h("button",{class:"btn small", onclick:()=>{ const px = Number(prompt("Exit price per contract:", mark != null ? fmt(mark,2) : "")); if (!px) return; const why = prompt("Why? (target / stop / thesis broke / event / other)",""); journalClose(p, px, why); p.closed = Date.now(); p.exit = px; setPb(pb); renderTabs(); }},"Close"))); }))))
+    : h("p",{class:"hint",style:{margin:0}},"No open positions. Plan one from the candidates above, or add one you already hold."),
+    h("div",{class:"actions"}, h("button",{class:"btn small", onclick:()=>{ const K = Number(prompt(`Strike for ${S.sym}:`)); if (!K) return; const cp = (prompt("Call or put? (C/P)","C")||"C").toUpperCase().startsWith("P") ? "P" : "C"; const exp = prompt("Expiration (YYYY-MM-DD):", S.allExps[0]||""); if (!exp) return; const entry = Number(prompt("Entry price per contract:")); const qty = Number(prompt("Contracts:","1")); if (!entry || !qty) return; const pos = {sym:S.sym, exp, K, cp, entry, qty, target:null, inval:null, thesis:"Added manually", opened:Date.now()}; journalOpen(pos); pb.positions.push(pos); setPb(pb); renderTabs(); }},"+ Add a position I already hold"),
+    h("button",{class:"btn small", onclick:()=>{ const qty = Number(prompt(`Shares of ${S.sym}:`)); if (!qty) return; const entry = Number(prompt("Entry price per share:")); if (!entry) return; const pos = {sym:S.sym, shares:true, entry, qty, thesis:"Shares", opened:Date.now()}; journalOpen({...pos, exp:"", K:0, cp:""}); pb.positions.push(pos); setPb(pb); renderTabs(); }},"+ Add shares")),
+    h("p",{class:"hint",style:{marginTop:"8px"}},"Sizing = max risk ÷ (mid × 100 × stop%). The price invalidation (flip or near wall) is the real exit; the premium stop is the backstop. Cut quick when the thesis breaks, even green. Roll or exit under 21 DTE. IV crush after the event is the exit trigger, not a reason to hold.")));
+  return box;
+}
+function planTrade(sp, qty){
+  const c = S.calc, pb = getPb();
+  const target = sp.bullish ? (c.callWall?.K || c.spot + (c.em[0]?.move||0)) : (c.putWall?.K || c.spot - (c.em[0]?.move||0));
+  const inval = sp.bullish ? (c.flip && c.flip < c.spot ? c.flip : c.putWall?.K) : (c.flip && c.flip > c.spot ? c.flip : c.callWall?.K);
+  const thesis = `${sp.bullish?"Bullish":"Bearish"} flow-tail: ${money(sp.prem)} bought at the ask (${fmt(sp.askPct*100,0)}%) in ${sp.exp} ${fmt(sp.K)}${sp.cp}, ${sp.sweeps} sweeps, vol/OI ${fmt(sp.volOi,1)}×. Positioning ${sp.aligned?"aligned":"against"}: spot ${fmt(c.spot)} vs flip ${fmt(c.flip)}, walls ${fmt(c.putWall?.K)}/${fmt(c.callWall?.K)}.`;
+  S.plan = h("div",{class:"card",style:{marginBottom:"12px",borderColor:"var(--gold)"}}, h("h2",null,"Trade plan"),
+    h("div",{class:"kv"}, h("div",null,h("span",null,"Contract"),h("span",{class:sp.cp==="C"?"c":"p"},`${S.sym} ${fmt(sp.K)}${sp.cp} ${sp.exp} (${sp.dte} DTE)`)), h("div",null,h("span",null,"Entry (mid)"),h("span",null,fmt(sp.mid,2))), h("div",null,h("span",null,"Size"),h("span",null,`${qty} contracts = ${money(qty*sp.mid*100)}`)), h("div",null,h("span",null,`Risk at ${pb.stopPct}% stop`),h("span",null,money(qty*sp.mid*100*pb.stopPct/100))), h("div",null,h("span",null,"Underlying target"),h("span",null,fmt(target))), h("div",null,h("span",null,"Invalidation"),h("span",null,fmt(inval))), h("div",null,h("span",null,"Delta"),h("span",null,fmt(sp.delta,2))), h("div",null,h("span",null,"IV"),h("span",null,fmt(sp.iv*100,1)+"%"))),
+    h("p",{style:{margin:"10px 0"}}, thesis),
+    h("div",{class:"actions"}, h("button",{class:"btn gold", disabled: pb.positions.filter(p=>!p.closed).length >= pb.maxPositions, onclick:()=>{ const pos = {sym:S.sym, exp:sp.exp, K:sp.K, cp:sp.cp, entry:sp.mid, qty, target, inval, thesis, opened:Date.now()}; journalOpen(pos); pb.positions.push(pos); setPb(pb); S.plan = null; renderTabs(); }}, pb.positions.filter(p=>!p.closed).length >= pb.maxPositions ? "Position limit reached" : "Add to positions"), h("button",{class:"btn", onclick:()=>{ S.plan = null; renderTabs(); }},"Dismiss"), h("span",{class:"hint"},"Not advice — it's your rules applied to today's tape.")));
+  renderTabs(); document.querySelector(".card[style*='gold']")?.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+// ---------- Contract flow: every contract that printed, aggregated ----------
+function viewContractFlow(){
+  const f = S.flow, box = h("div",null);
+  if (!f){ box.append(h("div",{class:"empty"},"Loading tape…")); return box; }
+  const tr = f.trades.filter(t => S.flowExp==="all" || t.exp===S.flowExp);
+  const agg = new Map();
+  for (const t of tr){ const k = `${t.exp}|${t.K}|${t.cp}`; const a = agg.get(k) || {exp:t.exp, K:t.K, cp:t.cp, prem:0, n:0, ask:0, bid:0, sz:0, sweeps:0, blocks:0, first:t.t, last:t.t, pts:[], cum:0, bull:0, bear:0};
+    a.prem += t.prem; a.n++; a.sz += t.sz; if (t.side==="A") a.ask += t.prem; if (t.side==="B") a.bid += t.prem; if (t.kind==="sweep") a.sweeps++; if (t.kind==="block") a.blocks++; a.first = Math.min(a.first,t.t); a.last = Math.max(a.last,t.t);
+    const bullish = (t.cp==="C"&&t.side==="A")||(t.cp==="P"&&t.side==="B"), bearish = (t.cp==="P"&&t.side==="A")||(t.cp==="C"&&t.side==="B"); if (bullish) a.bull += t.prem; if (bearish) a.bear += t.prem;
+    agg.set(k, a); }
+  for (const a of agg.values()){ const seq = tr.filter(t => t.exp===a.exp && t.K===a.K && t.cp===a.cp).sort((x,y)=>x.t-y.t); let c = 0; a.pts = seq.map(t => { c += (t.side==="A" ? t.prem : t.side==="B" ? -t.prem : 0); return c; }); }
+  const rows = [...agg.values()].sort((x,y) => S.cfSort==="prem" ? y.prem-x.prem : S.cfSort==="n" ? y.n-x.n : S.cfSort==="ask" ? (y.ask/y.prem)-(x.ask/x.prem) : y.last-x.last);
+  const spark = a => { if (a.pts.length < 2) return ""; const W = 90, H = 22, vmax = Math.max(1, ...a.pts.map(Math.abs)); const svg = svgEl("svg",{viewBox:`0 0 ${W} ${H}`, width:W, height:H}); const pts = a.pts.map((v,i)=>`${i/(a.pts.length-1)*W},${H/2 - v/vmax*(H/2-1)}`).join(" "); svg.append(svgEl("line",{x1:0,y1:H/2,x2:W,y2:H/2,stroke:"var(--rule2)"})); svg.append(svgEl("polyline",{points:pts, fill:"none", stroke: a.pts.at(-1) >= 0 ? "var(--pos)" : "var(--neg)", "stroke-width":1.4})); return svg; };
+  const lean = a => { const n = a.bull - a.bear, d = a.bull + a.bear || 1; return n/d; };
+  box.append(h("div",{class:"ctl"}, h("span",null,`${rows.length} contracts printed`), h("label",null,"Expiry", h("select",{onchange:e=>{S.flowExp=e.target.value; renderTabs();}}, [["all","All"], ...[...new Set(f.trades.map(t=>t.exp))].sort().map(e=>[e,e.slice(5)])].map(([v,l])=>h("option",{value:v, selected:S.flowExp===v}, l)))),
+    h("label",null,"Sort", h("select",{onchange:e=>{S.cfSort=e.target.value; renderTabs();}}, [["prem","Premium"],["n","Prints"],["ask","% at ask"],["last","Most recent"]].map(([v,l])=>h("option",{value:v, selected:S.cfSort===v}, l)))),
+    h("span",{style:{flex:1}}), S.flowDemo ? h("span",{class:"badge demo"},"Demo flow") : h("span",{class:"badge"+(f.live?" pro":"")}, f.live ? "Live" : "Collector offline")));
+  box.append(h("div",{style:{overflow:"auto", maxHeight:"70vh"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Contract","Premium","Prints","Avg size","At ask","At bid","Lean","Sweeps","Blocks","Ask − bid, cumulative","First","Last"].map(x=>h("th",null,x)))),
+    h("tbody",null, rows.slice(0,300).map(a => h("tr",{style:{cursor:"pointer"}, onclick:()=>{ S.inspect={exp:a.exp,K:a.K}; S.tab="heat"; renderTabs(); }},
+      h("td",{class:a.cp==="C"?"c":"p"},`${S.sym} ${fmt(a.K)} ${a.cp==="C"?"Call":"Put"} ${a.exp.slice(5)}`), h("td",{style:{fontWeight:600}},money(a.prem)), h("td",null,a.n), h("td",null,fmt(a.sz/a.n)), h("td",{class:"c"},fmt(a.ask/a.prem*100,0)+"%"), h("td",{class:"p"},fmt(a.bid/a.prem*100,0)+"%"),
+      h("td",{class:lean(a)>=0?"c":"p"}, `${lean(a)>=0?"+":""}${fmt(lean(a)*100,0)}%`), h("td",null,a.sweeps||""), h("td",null,a.blocks||""), h("td",null,spark(a)), h("td",null,new Date(a.first).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})), h("td",null,new Date(a.last).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}))))))));
+  box.append(h("p",{class:"hint",style:{marginTop:"10px"}},"Lean = (bullish − bearish premium) / total, where calls at the ask and puts at the bid count bullish. The sparkline is cumulative ask-minus-bid premium for that contract through the day: rising means buyers keep paying up."));
+  return box;
+}
+
+// ---------- Institutions: where the big money is leaning ----------
+async function loadInst(){
+  const sym = S.sym; if (S.inst && S.inst.sym === sym && Date.now() - S.inst.at < 5*60e3) return;
+  const get = async (u) => { try { const r = await fetch(u); if (!r.ok) throw 0; return await r.json(); } catch { return null; } };
+  const [sv, ins, daily, intra] = await Promise.all([get(`/api/shortvol?symbol=${sym}`), get(`/api/insiders?symbol=${sym}`), get(`/api/bars?symbol=${sym}&interval=1d&range=6mo`), get(`/api/bars?symbol=${sym}&interval=5m&range=5d`)]);
+  if (!S.flow || S.flow.sym !== sym) { try { const r = await fetch(`/api/flow?symbol=${sym}`); const j = r.ok ? await r.json() : null; if (j?.trades?.length){ S.flow = {...j, sym}; S.flowDemo = false; } else { S.flow = {at:Date.now(), live:false, sym, trades:synthFlow()}; S.flowDemo = true; } } catch { S.flow = {at:Date.now(), live:false, sym, trades:synthFlow()}; S.flowDemo = true; } }
+  const spot = S.chain?.spot || 100;
+  const demo = { sv: !sv?.days?.length, ins: !ins?.filings, daily: !daily?.bars?.length, intra: !intra?.bars?.length };
+  S.inst = { sym, at: Date.now(), demo,
+    sv: sv?.days?.length ? sv.days : synthShort(spot),
+    ins: ins?.filings ? ins : null,
+    daily: daily?.bars?.length ? daily.bars : synthBars(spot, "1d"),
+    intra: intra?.bars?.length ? intra.bars : synthBars(spot, "5m") };
+  if (S.tab === "inst") renderTabs();
+}
+function synthShort(spot){ let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647; const out = []; const d = new Date(); let n = 0; while (out.length < 8){ d.setDate(d.getDate()-1); if (d.getDay()%6===0) continue; const tot = Math.round(2e7 + rnd()*3e7); out.unshift({date:d.toISOString().slice(0,10), totalVol:tot, shortVol:Math.round(tot*(0.42+rnd()*0.2)), ratio:null}); } out.forEach(x => x.ratio = x.shortVol/x.totalVol); return out; }
+function cmf(bars, n=20){ let mfv = 0, vol = 0; for (const b of bars.slice(-n)){ const [,o,h,l,c,v] = b; const m = h===l ? 0 : ((c-l)-(h-c))/(h-l); mfv += m*v; vol += v; } return vol ? mfv/vol : 0; }
+function adLine(bars){ let ad = 0; return bars.map(b => { const [,o,h,l,c,v] = b; ad += (h===l ? 0 : ((c-l)-(h-c))/(h-l))*v; return ad; }); }
+function viewInst(){
+  const I = S.inst, box = h("div",null);
+  if (!I || I.sym !== S.sym){ box.append(h("div",{class:"empty"},"Reading institutional signals…")); return box; }
+  const c = S.calc, spot = c.spot;
+  // 1) Options flow lean
+  const tr = (S.flow?.trades||[]).filter(t => t.u === S.sym && t.prem >= 25000);
+  const bull = tr.filter(t => (t.cp==="C"&&t.side==="A") || (t.cp==="P"&&t.side==="B")).reduce((a,t)=>a+t.prem,0);
+  const bear = tr.filter(t => (t.cp==="P"&&t.side==="A") || (t.cp==="C"&&t.side==="B")).reduce((a,t)=>a+t.prem,0);
+  const lean = (bull-bear)/((bull+bear)||1);
+  // 2) Money flow from bars
+  const daily = I.daily, intra = I.intra;
+  const vols = daily.map(b=>b[5]), avg20 = vols.slice(-21,-1).reduce((a,b)=>a+b,0)/Math.max(1,Math.min(20,vols.length-1)), rvol = avg20 ? vols.at(-1)/avg20 : 1;
+  const cmf20 = cmf(daily, 20), ad = adLine(daily), adTrend = ad.length > 10 ? ad.at(-1) - ad.at(-10) : 0;
+  const px10 = daily.length > 10 ? daily.at(-1)[4]/daily.at(-11)[4]-1 : 0;
+  const divergence = (adTrend > 0 && px10 < -0.005) ? "Accumulation into weakness — price down, A/D up" : (adTrend < 0 && px10 > 0.005) ? "Distribution into strength — price up, A/D down" : adTrend > 0 ? "Accumulation confirming price" : "Distribution confirming price";
+  const today = intra.filter(b => new Date(b[0]).toDateString() === new Date(intra.at(-1)[0]).toDateString());
+  const iAvg = intra.reduce((a,b)=>a+b[5],0)/Math.max(1,intra.length);
+  const spikes = today.filter(b => b[5] > iAvg*3).map(b => ({t:b[0], v:b[5], px:b[4], up:b[4]>=b[1]})).slice(-12);
+  const vw = vwap(today), vwDev = vw.length ? (today.at(-1)[4]/vw.at(-1)-1)*100 : 0;
+  // 3) Short volume
+  const sv = I.sv, svLast = sv.at(-1), svAvg = sv.reduce((a,x)=>a+x.ratio,0)/sv.length, svTrend = sv.length > 3 ? sv.at(-1).ratio - sv.slice(0,3).reduce((a,x)=>a+x.ratio,0)/3 : 0;
+  // composite
+  const score = Math.max(-100, Math.min(100, Math.round(lean*40 + Math.sign(adTrend)*Math.min(25, Math.abs(px10)*800+10) + Math.max(-20, Math.min(20, cmf20*100)) - svTrend*150)));
+  const card = (title, kids) => h("div",{class:"card", style:{background:"var(--panel2)"}}, h("h2",null,title), ...kids);
+  const gauge = h("div",{style:{margin:"6px 0 10px"}}, h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"12px",color:"var(--muted)"}}, h("span",null,"Selling"), h("span",{class:"num",style:{color:score>=0?"var(--pos)":"var(--neg)",fontWeight:600,fontSize:"14px"}}, `${score>0?"+":""}${score}`), h("span",null,"Buying")),
+    h("div",{style:{position:"relative",height:"10px",borderRadius:"5px",background:"linear-gradient(90deg,var(--neg),var(--rule) 50%,var(--pos))",marginTop:"4px"}}, h("div",{style:{position:"absolute",left:`calc(${(score+100)/2}% - 6px)`,top:"-3px",width:"12px",height:"16px",borderRadius:"3px",background:"var(--ink)"}})));
+  box.append(h("div",{class:"grid2",style:{marginBottom:"14px"}},
+    card("Institutional lean (composite)", [gauge, h("p",{class:"hint",style:{margin:0}}, `Blends options flow at the ask, accumulation/distribution, Chaikin money flow and the off-exchange short-volume trend. ${score > 25 ? "Big money is net buying." : score < -25 ? "Big money is net selling." : "No strong lean — positioning, not conviction, is driving price."}`)]),
+    card("Options flow lean (prints ≥ $25K)", [h("div",{class:"kv"}, h("div",null,h("span",null,"Bullish premium (calls bought, puts sold)"),h("span",{class:"c"},money(bull))), h("div",null,h("span",null,"Bearish premium (puts bought, calls sold)"),h("span",{class:"p"},money(bear))), h("div",null,h("span",null,"Net lean"),h("span",{class:lean>=0?"c":"p"},`${lean>=0?"+":""}${fmt(lean*100,0)}%`)), h("div",null,h("span",null,"Prints"),h("span",null,tr.length))), S.flowDemo ? h("p",{class:"hint",style:{margin:"8px 0 0"}},"Demo prints — run the collector for live flow.") : null])));
+  box.append(h("div",{class:"grid2",style:{marginBottom:"14px"}},
+    card("Money flow (stock)", [h("div",{class:"kv"}, h("div",null,h("span",null,"Relative volume today"),h("span",{class:rvol>1.3?"c":""},fmt(rvol,2)+"×")), h("div",null,h("span",null,"Chaikin money flow (20d)"),h("span",{class:cmf20>=0?"c":"p"},fmt(cmf20,3))), h("div",null,h("span",null,"A/D line, 10-day change"),h("span",{class:adTrend>=0?"c":"p"},(adTrend>=0?"+":"")+fmt(adTrend/1e6,1)+"M")), h("div",null,h("span",null,"Price, 10 days"),h("span",{class:px10>=0?"c":"p"},pct(px10*100))), h("div",null,h("span",null,"Price vs VWAP today"),h("span",{class:vwDev>=0?"c":"p"},pct(vwDev)))), h("p",{class:"hint",style:{margin:"8px 0 0"}}, divergence + ".")]),
+    card("Off-exchange short volume (FINRA)", [h("div",{style:{display:"flex",alignItems:"flex-end",gap:"4px",height:"70px",margin:"6px 0"}}, sv.map(x => h("div",{title:`${x.date}: ${fmt(x.ratio*100,1)}% short of ${fmt(x.totalVol)}`, style:{flex:1,height:(x.ratio*100)+"%",background:x.ratio>svAvg?"var(--neg)":"var(--pos)",borderRadius:"3px 3px 0 0",opacity:.85}}))),
+      h("div",{class:"kv"}, h("div",null,h("span",null,"Latest"),h("span",null,svLast ? `${fmt(svLast.ratio*100,1)}% (${svLast.date.slice(5)})` : "—")), h("div",null,h("span",null,"8-day average"),h("span",null,fmt(svAvg*100,1)+"%")), h("div",null,h("span",null,"Trend"),h("span",{class:svTrend<=0?"c":"p"},(svTrend>0?"+":"")+fmt(svTrend*100,1)+" pts"))),
+      h("p",{class:"hint",style:{margin:"8px 0 0"}}, "Short share of dark-pool/off-exchange volume. Rising with a falling price reads as distribution; falling while price holds reads as covering or accumulation." + (I.demo.sv ? " Demo values." : ""))])));
+  box.append(h("div",{class:"grid2"},
+    card("Block-sized bars today (volume > 3× average)", [spikes.length ? h("table",{class:"data"}, h("thead",null,h("tr",null,["Time","Volume","Price","Direction"].map(x=>h("th",null,x)))), h("tbody",null, spikes.map(x => h("tr",null, h("td",null,new Date(x.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})), h("td",null,fmt(x.v)), h("td",null,fmt(x.px,2)), h("td",{class:x.up?"c":"p"},x.up?"Bought up":"Sold down"))))) : h("p",{class:"hint",style:{margin:0}},"No unusual-volume bars yet today."), I.demo.intra ? h("p",{class:"hint"},"Demo bars.") : null]),
+    card("Insider filings (SEC Form 4, last 90 days)", [I.ins ? (I.ins.filings.length ? h("div",{style:{maxHeight:"220px",overflow:"auto"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Filed","Filer",""].map(x=>h("th",null,x)))), h("tbody",null, I.ins.filings.slice(0,25).map(f => h("tr",null, h("td",null,f.filed), h("td",{style:{textAlign:"left",whiteSpace:"normal"}},f.entity), h("td",null,h("a",{href:f.url,target:"_blank",rel:"noopener"},"open"))))))) : h("p",{class:"hint",style:{margin:0}},"No Form 4 filings found in the last 90 days.")) : h("p",{class:"hint",style:{margin:0}}, S.sym.length <= 5 && !["SPX","SPY","QQQ","IWM","VIX","NDX","RUT"].includes(S.sym) ? "Insider data isn't reachable right now (needs a deployed server; SEC blocks browser requests)." : "Indexes and ETFs don't have insider filings.")])));
+  box.append(h("p",{class:"hint",style:{marginTop:"12px"}},"13F holdings changes are quarterly and lag 45 days; they're on the roadmap as a separate panel. Everything above is daily or intraday."));
+  return box;
+}
+
+// ---------- Contract inspector + tracked contracts ----------
+function bsPrice(S, K, T, sig, type){ if (T <= 0) return Math.max(0, type==="C" ? S-K : K-S); const sq = sig*Math.sqrt(T); const d1 = (Math.log(S/K) + 0.5*sig*sig*T)/sq, d2 = d1-sq; const N = x => 0.5*(1+erf(x/Math.SQRT2)); return type==="C" ? S*N(d1) - K*N(d2) : K*N(-d2) - S*N(-d1); }
+function scenarioBox(x){
+  const c = S.calc, T0 = Math.max(0.5, dte(x.exp))/365, iv0 = x.iv || 0.2, p0 = bsPrice(c.spot, x.K, T0, iv0, x.type), ratio = x.mid && p0 ? x.mid/p0 : 1;
+  const st = {px:0, days:0, iv:0};
+  const out = h("div",{class:"kv", style:{marginTop:"8px"}});
+  const render = () => { const Sx = c.spot*(1+st.px/100), T = Math.max(0, T0 - st.days/365), iv = Math.max(0.01, iv0 + st.iv/100); const p = bsPrice(Sx, x.K, T, iv, x.type)*ratio; const ch = x.mid ? (p/x.mid-1)*100 : 0;
+    out.replaceChildren(h("div",null,h("span",null,"Underlying"),h("span",null,`${fmt(Sx,2)} (${pct(st.px)})`)), h("div",null,h("span",null,"Days forward"),h("span",null,st.days)), h("div",null,h("span",null,"IV"),h("span",null,`${fmt(iv*100,1)}% (${st.iv>=0?"+":""}${st.iv} pts)`)), h("div",null,h("span",null,"Est. contract"),h("span",{class:ch>=0?"c":"p", style:{fontWeight:700}},`${fmt(p,2)} (${ch>=0?"+":""}${fmt(ch,0)}%)`))); };
+  const slider = (label, key, min, max, step) => h("label",{class:"hint", style:{display:"grid", gridTemplateColumns:"110px 1fr 60px", gap:"8px", alignItems:"center"}}, label, h("input",{type:"range", min, max, step, value:0, oninput:e=>{ st[key] = Number(e.target.value); e.target.nextSibling.textContent = (st[key]>=0?"+":"")+st[key]+(key==="days"?"d":key==="iv"?" pts":"%"); render(); }}), h("span",{class:"num"},"0"));
+  render();
+  return h("div",{style:{marginTop:"10px", padding:"10px", border:"1px solid var(--rule)", borderRadius:"6px"}}, h("div",{style:{fontSize:"11px",fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:"6px"}},"What if"), slider("Price move %","px",-10,10,0.25), slider("Days forward","days",0,Math.max(1,dte(x.exp)),1), slider("IV change","iv",-20,20,1), out, h("p",{class:"hint",style:{margin:"6px 0 0"}},"Black-Scholes from the quoted IV, scaled to the current mid. Good enough to see the shape of theta and vol crush; not a fill."));
+}
+function contractsAt(exp, K){ return S.calc.contracts.filter(x => x.exp === exp && x.K === K); }
+function inspectPanel(){
+  const ins = S.inspect; if (!ins) return null;
+  const list = contractsAt(ins.exp, ins.K); if (!list.length) return null;
+  const c = S.calc, tracked = getTracked();
+  const row = x => { const key = `${S.sym}|${x.exp}|${x.K}|${x.type}`, on = tracked.some(t=>t.key===key);
+    return h("div",{style:{marginBottom:"10px"}}, h("h3",null, h("span",{class:x.type==="C"?"c":"p"}, `${S.sym} ${x.exp} ${fmt(x.K)} ${x.type==="C"?"Call":"Put"}`), h("button",{class:"btn small"+(on?"":" gold"), onclick:()=>{ toggleTracked(key, x); renderTabs(); }}, on ? "Untrack" : "Track")),
+      scenarioBox(x),
+      h("div",{class:"kv", style:{marginTop:"8px"}}, [["Open interest",fmt(x.oi)],["Volume today",fmt(x.vol)],["Vol / OI", x.oi ? fmt(x.vol/x.oi,2)+"×" : "—"],["Mid",fmt(x.mid,2)],["Bid / Ask",`${fmt(x.bid,2)} / ${fmt(x.ask,2)}`],["IV",fmt(x.iv*100,1)+"%"],["Delta",fmt(x.delta,3)],["Gamma",x.gamma.toExponential(2)],["OI notional",money(x.oi*x.mid*100)],["Volume notional",money(x.vol*x.mid*100)],["Dealer gamma $",money(x.gex)],["Distance from spot",pct((x.K/c.spot-1)*100)],["DTE",dte(x.exp)]].map(([k,v]) => h("div",null, h("span",null,k), h("span",null,v))))); };
+  return h("div",{class:"insp"}, h("h3",null, h("span",null,`Contract inspector — ${fmt(ins.K)} · ${ins.exp}`), h("button",{class:"btn small", onclick:()=>{ S.inspect=null; renderTabs(); }},"Close")), ...list.sort((a,b)=>a.type<b.type?-1:1).map(row));
+}
+const TRACK_KEY = "kingnode:tracked";
+function getTracked(){ try { return JSON.parse(localStorage.getItem(TRACK_KEY)||"[]"); } catch { return []; } }
+function setTracked(l){ try { localStorage.setItem(TRACK_KEY, JSON.stringify(l.slice(0,40))); } catch {} }
+function toggleTracked(key, x){ const l = getTracked(); const i = l.findIndex(t=>t.key===key); if (i>=0) l.splice(i,1); else l.push({key, sym:S.sym, exp:x.exp, K:x.K, type:x.type, added:Date.now(), hist:[]}); setTracked(l); }
+function recordTracked(){
+  if (S.demo) return;
+  const l = getTracked(); let changed = false;
+  for (const t of l){ if (t.sym !== S.sym) continue; const x = S.calc.contracts.find(y => y.exp===t.exp && y.K===t.K && y.type===t.type); if (!x) continue; const last = t.hist[t.hist.length-1]; if (!last || Date.now()-last.t > 5*60e3){ t.hist.push({t:Date.now(), oi:x.oi, vol:x.vol, mid:x.mid, iv:x.iv}); t.hist = t.hist.slice(-300); changed = true; } }
+  if (changed) setTracked(l);
+}
+function viewTracked(){
+  const l = getTracked();
+  if (!l.length) return h("div",{class:"empty"},"No tracked contracts yet. Click any heatmap cell or chain row, then press Track. Open interest, volume, mid and IV are recorded every few minutes while the tab is open.");
+  const live = t => S.calc.contracts.find(y => t.sym===S.sym && y.exp===t.exp && y.K===t.K && y.type===t.type);
+  return h("div",{style:{overflow:"auto"}}, h("table",{class:"data"}, h("thead",null,h("tr",null,["Contract","OI","Vol","Vol/OI","Mid","IV","ΔOI since tracked","ΔMid since tracked","Snapshots",""].map(x=>h("th",null,x)))),
+    h("tbody",null, l.map(t => { const x = live(t), first = t.hist[0], last = t.hist[t.hist.length-1] || (x ? {oi:x.oi, vol:x.vol, mid:x.mid, iv:x.iv} : null);
+      return h("tr",null, h("td",{class:t.type==="C"?"c":"p"}, `${t.sym} ${t.exp} ${fmt(t.K)} ${t.type}`), h("td",null, x ? fmt(x.oi) : (last ? fmt(last.oi) : "—")), h("td",null, x ? fmt(x.vol) : "—"), h("td",null, x && x.oi ? fmt(x.vol/x.oi,2)+"×" : "—"), h("td",null, x ? fmt(x.mid,2) : "—"), h("td",null, x ? fmt(x.iv*100,1)+"%" : "—"),
+        h("td",null, first && x ? (x.oi-first.oi >= 0 ? "+" : "") + fmt(x.oi-first.oi) : "—"), h("td",null, first && x ? (x.mid-first.mid >= 0 ? "+" : "") + fmt(x.mid-first.mid,2) : "—"), h("td",null, t.hist.length),
+        h("td",null, h("button",{class:"btn small", onclick:()=>{ setTracked(l.filter(z=>z.key!==t.key)); renderTabs(); }},"×"))); }))),
+    h("p",{class:"hint"},"Switch to a contract's ticker to see it live; contracts on other tickers show their last recorded values."));
+}
+function exportCsv(){
+  const c = S.calc; const lines = ["strike,net_gex,call_gamma,put_gamma,call_oi,put_oi"];
+  for (const s of c.strikes) lines.push([s.K, s.gex.toFixed(0), s.cG.toFixed(0), s.pG.toFixed(0), s.cOI, s.pOI].join(","));
+  lines.push("", "level,value", `spot,${c.spot}`, `call_wall,${c.callWall?.K||""}`, `put_wall,${c.putWall?.K||""}`, `gamma_flip,${c.flip||""}`, `max_pain,${c.maxPain||""}`);
+  const a = h("a",{href:URL.createObjectURL(new Blob([lines.join("\n")],{type:"text/csv"})), download:`${S.sym}-levels-${new Date().toISOString().slice(0,10)}.csv`}); document.body.append(a); a.click(); a.remove();
+}
+
+// ---------- boot ----------
+const symIn = document.getElementById("symIn"), sugEl = document.getElementById("sug");
+let sugItems = [], sugIdx = -1, sugTimer = null;
+function goSym(v){ v = v.toUpperCase().replace(/[^A-Z.]/g,""); if (!v) return; sugEl.hidden = true; S.sym = v; symIn.value = v; S.exps = []; renderChips(); load(); }
+function showSug(items){ sugItems = items; sugIdx = -1; sugEl.replaceChildren(...items.map((it,i) => h("button",{type:"button", role:"option", onmousedown:e=>{ e.preventDefault(); goSym(it.symbol); }}, h("span",null, h("b",null,it.symbol), h("small",null,it.type||"")), h("span",null,it.name)))); sugEl.hidden = !items.length; }
+function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (halalOnly() && halalStatus(sym).s === "excluded") continue; if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:""}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:""}); if (out.length > 30) break; } return out.slice(0,8); }
+symIn.addEventListener("input", () => { const q = symIn.value.trim(); clearTimeout(sugTimer); if (!q){ sugEl.hidden = true; return; } showSug(localSearch(q));
+  sugTimer = setTimeout(async () => { try { const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`); const j = await r.json(); if (j.results?.length && symIn.value.trim() === q){ const seen = new Set(); showSug([...localSearch(q), ...j.results].filter(x => !seen.has(x.symbol) && seen.add(x.symbol)).slice(0,8)); } } catch {} }, 250); });
+symIn.addEventListener("keydown", e => { if (sugEl.hidden) return; if (e.key === "ArrowDown"){ e.preventDefault(); sugIdx = Math.min(sugItems.length-1, sugIdx+1); } else if (e.key === "ArrowUp"){ e.preventDefault(); sugIdx = Math.max(0, sugIdx-1); } else if (e.key === "Enter" && sugIdx >= 0){ e.preventDefault(); goSym(sugItems[sugIdx].symbol); return; } else if (e.key === "Escape"){ sugEl.hidden = true; return; } [...sugEl.children].forEach((b,i) => b.setAttribute("aria-selected", String(i===sugIdx))); });
+symIn.addEventListener("blur", () => setTimeout(() => sugEl.hidden = true, 150));
+symIn.addEventListener("focus", () => { if (symIn.value.trim() && sugItems.length) sugEl.hidden = false; });
+document.getElementById("symForm").addEventListener("submit", e => { e.preventDefault(); const v = symIn.value.trim().toUpperCase(); if (!v) return; if (sugItems.length && !NAMES.has(v) && !/^[A-Z.]{1,6}$/.test(v)){ goSym(sugItems[0].symbol); return; } goSym(v); });
+document.getElementById("refreshBtn").onclick = load;
+const halalBtn = document.getElementById("halalBtn");
+halalBtn.onclick = () => { S.tab = "halal"; renderTabs(); document.getElementById("tabs").scrollIntoView({behavior:"smooth", block:"start"}); }; paintHalalBtn();
+document.getElementById("flagBtn").onclick = async () => { const note = prompt("What's wrong or what should change here?"); if (!note) return; const c = S.calc; const ctx = `[${S.sym} · ${S.tab} · ${S.exps.join(",")} · ±${S.set.range}% · ${S.set.model}${S.demo?" · DEMO":""}] spot ${c?fmt(c.spot,2):"—"} CW ${fmt(c?.callWall?.K)} PW ${fmt(c?.putWall?.K)} flip ${fmt(c?.flip)} · ${new Date().toLocaleString()}`;
+  const text = `🚩 **Kingnode feedback** ${note}\n${ctx}`; const how = await notify(text);
+  const log = (() => { try { return JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch { return []; } })(); log.unshift({t:Date.now(), note, ctx}); try { localStorage.setItem("kingnode:flags", JSON.stringify(log.slice(0,200))); } catch {}
+  notice(how === "server" || how === "discord" ? "Flagged. Sent to your Discord with the screen context." : how === "clipboard" ? "No Discord webhook set — flag copied to your clipboard and saved locally. Add a webhook URL in ⚙ Settings to send automatically." : "Saved locally. Add a Discord webhook URL in ⚙ Settings to send flags.", how !== "server" && how !== "discord"); };
+document.getElementById("settingsBtn").onclick = () => { const f = document.getElementById("setForm"); for (const el of f.elements) if (el.name && S.set[el.name] != null) el.value = S.set[el.name]; document.getElementById("setDlg").showModal(); };
+document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer(); S.exps = []; load(); });
+document.getElementById("exportFlags").onclick = () => { let log = []; try { log = JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch {} const txt = log.map(f => `${new Date(f.t).toLocaleString()}\n${f.note}\n${f.ctx}\n`).join("\n") || "No flags yet."; const a = h("a",{href:URL.createObjectURL(new Blob([txt],{type:"text/plain"})), download:"kingnode-flags.txt"}); document.body.append(a); a.click(); a.remove(); };
+document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; saveSettings(); document.getElementById("setDlg").close(); S.exps = []; load(); };
+document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); } });
+document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
+try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
+window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks }; renderPlan(); loadTape();
+{ try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
+{ const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); S.sym = v; document.getElementById("symIn").value = v; } }
+load();
+let tickTimer = null, nextAt = 0;
+function startTimer(){ clearInterval(S.timer); clearInterval(tickTimer); const ms = Math.max(15, S.set.refreshSec)*1000; nextAt = Date.now() + ms;
+  S.timer = setInterval(() => { if (document.visibilityState === "visible") load(); nextAt = Date.now() + ms; }, ms);
+  tickTimer = setInterval(() => { const el = document.getElementById("cd"); if (el) el.textContent = `next ${Math.max(0, Math.ceil((nextAt - Date.now())/1000))}s`; }, 1000); }
+startTimer();
+setInterval(() => { if (document.visibilityState === "visible" && getRules().on && S.tab !== "flow" && S.tab !== "cflow") loadFlow(); }, 20000);
+})();
+

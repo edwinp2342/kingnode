@@ -1,0 +1,772 @@
+// KINGNODE — server handlers, feed loop, desktop, collector, proxy
+
+
+// ===================== api/_lib/data.js =====================
+// Data providers. Set DATA_PROVIDER=cboe (default, free, delayed, personal use) | tradier | polygon.
+// Every provider returns the same normalized chain:
+//   { symbol, spot, asOf, delayed, source, change, changePct, rows: [[exp,type,strike,oi,vol,iv,gamma,delta,bid,ask,last], ...] }
+
+const INDEX = new Set(["SPX", "NDX", "RUT", "VIX", "DJX", "XSP", "OEX"]);
+const MAX_EXPS = Number(process.env.MAX_EXPIRATIONS || 12);
+
+export function provider() { return (process.env.DATA_PROVIDER || "cboe").toLowerCase(); }
+
+export async function fetchChain(symbol) {
+  const p = provider();
+  if (p === "tradier") return tradierChain(symbol);
+  if (p === "polygon") return polygonChain(symbol);
+  return cboeChain(symbol);
+}
+
+// ---------- Cboe delayed (free) ----------
+function parseOcc(sym) {
+  const m = sym.match(/^([A-Z]+)(\d{6})([CP])(\d{8})$/);
+  if (!m) return null;
+  return { exp: `20${m[2].slice(0, 2)}-${m[2].slice(2, 4)}-${m[2].slice(4, 6)}`, type: m[3], strike: Number(m[4]) / 1000 };
+}
+async function cboeChain(symbol) {
+  const candidates = INDEX.has(symbol) ? [`_${symbol}`, symbol] : [symbol];
+  let lastErr;
+  for (const s of candidates) {
+    try {
+      const r = await fetch(`https://cdn.cboe.com/api/global/delayed_quotes/options/${s}.json`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
+      if (!r.ok) { lastErr = new Error("http " + r.status); continue; }
+      const j = await r.json(), d = j.data || j;
+      if (!Array.isArray(d.options)) { lastErr = new Error("no options"); continue; }
+      const spot = Number(d.current_price ?? d.close ?? d.last_trade_price ?? 0);
+      const rows = [];
+      for (const o of d.options) {
+        const p = parseOcc(String(o.option || "")); if (!p) continue;
+        rows.push([p.exp, p.type, p.strike, +o.open_interest || 0, +o.volume || 0, +o.iv || 0, +o.gamma || 0, +o.delta || 0, +o.bid || 0, +o.ask || 0, +o.last_trade_price || 0]);
+      }
+      return finish({ symbol, spot, asOf: j.timestamp || new Date().toISOString(), delayed: true, source: "cboe-delayed", change: +d.price_change || 0, changePct: +d.price_change_percent || 0, rows });
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("chain unavailable");
+}
+
+// ---------- Tradier (TRADIER_TOKEN; TRADIER_ENV=sandbox|prod) ----------
+function tradierBase() { return process.env.TRADIER_ENV === "prod" ? "https://api.tradier.com/v1" : "https://sandbox.tradier.com/v1"; }
+async function tradier(path, params) {
+  const u = new URL(tradierBase() + path); for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  const r = await fetch(u, { headers: { Authorization: `Bearer ${process.env.TRADIER_TOKEN}`, Accept: "application/json" }, signal: AbortSignal.timeout(20000) });
+  if (!r.ok) throw new Error(`tradier ${path} http ${r.status}`);
+  return r.json();
+}
+async function tradierChain(symbol) {
+  if (!process.env.TRADIER_TOKEN) throw new Error("TRADIER_TOKEN missing");
+  const q = await tradier("/markets/quotes", { symbols: symbol });
+  const quote = q.quotes?.quote; const qq = Array.isArray(quote) ? quote[0] : quote;
+  const spot = +qq?.last || +qq?.close || 0;
+  const ex = await tradier("/markets/options/expirations", { symbol, includeAllRoots: "true" });
+  let exps = ex.expirations?.date || []; if (!Array.isArray(exps)) exps = [exps];
+  exps = exps.slice(0, MAX_EXPS);
+  const rows = [];
+  await Promise.all(exps.map(async exp => {
+    const c = await tradier("/markets/options/chains", { symbol, expiration: exp, greeks: "true" });
+    let list = c.options?.option || []; if (!Array.isArray(list)) list = [list];
+    for (const o of list) {
+      const g = o.greeks || {};
+      rows.push([exp, o.option_type === "call" ? "C" : "P", +o.strike, +o.open_interest || 0, +o.volume || 0, +g.mid_iv || +g.smv_vol || 0, +g.gamma || 0, +g.delta || 0, +o.bid || 0, +o.ask || 0, +o.last || 0]);
+    }
+  }));
+  return finish({ symbol, spot, asOf: new Date().toISOString(), delayed: process.env.TRADIER_ENV !== "prod", source: "tradier", change: +qq?.change || 0, changePct: +qq?.change_percentage || 0, rows });
+}
+
+// ---------- Polygon (POLYGON_KEY) ----------
+async function polygon(url) {
+  const u = new URL(url); u.searchParams.set("apiKey", process.env.POLYGON_KEY);
+  const r = await fetch(u, { signal: AbortSignal.timeout(20000) }); if (!r.ok) throw new Error(`polygon http ${r.status}`); return r.json();
+}
+async function polygonChain(symbol) {
+  if (!process.env.POLYGON_KEY) throw new Error("POLYGON_KEY missing");
+  const under = INDEX.has(symbol) ? `I:${symbol}` : symbol;
+  const rows = []; let spot = 0, change = 0, changePct = 0;
+  let url = `https://api.polygon.io/v3/snapshot/options/${encodeURIComponent(under)}?limit=250`;
+  const expSet = new Set();
+  for (let page = 0; page < 40 && url; page++) {
+    const j = await polygon(url);
+    for (const o of j.results || []) {
+      const d = o.details || {}, g = o.greeks || {};
+      if (!spot && o.underlying_asset?.price) spot = +o.underlying_asset.price;
+      if (!spot && o.underlying_asset?.value) spot = +o.underlying_asset.value;
+      expSet.add(d.expiration_date);
+      if (expSet.size > MAX_EXPS && !rows.some(r => r[0] === d.expiration_date)) continue;
+      rows.push([d.expiration_date, d.contract_type === "call" ? "C" : "P", +d.strike_price, +o.open_interest || 0, +(o.day?.volume) || 0, +o.implied_volatility || 0, +g.gamma || 0, +g.delta || 0, +(o.last_quote?.bid) || 0, +(o.last_quote?.ask) || 0, +(o.day?.close) || 0]);
+    }
+    url = j.next_url || null;
+  }
+  return finish({ symbol, spot, asOf: new Date().toISOString(), delayed: false, source: "polygon", change, changePct, rows });
+}
+
+function finish(chain) {
+  // keep only the nearest MAX_EXPS expirations, sorted
+  const exps = [...new Set(chain.rows.map(r => r[0]))].filter(Boolean).sort().slice(0, MAX_EXPS);
+  const keep = new Set(exps);
+  chain.rows = chain.rows.filter(r => keep.has(r[0]) && r[2] > 0);
+  chain.cols = ["exp", "type", "strike", "oi", "vol", "iv", "gamma", "delta", "bid", "ask", "last"];
+  return chain;
+}
+
+// ---------- Bars ----------
+const YAHOO = { SPX: "^GSPC", NDX: "^NDX", RUT: "^RUT", VIX: "^VIX", DJX: "^DJI", XSP: "^GSPC", OEX: "^OEX" };
+export async function fetchBars(symbol, interval, range, extended = false) {
+  if (provider() === "polygon" && process.env.POLYGON_KEY) { // Polygon aggs include extended hours; the chart shades them by clock time
+    const [mult, span] = { "1m": [1, "minute"], "5m": [5, "minute"], "15m": [15, "minute"], "30m": [30, "minute"], "1h": [1, "hour"], "1d": [1, "day"] }[interval];
+    const days = { "1d": 2, "2d": 3, "5d": 8, "1mo": 32, "3mo": 95, "6mo": 185, "1y": 370, "2y": 740, "5y": 1830 }[range] || 8;
+    const to = new Date(), from = new Date(Date.now() - days * 86400000);
+    const t = INDEX.has(symbol) ? `I:${symbol}` : symbol;
+    const j = await polygon(`https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(t)}/range/${mult}/${span}/${from.toISOString().slice(0, 10)}/${to.toISOString().slice(0, 10)}?adjusted=true&sort=asc&limit=50000`);
+    return { symbol, interval, range, bars: (j.results || []).map(b => [b.t, b.o, b.h, b.l, b.c, b.v || 0]).slice(-1500), delayed: false, source: "polygon" };
+  }
+  const y = YAHOO[symbol] || symbol;
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(y)}?interval=${interval}&range=${range}&includePrePost=${extended ? "true" : "false"}`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
+  if (!r.ok) throw new Error("yahoo http " + r.status);
+  const j = await r.json(), res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0];
+  if (!res0?.timestamp || !q) throw new Error("no bars");
+  const bars = []; res0.timestamp.forEach((t, i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t * 1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i] || 0]); });
+  const meta = res0.meta || {};
+  const session = { regularStart: meta.currentTradingPeriod?.regular?.start ? meta.currentTradingPeriod.regular.start * 1000 : null, regularEnd: meta.currentTradingPeriod?.regular?.end ? meta.currentTradingPeriod.regular.end * 1000 : null, regularPrice: meta.regularMarketPrice ?? null, marketState: meta.marketState || null };
+  return { symbol, interval, range, extended, bars: bars.slice(-1500), delayed: true, source: "yahoo", session };
+}
+
+
+// ===================== api/_lib/levels.js =====================
+// Server-side copy of the terminal's core math (used by the morning cron). Keep in sync with app.html computeFrom().
+export function computeLevels(chain, expCount = 4, range = 8, model = "standard") {
+  const spot = chain.spot, mult = 100 * spot * spot * 0.01;
+  const exps = [...new Set(chain.rows.map(r => r[0]))].sort().slice(0, expCount), sel = new Set(exps);
+  const hi = spot * (1 + range / 100), lo = spot * (1 - range / 100);
+  const byStrike = new Map(); let total = 0; const contracts = [];
+  for (const [exp, type, K, oi, vol, iv, gamma, delta, bid, ask, last] of chain.rows) {
+    if (!sel.has(exp)) continue;
+    const sign = model === "standard" ? (type === "C" ? 1 : -1) : -1, gex = sign * gamma * oi * mult;
+    contracts.push({ exp, type, K, oi, vol, mid: (bid + ask) / 2 || last, gex });
+    if (K < lo || K > hi) continue;
+    const s = byStrike.get(K) || { K, gex: 0, cG: 0, pG: 0 }; s.gex += gex; if (type === "C") s.cG += gamma * oi * mult; else s.pG += gamma * oi * mult; byStrike.set(K, s); total += gex;
+  }
+  const strikes = [...byStrike.values()].sort((a, b) => a.K - b.K);
+  const callWall = strikes.reduce((a, s) => s.K > spot * 1.002 && s.cG > (a?.cG || 0) ? s : a, null);
+  const putWall = strikes.reduce((a, s) => s.K < spot * 0.998 && s.pG > (a?.pG || 0) ? s : a, null);
+  let cum = 0, flip = null, best = Infinity, prev = null;
+  for (const s of strikes) { cum += s.gex; if (prev !== null && prev !== 0 && Math.sign(cum) !== Math.sign(prev) && Math.abs(s.K - spot) < best) { best = Math.abs(s.K - spot); flip = s.K; } prev = cum; }
+  const near = contracts.filter(c => c.exp === exps[0]);
+  const atm = near.reduce((a, c) => Math.abs(c.K - spot) < Math.abs(a.K - spot) ? c : a, near[0] || { K: spot });
+  const call = near.find(c => c.K === atm.K && c.type === "C"), put = near.find(c => c.K === atm.K && c.type === "P");
+  const move = (call?.mid || 0) + (put?.mid || 0);
+  return { symbol: chain.symbol, spot, total, callWall: callWall?.K ?? null, putWall: putWall?.K ?? null, flip, expectedMove: move, expectedPct: spot ? move / spot * 100 : 0, nearest: exps[0] };
+}
+export const fmt = (n, d = 0) => n == null ? "—" : Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+export const money = n => { const a = Math.abs(n); const s = a >= 1e9 ? (a / 1e9).toFixed(2) + "B" : a >= 1e6 ? (a / 1e6).toFixed(1) + "M" : (a / 1e3).toFixed(0) + "K"; return (n < 0 ? "-$" : "$") + s; };
+
+
+// ===================== api/chain.js =====================
+// Options chain endpoint. The provider (cboe | tradier | polygon) is chosen in api/_lib/data.js via DATA_PROVIDER.
+
+import { fetchChain, provider } from "./_lib/data.js";
+const cache = new Map();
+
+export default async function handler(req, res) {
+  const symbol = String(req.query?.symbol || "SPX").toUpperCase().replace(/[^A-Z.]/g, "").slice(0, 8);
+  if (!symbol) return res.status(400).json({ error: "bad_symbol" });
+  const hit = cache.get(symbol);
+  if (hit && Date.now() - hit.at < 60_000) { res.setHeader("Cache-Control", "public, max-age=30"); return res.status(200).json(hit.data); }
+  try {
+    const data = await fetchChain(symbol);
+    cache.set(symbol, { at: Date.now(), data });
+    res.setHeader("Cache-Control", "public, max-age=30");
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error("chain", provider(), symbol, e.message);
+    return res.status(502).json({ error: "unavailable", symbol, provider: provider() });
+  }
+}
+
+
+// ===================== api/bars.js =====================
+// Price bars for the chart. Provider chosen in api/_lib/data.js (Polygon when DATA_PROVIDER=polygon, else Yahoo delayed).
+import { fetchBars } from "./_lib/data.js";
+const cache = new Map();
+
+export default async function handler(req, res) {
+  const symbol = String(req.query?.symbol || "SPX").toUpperCase().replace(/[^A-Z.]/g, "").slice(0, 8);
+  const interval = ["1m", "5m", "15m", "30m", "1h", "1d"].includes(req.query?.interval) ? req.query.interval : "5m";
+  const range = ["1d", "2d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"].includes(req.query?.range) ? req.query.range : "5d";
+  const extended = req.query?.extended === "1";
+  const key = symbol + interval + range + (extended ? "x" : ""), hit = cache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return res.status(200).json(hit.data);
+  try {
+    const data = await fetchBars(symbol, interval, range, extended);
+    if (!data.bars.length) throw new Error("no bars");
+    cache.set(key, { at: Date.now(), data });
+    res.setHeader("Cache-Control", "public, max-age=30");
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error("bars", symbol, e.message);
+    return res.status(502).json({ error: "unavailable" });
+  }
+}
+
+
+// ===================== api/quotes.js =====================
+// Batch quotes for the ticker tape. Yahoo chart meta (delayed) unless DATA_PROVIDER=polygon.
+const YAHOO = { SPX: "^GSPC", NDX: "^NDX", RUT: "^RUT", VIX: "^VIX", DJX: "^DJI", DJI: "^DJI", XSP: "^GSPC", OEX: "^OEX" };
+const cache = new Map();
+async function one(sym) {
+  const hit = cache.get(sym); if (hit && Date.now() - hit.at < 30_000) return hit.v;
+  const y = YAHOO[sym] || sym;
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(y)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
+  if (!r.ok) throw new Error("http " + r.status);
+  const j = await r.json(), m = j.chart?.result?.[0]?.meta; if (!m) throw new Error("no meta");
+  const price = +(m.regularMarketPrice ?? 0), prev = +(m.chartPreviousClose ?? m.previousClose ?? 0);
+  const q = j.chart.result[0].indicators?.quote?.[0]; const closes = (q?.close || []).filter(x => x != null); const last = closes.length ? closes[closes.length - 1] : price;
+  const v = { symbol: sym, price: sym === "XSP" ? price / 10 : price, prev: sym === "XSP" ? prev / 10 : prev, last: sym === "XSP" ? last / 10 : last, state: m.marketState || null, t: (m.regularMarketTime || 0) * 1000 };
+  cache.set(sym, { at: Date.now(), v }); return v;
+}
+export default async function handler(req, res) {
+  const syms = String(req.query?.symbols || "SPX,NDX,RUT,VIX,SPY,QQQ,IWM,DIA,XSP").toUpperCase().split(",").map(s => s.replace(/[^A-Z.]/g, "")).filter(Boolean).slice(0, 30);
+  const out = await Promise.all(syms.map(s => one(s).catch(e => ({ symbol: s, error: e.message }))));
+  res.setHeader("Cache-Control", "public, max-age=15");
+  return res.status(200).json({ at: Date.now(), quotes: out });
+}
+
+
+// ===================== api/flow.js =====================
+// Options flow tape. The collector (collector/flow-collector.mjs) streams trades from your vendor's websocket,
+// scores them, and POSTs batches here with FLOW_SECRET. The terminal GETs the recent tape.
+// Storage is in-memory per serverless instance plus Vercel Blob when BLOB_READ_WRITE_TOKEN is set (so every instance sees it).
+import { put, list } from "@vercel/blob";
+
+let mem = { at: 0, trades: [] };
+const MAX = 3000;
+
+async function readBlob() {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
+  try { const { blobs } = await list({ prefix: "flow/tape.json", limit: 1 }); if (!blobs.length) return null; return await (await fetch(blobs[0].url, { cache: "no-store" })).json(); } catch { return null; }
+}
+async function writeBlob(data) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return;
+  try { await put("flow/tape.json", JSON.stringify(data), { access: "public", contentType: "application/json", addRandomSuffix: false, cacheControlMaxAge: 60 }); } catch (e) { console.warn("flow blob", e.message); }
+}
+
+export default async function handler(req, res) {
+  if (req.method === "POST") {
+    if (!process.env.FLOW_SECRET || (req.headers.authorization || "") !== `Bearer ${process.env.FLOW_SECRET}`) return res.status(401).json({ error: "unauthorized" });
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const incoming = Array.isArray(body?.trades) ? body.trades : [];
+    if (mem.at < Date.now() - 120_000) { const b = await readBlob(); if (b?.trades) mem = b; }
+    mem.trades = [...mem.trades, ...incoming].slice(-MAX); mem.at = Date.now();
+    await writeBlob(mem);
+    return res.status(200).json({ ok: true, size: mem.trades.length });
+  }
+  const sym = String(req.query?.symbol || "").toUpperCase();
+  if (mem.at < Date.now() - 60_000) { const b = await readBlob(); if (b?.trades) mem = b; }
+  const since = Number(req.query?.since || 0);
+  let trades = mem.trades.filter(t => t.t > since && (!sym || t.u === sym));
+  res.setHeader("Cache-Control", "no-store");
+  return res.status(200).json({ at: mem.at, live: mem.at > Date.now() - 5 * 60_000, trades: trades.slice(-1000) });
+}
+
+
+// ===================== api/insiders.js =====================
+// Recent insider filings (SEC Form 4) for a ticker, from EDGAR full-text search. Free; SEC requires a descriptive User-Agent.
+const UA = process.env.SEC_USER_AGENT || "Kingnode terminal contact@example.com";
+const cache = new Map();
+export default async function handler(req, res) {
+  const sym = String(req.query?.symbol || "").toUpperCase().replace(/[^A-Z.]/g, "").slice(0, 8);
+  if (!sym) return res.status(400).json({ error: "bad_symbol" });
+  const hit = cache.get(sym); if (hit && Date.now() - hit.at < 30 * 60_000) return res.status(200).json(hit.data);
+  try {
+    const r = await fetch(`https://efts.sec.gov/LATEST/search-index?q=%22${sym}%22&forms=4&dateRange=custom&startdt=${new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10)}&enddt=${new Date().toISOString().slice(0, 10)}`, { headers: { "user-agent": UA, accept: "application/json" } });
+    if (!r.ok) throw new Error("http " + r.status);
+    const j = await r.json();
+    const hits = (j.hits?.hits || []).slice(0, 40).map(h => { const s = h._source || {}; const [adsh] = (h._id || "").split(":"); const cik = (s.ciks || [])[0] || "";
+      return { filed: s.file_date, entity: (s.display_names || [])[0] || "", form: s.form, url: cik ? `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${adsh.replace(/-/g, "")}/${adsh}-index.htm` : "https://www.sec.gov/edgar/search/#/q=" + sym }; });
+    const data = { symbol: sym, count: j.hits?.total?.value || hits.length, filings: hits };
+    cache.set(sym, { at: Date.now(), data });
+    res.setHeader("Cache-Control", "public, max-age=900");
+    return res.status(200).json(data);
+  } catch (e) { console.error("insiders", sym, e.message); return res.status(502).json({ error: "unavailable" }); }
+}
+
+
+// ===================== api/shortvol.js =====================
+// Daily short-volume ratio from FINRA's Reg SHO daily files (free). Short volume / total volume per day, last N sessions.
+// A rising share of short volume alongside falling price is a classic institutional-distribution tell; the reverse is accumulation.
+const cache = new Map();
+function ymd(d) { return d.toISOString().slice(0, 10).replace(/-/g, ""); }
+export default async function handler(req, res) {
+  const sym = String(req.query?.symbol || "").toUpperCase().replace(/[^A-Z.]/g, "").slice(0, 8);
+  if (!sym) return res.status(400).json({ error: "bad_symbol" });
+  const hit = cache.get(sym); if (hit && Date.now() - hit.at < 6 * 3600_000) return res.status(200).json(hit.data);
+  const days = []; const d = new Date(); let tries = 0;
+  while (days.length < 8 && tries < 16) { d.setDate(d.getDate() - 1); tries++; if (d.getDay() % 6 === 0) continue; days.push(new Date(d)); }
+  const rows = [];
+  await Promise.all(days.map(async day => {
+    try {
+      const r = await fetch(`https://cdn.finra.org/equity/regsho/daily/CNMSshvol${ymd(day)}.txt`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
+      if (!r.ok) return;
+      const text = await r.text();
+      const line = text.split("\n").find(l => l.split("|")[1] === sym);
+      if (!line) return;
+      const [date, , shortVol, shortExempt, totalVol] = line.split("|");
+      rows.push({ date: `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`, shortVol: +shortVol, totalVol: +totalVol, ratio: +totalVol ? +shortVol / +totalVol : null });
+    } catch {}
+  }));
+  rows.sort((a, b) => a.date < b.date ? -1 : 1);
+  const data = { symbol: sym, days: rows, note: "Consolidated NMS off-exchange (incl. dark pool) short volume; not total market volume." };
+  cache.set(sym, { at: Date.now(), data });
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  return res.status(200).json(data);
+}
+
+
+// ===================== api/search.js =====================
+// Symbol search. Proxies Yahoo's public search endpoint (any listed name), cached per query.
+const cache = new Map();
+export default async function handler(req, res) {
+  const q = String(req.query?.q || "").trim().slice(0, 30);
+  if (q.length < 1) return res.status(200).json({ results: [] });
+  const hit = cache.get(q.toLowerCase()); if (hit && Date.now() - hit.at < 3600_000) return res.status(200).json(hit.data);
+  try {
+    const r = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&listsCount=0`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" } });
+    if (!r.ok) throw new Error("http " + r.status);
+    const j = await r.json();
+    const results = (j.quotes || []).filter(x => ["EQUITY", "ETF", "INDEX"].includes(x.quoteType) && /^[A-Z.^-]+$/.test(x.symbol)).map(x => ({ symbol: x.symbol.replace(/^\^/, ""), name: x.shortname || x.longname || "", type: x.quoteType, exchange: x.exchDisp || "" })).slice(0, 8);
+    const data = { results }; cache.set(q.toLowerCase(), { at: Date.now(), data });
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.status(200).json(data);
+  } catch (e) { return res.status(200).json({ results: [], error: e.message }); }
+}
+
+
+// ===================== api/generate.js =====================
+// Serverless proxy: keeps your Anthropic API key on the server, never in the browser.
+// Env vars: ANTHROPIC_API_KEY (required), APP_SECRET (required, signs Pro tokens),
+//           MODEL (default claude-sonnet-5), QUICK_MODEL (default claude-haiku-4-5-20251001),
+//           FREE_BUILDS_PER_DAY (default 2 per visitor IP)
+import { readToken } from "./_lib/auth.js";
+
+const MODEL = process.env.MODEL || "claude-sonnet-5";
+const QUICK_MODEL = process.env.QUICK_MODEL || "claude-haiku-4-5-20251001";
+const MAX_PROMPT = 120000; // characters
+
+// Light per-instance throttles. The hard cap on cost is the spend limit in the Anthropic Console.
+const hits = new Map(), free = new Map();
+function throttled(ip) {
+  const now = Date.now(), win = 60_000, max = 20;
+  const list = (hits.get(ip) || []).filter(t => now - t < win);
+  list.push(now); hits.set(ip, list);
+  return list.length > max;
+}
+// A free build is 3 requests (brand kit, ads, website). Count requests per day per IP.
+function freeExhausted(ip) {
+  const perDay = Number(process.env.FREE_BUILDS_PER_DAY || 2) * 3;
+  const now = Date.now(), list = (free.get(ip) || []).filter(t => now - t < 86_400_000);
+  if (list.length >= perDay) return true;
+  list.push(now); free.set(ip, list);
+  return false;
+}
+
+export default async function handler(req, res) {
+  const key = process.env.ANTHROPIC_API_KEY;
+
+  if (req.method === "GET") {
+    return res.status(200).json({ configured: !!key, payments: !!process.env.STRIPE_SECRET_KEY });
+  }
+  if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
+  if (!key) return res.status(500).json({ error: "not_configured" });
+
+  const body = typeof req.body === "string" ? safeParse(req.body) : (req.body || {});
+  const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() || "unknown";
+  if (throttled(ip)) return res.status(429).json({ error: "rate_limited" });
+  // personal build: no gating
+
+  const prompt = body.prompt;
+  if (typeof prompt !== "string" || !prompt.trim() || prompt.length > MAX_PROMPT) {
+    return res.status(400).json({ error: "prompt_too_large" });
+  }
+  const model = body.tier === "quick" ? QUICK_MODEL : MODEL;
+
+  let upstream;
+  try {
+    upstream = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1200,
+        stream: true,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+  } catch {
+    return res.status(502).json({ error: "upstream_error" });
+  }
+
+  if (!upstream.ok) {
+    const detail = await upstream.text().catch(() => "");
+    console.error("Anthropic API error", upstream.status, detail.slice(0, 500));
+    return res.status(upstream.status === 429 ? 429 : 502)
+      .json({ error: upstream.status === 429 ? "rate_limited" : "upstream_error" });
+  }
+
+  // Stream plain text back to the browser so long website builds don't time out.
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  const reader = upstream.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!line.startsWith("data:")) continue;
+        const ev = safeParse(line.slice(5));
+        if (!ev) continue;
+        if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") res.write(ev.delta.text);
+        else if (ev.type === "error") {
+          res.write("\n[[SHOPFRONT_ERROR]] " + (ev.error?.type === "overloaded_error" ? "rate_limited" : "upstream"));
+        }
+      }
+    }
+  } catch {
+    res.write("\n[[SHOPFRONT_ERROR]] upstream");
+  }
+  res.end();
+}
+
+function safeParse(s) { try { return JSON.parse(s); } catch { return null; } }
+
+
+// ===================== api/notify.js =====================
+// Forwards flow/level alerts from the terminal to your Discord (or any) webhook. Pro token or NOTIFY_OPEN=true required.
+import { body } from "./_lib/auth.js";
+const recent = new Map();
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
+  const b = body(req);
+  const hook = process.env.DISCORD_WEBHOOK || process.env.LEAD_WEBHOOK;
+  if (!hook) return res.status(500).json({ error: "not_configured" });
+  const text = String(b.text || "").slice(0, 1800); if (!text) return res.status(400).json({ error: "empty" });
+  const ip = (req.headers["x-forwarded-for"] || "").split(",")[0] || "x"; const now = Date.now(), l = (recent.get(ip) || []).filter(t => now - t < 60_000);
+  if (l.length >= 20) return res.status(429).json({ error: "rate_limited" }); l.push(now); recent.set(ip, l);
+  try { const r = await fetch(hook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: text, text }) }); return res.status(r.ok ? 200 : 502).json({ ok: r.ok }); }
+  catch (e) { return res.status(502).json({ error: e.message }); }
+}
+
+
+// ===================== api/health.js =====================
+// Health check for your daily maintenance agent: verifies the data provider, bars, Stripe config and the last cron run.
+import { fetchChain, fetchBars, provider } from "./_lib/data.js";
+
+export default async function handler(req, res) {
+  const out = { ok: true, at: new Date().toISOString(), provider: provider(), checks: {} };
+  const t = async (name, fn) => { const s = Date.now(); try { const v = await fn(); out.checks[name] = { ok: true, ms: Date.now() - s, ...v }; } catch (e) { out.ok = false; out.checks[name] = { ok: false, ms: Date.now() - s, error: e.message }; } };
+  await t("chain_spx", async () => { const c = await fetchChain("SPX"); if (!c.rows.length || !c.spot) throw new Error("empty chain"); return { spot: c.spot, rows: c.rows.length, asOf: c.asOf, delayed: c.delayed }; });
+  await t("bars_spy", async () => { const b = await fetchBars("SPY", "5m", "1d"); if (!b.bars.length) throw new Error("no bars"); return { bars: b.bars.length, last: new Date(b.bars.at(-1)[0]).toISOString() }; });
+  out.checks.app_secret = { ok: !!process.env.APP_SECRET };
+  out.checks.anthropic = { ok: !!process.env.ANTHROPIC_API_KEY };
+  out.checks.discord = { ok: !!(process.env.DISCORD_WEBHOOK || process.env.LEAD_WEBHOOK) };
+  res.setHeader("Cache-Control", "no-store");
+  return res.status(out.ok ? 200 : 503).json(out);
+}
+
+
+// ===================== api/cron/morning.js =====================
+// Morning levels post. Vercel cron hits this on weekdays (see vercel.json); you can also call it by hand:
+//   curl -H "Authorization: Bearer $CRON_SECRET" https://yoursite/api/cron/morning
+// Posts to DISCORD_WEBHOOK (or LEAD_WEBHOOK) and returns the text. Tickers from MORNING_TICKERS (default SPX,SPY,QQQ,IWM).
+import { fetchChain } from "../_lib/data.js";
+import { computeLevels, fmt, money } from "../_lib/levels.js";
+
+export default async function handler(req, res) {
+  const auth = req.headers.authorization || "";
+  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: "unauthorized" });
+  const tickers = (process.env.MORNING_TICKERS || "SPX,SPY,QQQ,IWM").split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+  const lines = [], errors = [];
+  for (const sym of tickers) {
+    try {
+      const l = computeLevels(await fetchChain(sym), 4, 8);
+      lines.push(`**${sym}** ${fmt(l.spot, 2)} · ${l.total > 0 ? "+γ (pinned)" : "−γ (trending)"} ${money(l.total)} · PW ${fmt(l.putWall)} · flip ${fmt(l.flip)} · CW ${fmt(l.callWall)} · EM ±${fmt(l.expectedMove, 1)} (${fmt(l.expectedPct, 2)}%)`);
+    } catch (e) { errors.push(`${sym}: ${e.message}`); }
+  }
+  const date = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" });
+  const text = `📈 **Levels — ${date}** (dealer gamma, nearest 4 expirations)\n${lines.join("\n")}${errors.length ? `\n⚠️ ${errors.join("; ")}` : ""}\n_Not investment advice._`;
+  const hook = process.env.DISCORD_WEBHOOK || process.env.LEAD_WEBHOOK;
+  let posted = false;
+  if (hook && lines.length) {
+    try { const r = await fetch(hook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: text, text }) }); posted = r.ok; }
+    catch (e) { errors.push("webhook: " + e.message); }
+  }
+  console.log("MORNING", JSON.stringify({ posted, errors }));
+  return res.status(errors.length && !lines.length ? 502 : 200).json({ posted, text, errors });
+}
+
+
+// ===================== scripts/snapshot.mjs =====================
+// Snapshots the chains, bars and quotes the terminal needs and writes them to ./data as compact JSON, then pushes.
+// Runs as a loop inside one GitHub Actions job (LOOP_MINUTES), so the feed refreshes about every minute for free:
+//   quotes + bars (Yahoo, near real-time incl. pre/after-hours) every cycle; chains (Cboe, 15-min delayed) every 3rd cycle.
+import { fetchChain, fetchBars } from "../api/_lib/data.js";
+import fs from "node:fs";
+import { execSync } from "node:child_process";
+
+const SYMS = (process.env.SNAPSHOT_SYMBOLS || "SPX,SPY,QQQ,IWM,VIX,NDX,RUT,DIA,TLT,NVDA,TSLA,AAPL,AMZN,MSFT,META,GOOGL,AMD,TSM,GLD,SLV,COIN,PLTR,NFLX,XSP").split(",").map(s => s.trim()).filter(Boolean);
+// bars for a much wider list (cheap: one small Yahoo request each), so every ticker in the app has a chart
+const BAR_SYMS = [...new Set([...SYMS, ...(process.env.BAR_SYMBOLS || "AVGO,QCOM,TXN,MU,ARM,ASML,AMAT,LRCX,KLAC,INTC,MRVL,ADBE,CRM,ORCL,NOW,CRWD,PANW,NET,DDOG,SNOW,ANET,CSCO,SHOP,ABNB,UBER,LLY,NVO,ISRG,JNJ,MRK,ABBV,AMGN,GILD,PFE,TEM,HIMS,XOM,CVX,COP,OXY,SLB,XLE,XOP,FCX,NEM,CAT,DE,GE,UPS,FDX,VRT,CEG,VST,ENPH,FSLR,PG,COST,WMT,HD,LOW,NKE,LULU,TJX,CMG,ELF,CELH,KO,PEP,RKLB,ASTS,IONQ,RGTI,APP,RDDT,DUOL,SPOT,DIS,JPM,BAC,GS,V,MA,HOOD,DKNG,BA,T,VZ,F,GM,CCL,LMT,RTX,SMH,XLF,KRE,XBI,XLK,XLV,XLI,XLU,XLP,XLY,ARKK,HYG,EEM,FXI,BITO,IBIT,UVXY,SQQQ,TQQQ,SOXL,UUP,SPUS,HLAL,SPSK,MSTR,SOFI,SQ,PYPL,AFRM,RBLX,DELL,HPQ,IBM,ADP,INTU,WDAY,TEAM,OKTA,ZS,MDB,ZM,TTD,ROKU,MELI,SE,BABA,PDD,JD,NIO,RIVN,LCID,MARA,RIOT,CLSK,OKLO,SMR,LUNR,NRG,CAVA,CRCL,CRWV,NBIS,SBET,MRNA,CVS,BMY,DAL,UAL,AAL,LUV,RCL,MAR,TGT,ISRG").split(",").map(s=>s.trim()).filter(Boolean)])];
+const TAPE = ["SPX","NDX","RUT","VIX","SPY","QQQ","IWM","DIA"];
+const YAHOO = { SPX:"^GSPC", NDX:"^NDX", RUT:"^RUT", VIX:"^VIX", DJX:"^DJI", XSP:"^GSPC" };
+const LOOP_MIN = Number(process.env.LOOP_MINUTES || 0), EVERY = Number(process.env.EVERY_SEC || 60), PUSH = process.env.PUSH === "1";
+fs.mkdirSync("data", { recursive: true });
+
+async function quote(sym) {
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[sym] || sym)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error("http " + r.status);
+  const j = await r.json(), res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) throw new Error("no meta");
+  const q = res0.indicators?.quote?.[0], closes = (q?.close || []), ts = res0.timestamp || [];
+  let last = +m.regularMarketPrice || 0, lastT = (m.regularMarketTime || 0) * 1000;
+  for (let i = closes.length - 1; i >= 0; i--) if (closes[i] != null) { last = closes[i]; lastT = ts[i] * 1000; break; }
+  const price = +m.regularMarketPrice || last, prev = +(m.chartPreviousClose ?? m.previousClose ?? price);
+  const div = sym === "XSP" ? 10 : 1;
+  return { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000 };
+}
+async function cycle(n) {
+  const t0 = Date.now(); const ok = [], fail = [];
+  // quotes for the tape (fast, near real-time, extended hours)
+  const quotes = [];
+  for (const sym of TAPE) { try { quotes.push(await quote(sym)); } catch (e) { fail.push(`q:${sym}:${e.message}`); } }
+  const spx = quotes.find(q => q.symbol === "SPX"); if (spx) quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 });
+  fs.writeFileSync("data/quotes.json", JSON.stringify({ at: Date.now(), quotes }));
+  // bars for every symbol (Yahoo, extended) every cycle; chains every 3rd cycle (they're big and 15-min delayed anyway)
+  // bars for every ticker in the app, 8 at a time
+  for (let i = 0; i < BAR_SYMS.length; i += 8) {
+    await Promise.all(BAR_SYMS.slice(i, i + 8).map(async sym => {
+      try { const b = await fetchBars(sym, "5m", "5d", true); fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, bars: b.bars.slice(-800), snapshotAt: Date.now() })); } catch (e) { fail.push(`b:${sym}`); }
+      if (n % 9 === 0) { try { const d = await fetchBars(sym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, bars: d.bars.slice(-300), snapshotAt: Date.now() })); } catch {} }
+    }));
+  }
+  for (const sym of SYMS) {
+    if (n % 3 === 0) {
+      try {
+        const c = await fetchChain(sym);
+        const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, 10), keep = new Set(exps);
+        const rows = c.rows.filter(r => keep.has(r[0]) && Math.abs(r[2] / c.spot - 1) <= 0.2).map(r => r.map((v, i) => typeof v === "number" && i >= 3 ? +v.toPrecision(6) : v));
+        fs.writeFileSync(`data/${sym}.json`, JSON.stringify({ ...c, rows, snapshotAt: Date.now() })); ok.push(sym);
+      } catch (e) { fail.push(`c:${sym}:${e.message}`); }
+    }
+  }
+  fs.writeFileSync("data/index.json", JSON.stringify({ at: Date.now(), cycle: n, ok, fail }));
+  console.log(`cycle ${n} · ${((Date.now() - t0) / 1000).toFixed(1)}s · quotes ${quotes.length} · chains ${ok.length}${fail.length ? " · fail " + fail.join(" ") : ""}`);
+  if (PUSH) push();
+}
+function push() {
+  try {
+    execSync(`cd data && ([ -d .git ] || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1; git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash", timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  } catch (e) { console.error("push failed", e.message); }
+}
+const end = Date.now() + LOOP_MIN * 60e3; let n = 0;
+do { await cycle(n++); if (LOOP_MIN) { const wait = Math.max(5, EVERY - 1) * 1000; await new Promise(r => setTimeout(r, wait)); } } while (Date.now() < end);
+
+
+// ===================== .github/workflows/data.yml =====================
+name: market data feed
+on:
+  schedule:
+    - cron: "0 8-23 * * 1-5"   # a new 58-minute loop every hour, 4:00 AM–7:59 PM ET (daylight time) — pre-market through after-hours
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: { group: data-feed, cancel-in-progress: true }
+jobs:
+  feed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 62
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: snapshot loop (~1 min cadence, pushes each cycle)
+        env:
+          LOOP_MINUTES: "58"
+          EVERY_SEC: "60"
+          PUSH: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/snapshot.mjs
+
+
+// ===================== desktop/server.js =====================
+// Minimal local server: static files from the project root + api/*.js handlers with a Vercel-style (req, res) shape.
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { config } from "dotenv";
+
+const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json", ".md": "text/markdown", ".png": "image/png" };
+
+export function startServer(root, port = 4810) {
+  config({ path: path.join(root, ".env.local") }); config({ path: path.join(root, ".env") });
+  const handlers = new Map();
+  async function handler(name) {
+    if (!handlers.has(name)) { const f = path.join(root, "api", ...name.split("/")) + ".js"; if (!fs.existsSync(f)) return null; handlers.set(name, (await import(pathToFileURL(f).href)).default); }
+    return handlers.get(name);
+  }
+  const srv = http.createServer(async (req, res) => {
+    const u = new URL(req.url, "http://x");
+    try {
+      if (u.pathname.startsWith("/api/")) {
+        const h = await handler(u.pathname.slice(5)); if (!h) { res.writeHead(404, { "content-type": "application/json" }); return res.end('{"error":"no_such_api"}'); }
+        let raw = ""; for await (const c of req) raw += c;
+        let body = raw; try { body = raw ? JSON.parse(raw) : {}; } catch {}
+        const vreq = { method: req.method, headers: req.headers, query: Object.fromEntries(u.searchParams), body, url: req.url };
+        const vres = { statusCode: 200, _h: {}, setHeader(k, v) { this._h[k.toLowerCase()] = v; }, status(c) { this.statusCode = c; return this; },
+          json(o) { this._h["content-type"] = "application/json"; res.writeHead(this.statusCode, this._h); res.end(JSON.stringify(o)); }, send(b) { res.writeHead(this.statusCode, this._h); res.end(b); },
+          write(c) { if (!res.headersSent) res.writeHead(this.statusCode, this._h); res.write(c); }, end(c) { if (!res.headersSent) res.writeHead(this.statusCode, this._h); res.end(c); } };
+        return await h(vreq, vres);
+      }
+      // rewrite /s/:slug like vercel.json
+      const m = u.pathname.match(/^\/s\/([a-z0-9-]+)$/); if (m) { const h = await handler("site"); if (h) return h({ method: "GET", headers: req.headers, query: { slug: m[1] } }, mkRes(res)); }
+      let p = decodeURIComponent(u.pathname === "/" ? "/index.html" : u.pathname); const f = path.normalize(path.join(root, p));
+      if (!f.startsWith(root) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end("not found"); }
+      res.writeHead(200, { "content-type": MIME[path.extname(f)] || "application/octet-stream" }); fs.createReadStream(f).pipe(res);
+    } catch (e) { console.error(e); if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: e.message })); }
+  });
+  function mkRes(res) { return { statusCode: 200, _h: {}, setHeader(k, v) { this._h[k.toLowerCase()] = v; }, status(c) { this.statusCode = c; return this; }, json(o) { res.writeHead(this.statusCode, { ...this._h, "content-type": "application/json" }); res.end(JSON.stringify(o)); }, send(b) { res.writeHead(this.statusCode, this._h); res.end(b); } }; }
+  return new Promise(resolve => { const tryListen = p => srv.once("error", () => tryListen(p + 1)).listen(p, "127.0.0.1", () => { console.log(`Kingnode local server http://127.0.0.1:${p}`); resolve(p); }); tryListen(port); });
+}
+
+// `node server.js` runs it headless for any browser (no Electron needed)
+if (process.argv[1] && process.argv[1].endsWith("server.js")) { const root = path.resolve(path.dirname(process.argv[1]), ".."); startServer(root).then(p => console.log(`Open http://127.0.0.1:${p}/app.html`)); }
+
+
+// ===================== desktop/main.js =====================
+// Kingnode desktop: Electron window + a local server that runs the project's api/*.js handlers.
+// Run:  cd desktop && npm install && npm start
+import { app, BrowserWindow, shell } from "electron";
+import { startServer } from "./server.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let port = 4810;
+app.whenReady().then(async () => {
+  port = await startServer(path.join(__dirname, ".."), port);
+  const win = new BrowserWindow({ width: 1500, height: 980, backgroundColor: "#000000", title: "Kingnode", autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, sandbox: true } });
+  win.loadURL(`http://127.0.0.1:${port}/app.html`);
+  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: "deny" }; });
+});
+app.on("window-all-closed", () => app.quit());
+
+
+// ===================== desktop/alerts.mjs =====================
+// Kingnode background alerts — runs with the tab closed. Polls the watchlist's chains every N minutes during market hours,
+// posts to Discord when spot is within ALERT_PCT of a wall or the flip, or when the walls move.
+//   DISCORD_WEBHOOK=... node desktop/alerts.mjs SPX IWM TLT
+// Add to pm2 or a cron line (MAINTENANCE.md) to keep it running.
+import { fetchChain } from "../api/_lib/data.js";
+import { computeLevels, fmt, money } from "../api/_lib/levels.js";
+import { config } from "dotenv";
+config({ path: new URL("../.env.local", import.meta.url).pathname });
+
+const syms = process.argv.slice(2).map(s => s.toUpperCase()); if (!syms.length) { console.error("Usage: node alerts.mjs SPX IWM TLT"); process.exit(1); }
+const hook = process.env.DISCORD_WEBHOOK, pct = Number(process.env.ALERT_PCT || 0.2) / 100, every = Number(process.env.ALERT_EVERY_MIN || 5);
+const last = new Map(); const fired = new Map();
+async function post(text) { console.log(text); if (!hook) return; try { await fetch(hook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: text }) }); } catch (e) { console.error("webhook", e.message); } }
+function marketOpen() { const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" })); const m = et.getHours() * 60 + et.getMinutes(); return et.getDay() % 6 !== 0 && m >= 570 && m <= 965; }
+async function tick() {
+  if (!marketOpen()) return;
+  for (const sym of syms) {
+    try {
+      const l = computeLevels(await fetchChain(sym), 4, 8); const prev = last.get(sym); last.set(sym, l);
+      for (const [name, K] of [["put wall", l.putWall], ["call wall", l.callWall], ["flip", l.flip]]) {
+        if (!K) continue; const key = `${sym}|${name}|${K}`; const dist = Math.abs(l.spot / K - 1);
+        if (dist < pct && Date.now() - (fired.get(key) || 0) > 30 * 60e3) { fired.set(key, Date.now()); await post(`📍 **${sym}** ${fmt(l.spot, 2)} is within ${(dist * 100).toFixed(2)}% of the ${name} ${fmt(K)} · net gamma ${money(l.total)}`); }
+      }
+      if (prev && (prev.callWall !== l.callWall || prev.putWall !== l.putWall)) await post(`🔁 **${sym}** walls moved: PW ${fmt(prev.putWall)}→${fmt(l.putWall)} · CW ${fmt(prev.callWall)}→${fmt(l.callWall)}`);
+    } catch (e) { console.error(sym, e.message); }
+  }
+}
+await post(`Kingnode alerts running for ${syms.join(", ")} (every ${every} min, ${(pct * 100).toFixed(2)}% proximity).`);
+tick(); setInterval(tick, every * 60e3);
+
+
+// ===================== collector/flow-collector.mjs =====================
+// Kingnode flow collector — run this on your own machine or a small VPS during market hours.
+//   POLYGON_KEY=... FLOW_SECRET=... SITE_URL=https://yoursite node collector/flow-collector.mjs SPY QQQ NVDA
+// Subscribes to Polygon's options trade stream (needs an options plan with trades), classifies each print
+// (sweep / block / aggressor side vs the quote), and ships batches to /api/flow every 2 seconds.
+// Trade shape sent: {t, u (underlying), o (occ), exp, K, cp, px, sz, prem, side ("A"/"B"/"M"), kind ("sweep"|"block"|"trade"), ex}
+import WebSocket from "ws";
+
+const KEY = process.env.POLYGON_KEY, SECRET = process.env.FLOW_SECRET, SITE = (process.env.SITE_URL || "").replace(/\/$/, "");
+const under = process.argv.slice(2).map(s => s.toUpperCase());
+if (!KEY || !SECRET || !SITE || !under.length) { console.error("Usage: POLYGON_KEY FLOW_SECRET SITE_URL node flow-collector.mjs SPY QQQ ..."); process.exit(1); }
+
+const MIN_PREM = Number(process.env.MIN_PREMIUM || 25000);  // ignore prints under $25k premium
+const quotes = new Map(); // occ -> {bid, ask}
+let batch = [];
+
+function parseOcc(o) { const m = o.match(/^O:([A-Z]+)(\d{6})([CP])(\d{8})$/); if (!m) return null; return { u: m[1].replace(/W$/, ""), exp: `20${m[2].slice(0, 2)}-${m[2].slice(2, 4)}-${m[2].slice(4, 6)}`, cp: m[3], K: Number(m[4]) / 1000 }; }
+function side(px, q) { if (!q) return "M"; if (px >= q.ask) return "A"; if (px <= q.bid) return "B"; return "M"; }
+
+const ws = new WebSocket("wss://socket.polygon.io/options");
+ws.on("open", () => { ws.send(JSON.stringify({ action: "auth", params: KEY })); });
+ws.on("message", raw => {
+  for (const m of JSON.parse(raw)) {
+    if (m.ev === "status" && m.status === "auth_success") { ws.send(JSON.stringify({ action: "subscribe", params: under.flatMap(u => [`T.O:${u}*`, `Q.O:${u}*`]).join(",") })); console.log("subscribed", under.join(" ")); }
+    if (m.ev === "Q") quotes.set(m.sym, { bid: m.bp, ask: m.ap });
+    if (m.ev === "T") {
+      const p = parseOcc(m.sym); if (!p) continue;
+      const prem = m.p * m.s * 100; if (prem < MIN_PREM) continue;
+      const conds = m.c || [];
+      const kind = conds.includes(209) ? "sweep" : m.s >= 500 ? "block" : "trade"; // 209 = intermarket sweep in Polygon's condition codes
+      batch.push({ t: m.t, u: p.u, o: m.sym, exp: p.exp, K: p.K, cp: p.cp, px: m.p, sz: m.s, prem: Math.round(prem), side: side(m.p, quotes.get(m.sym)), kind, ex: m.x });
+    }
+  }
+});
+ws.on("error", e => console.error("ws", e.message));
+ws.on("close", () => { console.log("socket closed, exiting so your supervisor restarts it"); process.exit(1); });
+
+setInterval(async () => {
+  if (!batch.length) return;
+  const trades = batch; batch = [];
+  try { const r = await fetch(`${SITE}/api/flow`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${SECRET}` }, body: JSON.stringify({ trades }) }); if (!r.ok) console.error("ship", r.status); else process.stdout.write(`.${trades.length}`); }
+  catch (e) { console.error("ship", e.message); batch = trades.concat(batch).slice(-2000); }
+}, 2000);
+
+
+// ===================== proxy/cloudflare-worker.js =====================
+// Kingnode data proxy — a Cloudflare Worker (free tier is plenty). It forwards requests to the market-data hosts the
+// terminal uses and adds CORS headers so the static site can read them from any browser.
+//   1. dash.cloudflare.com → Workers & Pages → Create → "Hello World" worker → Edit code → paste this → Deploy.
+//   2. Copy the worker URL (https://something.workers.dev) into Kingnode: ⚙ Settings → Data proxy URL.
+// Only the hosts below are allowed; nothing else is forwarded.
+const ALLOW = ["cdn.cboe.com", "query1.finance.yahoo.com", "query2.finance.yahoo.com", "efts.sec.gov", "cdn.finra.org"];
+export default {
+  async fetch(req) {
+    const url = new URL(req.url);
+    if (req.method === "OPTIONS") return new Response(null, { headers: cors() });
+    const target = url.searchParams.get("u");
+    if (!target) return new Response("usage: ?u=<encoded url>", { status: 400, headers: cors() });
+    let t; try { t = new URL(target); } catch { return new Response("bad url", { status: 400, headers: cors() }); }
+    if (!ALLOW.includes(t.hostname)) return new Response("host not allowed", { status: 403, headers: cors() });
+    const r = await fetch(t.toString(), { headers: { "user-agent": "Mozilla/5.0 (Kingnode)", accept: "application/json,text/plain,*/*" }, cf: { cacheTtl: 30 } });
+    const h = new Headers(r.headers); for (const [k, v] of Object.entries(cors())) h.set(k, v); h.delete("content-security-policy");
+    return new Response(r.body, { status: r.status, headers: h });
+  }
+};
+function cors() { return { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,OPTIONS", "access-control-allow-headers": "*", "cache-control": "public, max-age=30" }; }
