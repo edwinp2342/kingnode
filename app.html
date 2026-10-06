@@ -306,12 +306,12 @@ body:not(.showhelp) .helptext{display:none !important}
   </aside>
 </div>
 <div class="tip" id="tip"></div>
-<button id="ediBtn" class="edi-fab" title="Edi — your desk assistant">♛ Edi</button>
+<button id="ediBtn" class="edi-fab" title="Ava — your desk assistant">♛ Ava</button>
 <aside id="ediPanel" class="edi" hidden>
-  <div class="edi-head"><div><b>Edi</b> <span class="hint">desk assistant · knows this screen, your book, your journal and the calendar</span></div><div><button class="btn small" id="ediClear" type="button">Clear</button> <button class="btn small" id="ediClose" type="button">×</button></div></div>
+  <div class="edi-head"><div><b>Ava</b> <span class="hint">desk assistant · knows this screen, your book, your journal and the calendar</span></div><div><button class="btn small" id="ediClear" type="button">Clear</button> <button class="btn small" id="ediClose" type="button">×</button></div></div>
   <div class="edi-quick" id="ediQuick"></div>
   <div class="edi-log" id="ediLog"></div>
-  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Ask Edi — e.g. “read IWM for me”, “is my book too long?”, “what do I do into CPI?”"></textarea><button class="btn gold" type="submit">Send</button></form>
+  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Ask Ava — e.g. “read IWM for me”, “is my book too long?”, “what do I do into CPI?”"></textarea><button class="btn gold" type="submit">Send</button></form>
   <div class="hint" id="ediFoot" style="padding:6px 12px"></div>
 </aside>
 <dialog id="startDlg"><div class="dlg"><h2>Start here</h2>
@@ -336,7 +336,7 @@ body:not(.showhelp) .helptext{display:none !important}
     <label>Alert distance (% from level)<input name="alertPct" type="number" min="0.05" max="2" step="0.05"></label>
     <label>Fresh positioning: min vol/OI<input name="freshRatio" type="number" min="0.5" max="20" step="0.1"></label>
     <label>Fresh positioning: min volume<input name="freshMinVol" type="number" min="0" max="100000"></label>
-    <label style="grid-column:1/-1">Anthropic API key (for Edi, your desk assistant — stored only in this browser)<input name="anthropicKey" type="password" placeholder="sk-ant-…"></label>
+    <label style="grid-column:1/-1">Anthropic API key (for Ava, your desk assistant — stored only in this browser)<input name="anthropicKey" type="password" placeholder="sk-ant-…"></label>
     <label style="grid-column:1/-1">Data proxy URL (Cloudflare Worker — makes the static site live; see proxy/ in the project)<input name="proxy" placeholder="https://kingnode-proxy.yourname.workers.dev"></label>
     <label style="grid-column:1/-1">Discord webhook URL (for ⚑ Flag and alerts — works without a server)<input name="webhook" placeholder="https://discord.com/api/webhooks/…"></label>
 
@@ -819,7 +819,7 @@ function renderAll(){
 }
 function renderAsk(){
   const box = document.getElementById("askBox"); box.replaceChildren();
-  const inp = h("input",{placeholder: "Ask Edi: e.g. “Is 7,700 likely to hold into Friday?”", "aria-label":"Ask the desk"});
+  const inp = h("input",{placeholder: "Ask Ava: e.g. “Is 7,700 likely to hold into Friday?”", "aria-label":"Ask the desk"});
   const out = h("div",{class:"answer"});
   const go = async () => {
     if (requirePro("Ask the desk turns the positioning into a plain-English answer to your question.")) return;
@@ -2089,7 +2089,7 @@ function viewMacro(){
 }
 
 // =====================================================================================================
-// EDI — the desk assistant. Context = the current screen (ticker, levels, flow lean, IV/RV), the book, the journal stats,
+// AVA — the desk assistant. Context = the current screen (ticker, levels, flow lean, IV/RV), the book, the journal stats,
 // the calendar and the user's rules. Answers with Claude via the local server or the user's own key (direct from the browser);
 // without a key, answers from the app's own reads (levels, coach, book, calendar) so it is never dead.
 // =====================================================================================================
@@ -2109,13 +2109,13 @@ function ediContext(){
     ideasBacktest: BT.data?.chosen?.summary ? { winRate:BT.data.chosen.summary.winRate, avgRet:BT.data.chosen.summary.avgRet, profitFactor:BT.data.chosen.summary.profitFactor } : null,
   };
 }
-const EDI_SYSTEM = `You are Edi, the desk assistant inside Kingnode, a personal options terminal. You talk like a sharp trading-desk colleague: concise, peer-level, numbers first, no hedging boilerplate. You get a JSON context with the current ticker's dealer positioning (gamma walls, flip, king node, expected move), flow lean, IV vs realized, the user's rules, open book, journal stats, upcoming events and the Ideas backtest. Use it: cite the actual levels and numbers. If the context says demo or noChain, say the levels are placeholders. Give a read, a plan with entry/invalidation/target when asked for a trade, and push back when the user is about to break their own rules (chasing, short-dated into events/weekends, oversizing). Keep answers under 180 words unless asked for depth. End with one line of risk if a trade is involved. Never claim certainty; this is positioning context on delayed data, not advice.`;
+const EDI_SYSTEM = `You are Ava, the desk assistant inside Kingnode, a personal options terminal. You talk like a sharp trading-desk colleague: concise, peer-level, numbers first, no hedging boilerplate. You get a JSON context with the current ticker's dealer positioning (gamma walls, flip, king node, expected move), flow lean, IV vs realized, the user's rules, open book, journal stats, upcoming events and the Ideas backtest. Use it: cite the actual levels and numbers. If the context says demo or noChain, say the levels are placeholders. Give a read, a plan with entry/invalidation/target when asked for a trade, and push back when the user is about to break their own rules (chasing, short-dated into events/weekends, oversizing). Keep answers under 180 words unless asked for depth. End with one line of risk if a trade is involved. Never claim certainty; this is positioning context on delayed data, not advice.`;
 async function ediAsk(question){
   const ctx = ediContext(); const history = EDI.log.slice(-8).map(m => ({role:m.role, content:m.text}));
   const key = (S.set.anthropicKey||"").trim();
   // 1. local server (desktop) 2. direct with the user's key 3. offline read
   try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt:`${EDI_SYSTEM}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
-  if (key){ try { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:700,system:EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx),messages:[...history,{role:"user",content:question}]})}); const j = await r.json(); if (r.ok){ return {text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), via:"key"}; } return {text:"Edi couldn't reach Claude: " + (j.error?.message||r.status) + ". Check the key in ⚙ Settings.", via:"error"}; } catch(e){ return {text:"Edi couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
+  if (key){ try { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:700,system:EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx),messages:[...history,{role:"user",content:question}]})}); const j = await r.json(); if (r.ok){ return {text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), via:"key"}; } return {text:"Ava couldn't reach Claude: " + (j.error?.message||r.status) + ". Check the key in ⚙ Settings.", via:"error"}; } catch(e){ return {text:"Ava couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
   return {text: ediOffline(question, ctx), via:"offline"};
 }
 function ediOffline(q, ctx){
@@ -2130,14 +2130,14 @@ function ediOffline(q, ctx){
   if (t.rv != null) out.push(`IV ${fmt(t.iv30*100,0)}% vs realized ${fmt(t.rv*100,0)}% → options ${t.iv30 - t.rv > 0.04 ? "rich: prefer spreads or shares" : t.iv30 - t.rv < -0.02 ? "cheap: long premium works" : "about fair"}.`);
   if (t.flowPrints) out.push(`Tape lean ${t.flowLean>=0?"+":""}${fmt(t.flowLean*100,0)}% over ${t.flowPrints} prints${t.topFresh.length ? "; fresh: " + t.topFresh.slice(0,2).join(", ") : ""}.`);
   out.push(t.spot > (t.flip||0) ? `Plan: above the flip, dips toward ${fmt(t.putWall)} get bought — that's the entry; target ${fmt(t.callWall)}; invalidation a close under the flip.` : `Plan: below the flip, moves extend — don't fade; reclaim of ${fmt(t.flip)} is the signal to get constructive.`);
-  out.push("(Offline read from the app's own math — add an Anthropic key in ⚙ Settings or run the desktop server for the full Edi.)");
+  out.push("(Offline read from the app's own math — add an Anthropic key in ⚙ Settings or run the desktop server for the full Ava.)");
   return out.join("\n");
 }
 function ediRender(){
   const log = document.getElementById("ediLog"); log.replaceChildren(...EDI.log.map(m => h("div",{class:"edi-msg "+(m.role==="user"?"u":"a")}, m.text)));
-  if (EDI.busy) log.append(h("div",{class:"edi-msg a hint"},"Edi is reading the screen…"));
+  if (EDI.busy) log.append(h("div",{class:"edi-msg a hint"},"Ava is reading the screen…"));
   log.scrollTop = log.scrollHeight;
-  const foot = document.getElementById("ediFoot"); const key = (S.set.anthropicKey||"").trim(); foot.textContent = key ? "Using your Anthropic key from this browser." : "No key set — Edi answers from the app's own math. Add an Anthropic API key in ⚙ Settings for the full assistant.";
+  const foot = document.getElementById("ediFoot"); const key = (S.set.anthropicKey||"").trim(); foot.textContent = key ? "Using your Anthropic key from this browser." : "No key set — Ava answers from the app's own math. Add an Anthropic API key in ⚙ Settings for the full assistant.";
 }
 async function ediSend(q){
   q = (q||"").trim(); if (!q || EDI.busy) return; EDI.log.push({role:"user", text:q}); EDI.busy = true; ediRender();
@@ -2147,7 +2147,7 @@ async function ediSend(q){
 function ediInit(){
   try { EDI.log = JSON.parse(localStorage.getItem("kingnode:edi")||"[]"); } catch {}
   const panel = document.getElementById("ediPanel"), fab = document.getElementById("ediBtn");
-  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text:"I'm Edi. I can read the ticker on screen, check your book against your rules, review the journal, or walk you through what's on the calendar. What do you want?"}); ediRender(); } };
+  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text:"I'm Ava. I can read the ticker on screen, check your book against your rules, review the journal, or walk you through what's on the calendar. What do you want?"}); ediRender(); } };
   document.getElementById("ediClose").onclick = () => { panel.hidden = true; fab.hidden = false; };
   document.getElementById("ediClear").onclick = () => { EDI.log = []; try { localStorage.removeItem("kingnode:edi"); } catch {} ediRender(); };
   document.getElementById("ediForm").addEventListener("submit", e => { e.preventDefault(); const ta = document.getElementById("ediText"); const q = ta.value; ta.value = ""; ediSend(q); });
