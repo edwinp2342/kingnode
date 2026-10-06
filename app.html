@@ -642,11 +642,42 @@ function checkAlerts(){
 const EV_KEY = "kingnode:events";
 function getEvents(){ try { return JSON.parse(localStorage.getItem(EV_KEY)||"[]"); } catch { return []; } }
 function setEvents(l){ try { localStorage.setItem(EV_KEY, JSON.stringify(l)); } catch {} }
-const FOMC_2026 = ["2026-01-28","2026-03-18","2026-04-29","2026-06-17","2026-07-29","2026-09-16","2026-10-28","2026-12-09"];
-const CPI_2026_APPROX = ["2026-10-14","2026-11-12","2026-12-10"];
+// Macro calendar — verified against BLS/BEA/Fed schedules for Oct–Nov 2026; times ET. impact: 3 = moves everything, 2 = moves rates/sector, 1 = watch.
+const MACRO_CAL = [
+  {date:"2026-10-07", time:"14:00", name:"FOMC minutes (Sept meeting)", impact:2},
+  {date:"2026-10-08", time:"08:30", name:"Jobless claims", impact:1},
+  {date:"2026-10-14", time:"08:30", name:"CPI (September)", impact:3},
+  {date:"2026-10-15", time:"08:30", name:"PPI + Retail sales (September)", impact:2},
+  {date:"2026-10-15", time:"08:30", name:"Jobless claims", impact:1},
+  {date:"2026-10-16", time:"16:00", name:"Monthly opex (Oct)", impact:2},
+  {date:"2026-10-21", time:"09:30", name:"VIX October expiration (settlement)", impact:1},
+  {date:"2026-10-22", time:"08:30", name:"Jobless claims", impact:1},
+  {date:"2026-10-28", time:"14:00", name:"FOMC rate decision + presser 2:30", impact:3},
+  {date:"2026-10-29", time:"08:30", name:"GDP Q3 advance", impact:2},
+  {date:"2026-10-29", time:"08:30", name:"Jobless claims", impact:1},
+  {date:"2026-10-30", time:"08:30", name:"PCE inflation (September) — BEA may post 10/29", impact:2},
+  {date:"2026-11-03", time:"10:00", name:"ISM Manufacturing (Oct) / JOLTS", impact:1},
+  {date:"2026-11-06", time:"08:30", name:"Jobs report (October)", impact:3},
+  {date:"2026-11-10", time:"08:30", name:"CPI (October)", impact:3},
+  {date:"2026-11-13", time:"08:30", name:"PPI (October)", impact:2},
+  {date:"2026-11-17", time:"08:30", name:"Retail sales (October)", impact:2},
+  {date:"2026-11-20", time:"16:00", name:"Monthly opex (Nov)", impact:2},
+  {date:"2026-12-09", time:"14:00", name:"FOMC rate decision", impact:3},
+  // Q3 earnings — dates are the companies' usual slots; confirm the week of (unconfirmed = ~)
+  {date:"2026-10-13", time:"07:00", name:"~ Big banks start Q3 earnings (JPM, C, WFC)", impact:2},
+  {date:"2026-10-15", time:"02:00", name:"~ TSM Q3 earnings (pre-market)", impact:2},
+  {date:"2026-10-20", time:"16:05", name:"~ NFLX Q3 earnings", impact:1},
+  {date:"2026-10-21", time:"16:05", name:"~ TSLA Q3 earnings", impact:2},
+  {date:"2026-10-22", time:"16:05", name:"~ INTC Q3 earnings", impact:2},
+  {date:"2026-10-27", time:"16:05", name:"~ GOOGL / MSFT / META Q3 earnings week", impact:3},
+  {date:"2026-10-29", time:"16:05", name:"~ AAPL / AMZN Q3 earnings", impact:3},
+  {date:"2026-11-04", time:"16:05", name:"~ AMD Q3 earnings", impact:2},
+  {date:"2026-11-18", time:"16:20", name:"~ NVDA Q3 earnings", impact:3},
+];
+const FOMC_2026 = ["2026-01-28","2026-03-18","2026-04-29","2026-06-17","2026-07-29","2026-09-16"];
 function autoEvents(){ const out = []; const now = new Date();
-  FOMC_2026.forEach(d => out.push({name:"FOMC decision", date:d, auto:true}));
-  CPI_2026_APPROX.forEach(d => out.push({name:"CPI (approx.)", date:d, auto:true})); for (let m = 0; m < 3; m++){ const y = now.getFullYear(), mo = now.getMonth()+m; const d1 = new Date(y, mo, 1); const firstFri = new Date(y, mo, 1 + ((5 - d1.getDay() + 7) % 7)); const thirdFri = new Date(firstFri); thirdFri.setDate(firstFri.getDate()+14); out.push({name:"Jobs report (NFP)", date:firstFri.toISOString().slice(0,10), auto:true}, {name:"Monthly opex", date:thirdFri.toISOString().slice(0,10), auto:true}); } return out; }
+  MACRO_CAL.forEach(e => out.push({...e, auto:true}));
+  FOMC_2026.forEach(d => out.push({name:"FOMC decision", date:d, time:"14:00", impact:3, auto:true})); for (let m = 0; m < 3; m++){ const y = now.getFullYear(), mo = now.getMonth()+m; const d1 = new Date(y, mo, 1); const firstFri = new Date(y, mo, 1 + ((5 - d1.getDay() + 7) % 7)); const thirdFri = new Date(firstFri); thirdFri.setDate(firstFri.getDate()+14); const fd = firstFri.toISOString().slice(0,10), td = thirdFri.toISOString().slice(0,10); if (!out.some(e => e.date === fd && /jobs/i.test(e.name))) out.push({name:"Jobs report (NFP)", date:fd, time:"08:30", impact:3, auto:true}); if (!out.some(e => e.date === td && /opex/i.test(e.name))) out.push({name:"Monthly opex", date:td, time:"16:00", impact:2, auto:true}); } return out; }
 function nextEventBefore(exp){ const today = new Date(); today.setHours(0,0,0,0); const all = [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= 0 && (!exp || e.date <= exp)).sort((a,b)=>a.days-b.days); return all[0] || null; }
 function renderEvents(){
   const el = document.getElementById("events"); if (!el) return; el.replaceChildren();
@@ -654,7 +685,10 @@ function renderEvents(){
   const all = [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= -1).sort((a,b)=>a.days-b.days).slice(0,7);
   const isFri = today.getDay() === 5;
   if (isFri) el.append(h("div",{class:"notice", style:{marginBottom:"8px", color:"var(--gold)"}},"Friday: short-dated premium pays for the weekend. Theta × 3 on anything you hold past the close."));
-  el.append(h("div",{style:{display:"grid",gap:"2px"}}, ...all.map(e => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"4px 0",borderBottom:"1px solid var(--rule)",fontSize:"12.5px"}}, h("span",null, e.name, e.auto ? h("small",{class:"hint"}," auto") : null), h("span",{class:"num", style:{color: e.days <= 1 ? "var(--neg)" : e.days <= 5 ? "var(--gold)" : "var(--muted)"}}, e.days === 0 ? "today" : e.days === 1 ? "tomorrow" : e.days < 0 ? "yesterday" : `in ${e.days}d`)))));
+  const r = getRules();
+  el.append(h("label",{class:"hint",style:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 0 6px"}}, "Notify me before each event (30 min)", h("input",{type:"checkbox", checked: r.events !== false, onchange:ev=>{ r.events = ev.target.checked; setRules(r); }})));
+  el.append(h("div",{style:{display:"grid",gap:"2px"}}, ...all.map(e => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"4px 0",borderBottom:"1px solid var(--rule)",fontSize:"12.5px"}}, h("span",null, h("span",{style:{color: e.impact>=3?"var(--neg)":e.impact===2?"var(--gold)":"var(--muted)", marginRight:"5px"}}, "●".repeat(e.impact||1)), e.name, e.time ? h("small",{class:"hint"}, ` ${e.time} ET`) : null), h("span",{class:"num", style:{color: e.days <= 1 ? "var(--neg)" : e.days <= 5 ? "var(--gold)" : "var(--muted)"}}, e.days === 0 ? "today" : e.days === 1 ? "tomorrow" : e.days < 0 ? "yesterday" : `in ${e.days}d`)))));
+  el.append(h("div",{class:"actions",style:{marginTop:"6px"}}, h("button",{class:"btn small", onclick:()=>{ S.tab = "calendar"; renderTabs(); document.getElementById("tabs").scrollIntoView({behavior:"smooth"}); }},"Full calendar")));
   el.append(h("div",{class:"actions",style:{marginTop:"8px"}}, h("button",{class:"btn small", onclick:()=>{ const name = prompt("Event (e.g. CPI, FOMC, NVDA earnings):"); if (!name) return; const date = prompt("Date (YYYY-MM-DD):"); if (!/^\d{4}-\d{2}-\d{2}$/.test(date||"")) return; setEvents([...getEvents(), {name, date}]); renderEvents(); }},"+ Add event"), getEvents().length ? h("button",{class:"btn small", onclick:()=>{ const l = getEvents(); const pick = prompt("Remove which? " + l.map((e,i)=>`${i+1}) ${e.name} ${e.date}`).join("  ")); const i = Number(pick)-1; if (l[i]){ l.splice(i,1); setEvents(l); renderEvents(); } }},"Remove") : null));
 }
 function renderStatus(){
@@ -756,7 +790,7 @@ function renderAlertsOld(){
   else el.append(h("button",{class:"btn small", onclick:async()=>{ await Notification.requestPermission(); renderAlerts(); }},"Enable notifications"));
 }
 function renderTabs(){
-  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["ideas","Ideas"],["play","Playbook"],["book","Book"],["journal","Journal"],["brief","Brief"],["macro","Macro"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
+  const T = [["seeker","Heatseeker"],["heat","Positioning"],["flow","Flow"],["cflow","Contract flow"],["ideas","Ideas"],["play","Playbook"],["book","Book"],["journal","Journal"],["brief","Brief"],["calendar","Calendar"],["macro","Macro"],["quant","Quant desk"],["halal","☪ Halal"],["inst","Institutions"],["profile","Gamma profile"],["skew","Skew & expected move"],["fresh","Fresh positioning"],["chain","Chain"],["watch","Watchlist"],["tracked","Tracked"],["hist","Drift"]];
   document.getElementById("tabs").replaceChildren(...T.map(([id,l]) => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, l)));
   const p = document.getElementById("panel");
   if (S.tab === "chart") { p.replaceChildren(controls(), viewChart()); const m = S.barsMeta; if (!S.bars || !m || m.sym !== S.sym || m.iv !== S.set.interval || m.rg !== S.set.chartRange || m.ext !== (S.set.extended && S.set.interval !== "1d")) loadBars(); return; }
@@ -766,6 +800,7 @@ function renderTabs(){
   if (S.tab === "book") { p.replaceChildren(viewBook()); loadBookGreeks(); return; }
   if (S.tab === "journal") { p.replaceChildren(viewJournal()); return; }
   if (S.tab === "brief") { p.replaceChildren(viewBrief()); return; }
+  if (S.tab === "calendar") { p.replaceChildren(viewCalendar()); return; }
   if (S.tab === "macro") { p.replaceChildren(viewMacro()); loadMacro(); return; }
   if (S.tab === "quant") { p.replaceChildren(viewQuant()); if (!S.bars) loadBars(); return; }
   if (S.tab === "play") { p.replaceChildren(viewPlaybook()); if (!S.flow || S.flow.sym !== S.sym) loadFlow(); return; }
@@ -1874,7 +1909,7 @@ async function buildBrief(){
   const lines = []; const today = new Date().toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"});
   lines.push(`KINGNODE BRIEF — ${today}`);
   const ev = [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - new Date(new Date().toDateString()))/86400000)})).filter(e => e.days >= 0 && e.days <= 7).sort((a,b)=>a.days-b.days);
-  if (ev.length) lines.push(`Events this week: ${ev.map(e => `${e.name} ${e.days===0?"TODAY":e.days===1?"tomorrow":"in "+e.days+"d"}`).join(" · ")}`);
+  if (ev.length) lines.push(`Events this week: ${ev.map(e => `${"!".repeat(e.impact||1)} ${e.name}${e.time?" "+e.time+" ET":""} ${e.days===0?"TODAY":e.days===1?"tomorrow":"in "+e.days+"d"}`).join(" · ")}`);
   const syms = [...new Set(["SPX","IWM","QQQ",...getWatch()])].slice(0,8); const prevKey = s => `kingnode:prevchain:${s}`;
   for (const sym of syms){
     const chain = await fetchChainAny(sym) || (S.demo ? synthChain(sym) : null); if (!chain) continue;
@@ -1900,6 +1935,38 @@ function viewBrief(){
   box.append(h("div",{class:"card"}, BR.text ? h("pre",{style:{whiteSpace:"pre-wrap",fontFamily:"var(--mono)",fontSize:"12.5px",lineHeight:"1.6",margin:0}}, BR.text) : h("p",{class:"hint",style:{margin:0}}, BR.building ? "Pulling chains…" : "No brief yet. Press Build now.")), BR.at ? h("p",{class:"hint",style:{marginTop:"8px"}}, "Built " + new Date(BR.at).toLocaleString()) : null);
   return box;
 }
+
+// ---------- Calendar: the month, with every scheduled release, earnings slot, opex and your own events ----------
+const CALV = { y:new Date().getFullYear(), m:new Date().getMonth() };
+function viewCalendar(){
+  const box = h("div",null); const all = [...autoEvents(), ...getEvents().map(e=>({...e, mine:true}))];
+  const first = new Date(CALV.y, CALV.m, 1), daysIn = new Date(CALV.y, CALV.m+1, 0).getDate(), pad = first.getDay();
+  const todayKey = new Date().toISOString().slice(0,10);
+  const nav = dm => { let m = CALV.m+dm, y = CALV.y; if (m<0){m=11;y--;} if (m>11){m=0;y++;} CALV.m=m; CALV.y=y; renderTabs(); };
+  box.append(h("div",{class:"qhead"}, h("div",null, h("div",{class:"qtitle"},"Calendar"), h("div",{class:"hint"},"Every scheduled macro release, Fed event, opex and the usual earnings slots, plus anything you add. ●●● moves everything, ●● moves rates or a sector, ● watch. ~ = typical date, confirm the week of. Notifications fire 30 minutes before each event while the app is open (browser + Discord if set).")),
+    h("div",{style:{display:"flex",gap:"6px",alignItems:"center"}}, h("button",{class:"btn small", onclick:()=>nav(-1)},"‹"), h("span",{style:{fontWeight:700,minWidth:"150px",textAlign:"center"}}, first.toLocaleDateString("en-US",{month:"long",year:"numeric"})), h("button",{class:"btn small", onclick:()=>nav(1)},"›"), h("button",{class:"btn small", onclick:()=>{ const name = prompt("Event:"); if (!name) return; const date = prompt("Date (YYYY-MM-DD):"); if (!/^\d{4}-\d{2}-\d{2}$/.test(date||"")) return; const time = prompt("Time ET (HH:MM, optional):","")||""; setEvents([...getEvents(), {name, date, time, impact:2}]); renderTabs(); renderEvents(); }},"+ Add"))));
+  const cells = []; for (let i = 0; i < pad; i++) cells.push(h("div",{class:"jc-cell empty"}));
+  for (let d = 1; d <= daysIn; d++){ const k = `${CALV.y}-${String(CALV.m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`; const evs = all.filter(e => e.date === k).sort((a,b)=>(a.time||"").localeCompare(b.time||"")); const top = Math.max(0, ...evs.map(e=>e.impact||1));
+    cells.push(h("div",{class:"jc-cell"+(k===todayKey?" today":""), style:{minHeight:"84px", background: top>=3 ? "rgba(239,83,80,.10)" : top===2 ? "rgba(245,185,66,.08)" : "var(--panel2)"}}, h("div",{class:"jc-d"}, d, new Date(k+"T12:00:00").getDay()===5 ? h("span",{class:"hint"}," Fri") : null),
+      ...evs.map(e => h("div",{style:{fontSize:"10.5px",lineHeight:"1.3",margin:"2px 0",color: e.impact>=3?"#FCA5A5":e.impact===2?"var(--gold)":"var(--ink)"}, title:e.name + (e.time?` · ${e.time} ET`:"")}, (e.time ? e.time + " " : "") + e.name.replace(/ \(.*?\)/,""), e.mine ? h("button",{class:"btn small", style:{marginLeft:"4px",padding:"0 4px"}, onclick:()=>{ setEvents(getEvents().filter(x => !(x.name===e.name && x.date===e.date))); renderTabs(); renderEvents(); }},"×") : null)))); }
+  box.append(h("div",{class:"card"}, h("div",{class:"jc-head"}, ...["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>h("div",null,x))), h("div",{class:"jc-grid"}, ...cells)));
+  // list view for the month
+  const monthEvs = all.filter(e => e.date.startsWith(`${CALV.y}-${String(CALV.m+1).padStart(2,"0")}`)).sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
+  box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"This month, in order"), h("table",{class:"data"}, h("thead",null,h("tr",null,["Date","Time ET","Event","Impact","What it tends to move"].map(x=>h("th",null,x)))), h("tbody",null, monthEvs.map(e => h("tr",null, h("td",null, new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})), h("td",null,e.time||"—"), h("td",{style:{textAlign:"left"}},e.name), h("td",{style:{color:e.impact>=3?"var(--neg)":e.impact===2?"var(--gold)":"var(--muted)"}},"●".repeat(e.impact||1)), h("td",{style:{textAlign:"left",color:"var(--muted)"}}, /CPI|PCE|PPI/.test(e.name) ? "rates, TLT, growth vs value, VIX" : /FOMC|Fed/.test(e.name) ? "everything — rates, dollar, indexes, vol" : /Jobs|payroll|claims/i.test(e.name) ? "rates, small caps, TLT" : /opex|VIX/i.test(e.name) ? "pin/unpin around walls; gamma rolls off" : /earnings/i.test(e.name) ? "the name, its group, the index if mega-cap" : /Retail/.test(e.name) ? "consumer names, growth" : /GDP/.test(e.name) ? "rates, cyclicals" : "sector")))))));
+  return box;
+}
+// Notifier: 30 minutes before any scheduled event today (and at the open for all-day items), once per event per day.
+function checkEventAlerts(){
+  const r = getRules(); if (r.events === false) return;
+  const now = new Date(); const etNow = new Date(now.toLocaleString("en-US",{timeZone:"America/New_York"})); const todayKey = `${etNow.getFullYear()}-${String(etNow.getMonth()+1).padStart(2,"0")}-${String(etNow.getDate()).padStart(2,"0")}`;
+  const fired = (() => { try { return JSON.parse(localStorage.getItem("kingnode:evfired")||"{}"); } catch { return {}; } })();
+  for (const e of [...autoEvents(), ...getEvents()]){ if (e.date !== todayKey) continue; const key = `${e.date}|${e.name}`; if (fired[key]) continue;
+    const [hh, mm] = (e.time || "09:30").split(":").map(Number); const evMin = hh*60 + (mm||0), nowMin = etNow.getHours()*60 + etNow.getMinutes();
+    if (nowMin >= evMin - 30 && nowMin <= evMin + 5){ fired[key] = Date.now(); fireAlert("Event in " + Math.max(0, evMin - nowMin) + " min", `${e.name} at ${e.time || "the open"} ET${(e.impact||1) >= 3 ? " — this one moves everything; manage short-dated risk now." : ""}`); }
+  }
+  try { localStorage.setItem("kingnode:evfired", JSON.stringify(fired)); } catch {}
+}
+setInterval(checkEventAlerts, 60000); setTimeout(checkEventAlerts, 5000);
 
 // ---------- Macro: cross-asset ----------
 const MACRO = ["SPY","IWM","QQQ","TLT","GLD","UUP","XLE","SMH"]; const MC = { bars:new Map(), at:0, loading:false };
