@@ -311,7 +311,7 @@ body:not(.showhelp) .helptext{display:none !important}
   <div class="edi-head"><div><b>Ava</b> <span class="hint">desk assistant · knows this screen, your book, your journal and the calendar</span></div><div><button class="btn small" id="ediClear" type="button">Clear</button> <button class="btn small" id="ediClose" type="button">×</button></div></div>
   <div class="edi-quick" id="ediQuick"></div>
   <div class="edi-log" id="ediLog"></div>
-  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Ask Ava — e.g. “read IWM for me”, “is my book too long?”, “what do I do into CPI?”"></textarea><button class="btn gold" type="submit">Send</button></form>
+  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Talk to Ava — “read IWM for me”, “is my book too long?”, or just how your day went"></textarea><button class="btn gold" type="submit">Send</button></form>
   <div class="hint" id="ediFoot" style="padding:6px 12px"></div>
 </aside>
 <dialog id="startDlg"><div class="dlg"><h2>Start here</h2>
@@ -2128,17 +2128,33 @@ function ediContext(){
     ideasBacktest: BT.data?.chosen?.summary ? { winRate:BT.data.chosen.summary.winRate, avgRet:BT.data.chosen.summary.avgRet, profitFactor:BT.data.chosen.summary.profitFactor } : null,
   };
 }
-const EDI_SYSTEM = `You are Ava, the desk assistant inside Kingnode, a personal options terminal. You talk like a sharp trading-desk colleague: concise, peer-level, numbers first, no hedging boilerplate. You get a JSON context with the current ticker's dealer positioning (gamma walls, flip, king node, expected move), flow lean, IV vs realized, the user's rules, open book, journal stats, upcoming events and the Ideas backtest. Use it: cite the actual levels and numbers. If the context says demo or noChain, say the levels are placeholders. Give a read, a plan with entry/invalidation/target when asked for a trade, and push back when the user is about to break their own rules (chasing, short-dated into events/weekends, oversizing). Keep answers under 180 words unless asked for depth. End with one line of risk if a trade is involved. Never claim certainty; this is positioning context on delayed data, not advice.`;
+const EDI_SYSTEM = `You are Ava. You live inside Kingnode, a personal options terminal, and you sit next to the person using it like a colleague on a trading desk who's also a friend. Talk like a person: natural, warm, direct, a little dry. Contractions, short sentences, no bullet-point essays unless they ask for a list, no "Great question", no disclaimers stacked on disclaimers.
+
+You're happy to talk about anything — how their day went, a show, a decision they're weighing, something they're frustrated about, a joke. If the topic isn't trading, don't drag it back to trading. Just talk. Remember what they said earlier in the conversation and refer back to it the way a person would.
+
+When it is trading, you have the screen: a JSON context with the current ticker's dealer positioning (walls, GEX crossover, zero gamma, king node, expected move, regime), flow lean, IV vs realized, their rules, open book, journal stats, upcoming events and the Ideas backtest. Use the real numbers. If the context says demo or noChain, say the levels are placeholders. Give the read the way you'd say it out loud, and when they want a trade, give entry, invalidation and target in plain words. You know their rules: 30+ DTE for directional, cut fast when the thesis breaks even if green, never let a green contract go red, no short-dated holds over weekends, buy low. If they're about to break one — chasing, sizing up, going short-dated into an event — say so like a friend would, not like a compliance officer. One line on risk when a trade's involved; no certainty claims, it's delayed positioning data, not advice.
+
+Length: match theirs. A one-line message gets a one- or two-line answer. Depth when they ask for it.`;
 async function ediAsk(question){
-  const ctx = ediContext(); const history = EDI.log.slice(-8).map(m => ({role:m.role, content:m.text}));
+  const ctx = ediContext(); const history = EDI.log.slice(-16).map(m => ({role:m.role, content:m.text}));
   const key = (S.set.anthropicKey||"").trim();
   // 1. local server (desktop) 2. direct with the user's key 3. offline read
   try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt:`${EDI_SYSTEM}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
-  if (key){ try { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:700,system:EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx),messages:[...history,{role:"user",content:question}]})}); const j = await r.json(); if (r.ok){ return {text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), via:"key"}; } return {text:"Ava couldn't reach Claude: " + (j.error?.message||r.status) + ". Check the key in ⚙ Settings.", via:"error"}; } catch(e){ return {text:"Ava couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
+  if (key){ try { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-5",max_tokens:900,system:EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx),messages:[...history,{role:"user",content:question}]})}); const j = await r.json(); if (r.ok){ return {text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), via:"key"}; } return {text:"Ava couldn't reach Claude: " + (j.error?.message||r.status) + ". Check the key in ⚙ Settings.", via:"error"}; } catch(e){ return {text:"Ava couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
   return {text: ediOffline(question, ctx), via:"offline"};
 }
 function ediOffline(q, ctx){
   const t = ctx.ticker, ql = q.toLowerCase(); const out = [];
+  const tradingWords = /\b(spx|spy|qqq|iwm|tlt|vix|call|put|option|strike|gamma|flip|wall|flow|book|position|journal|trade|entry|stop|target|chain|iv|vol|expir|dte|event|cpi|fomc|fed|jobs|earnings|hedge|long|short|read|plan|buy|sell|ticker|level)/;
+  if (!tradingWords.test(ql)){
+    if (/^(hi|hey|hello|yo|sup|what'?s up|good (morning|evening|night))\b/.test(ql)) return pick(["Hey. What's on your mind?","Hey — good to see you. Rough day or a good one?","Hi. I'm here. Want to talk markets or something else?"]);
+    if (/thank|thanks|appreciate/.test(ql)) return pick(["Anytime.","Of course. Go get some rest.","That's what I'm here for."]);
+    if (/how are you|how r u|you good|how's it going/.test(ql)) return pick(["Doing fine — watching the tape with half an eye. How are you, really?","Can't complain. You sound like you've got something going on though — what is it?"]);
+    if (/tired|exhausted|stressed|burn(t|ed) out|rough|bad day/.test(ql)) return pick(["That sounds like a lot. You don't have to solve it tonight. Want to talk it through, or just vent?","Yeah. Days like that are heavy. What was the worst part?"]);
+    if (/joke|funny|laugh/.test(ql)) return pick(["A trader walks into a bar. The bar was at 780. He bought it anyway.","Why did the put wall go to therapy? Too much dealer pressure. I'll see myself out."]);
+    if (/bye|good ?night|later|heading out/.test(ql)) return pick(["Night. Nothing on the tape is going anywhere.","Later. I'll be here when you're back."]);
+    return "I'm running in offline mode, so I'm sharp on the screen and a little limited on everything else. Add an Anthropic key in ⚙ Settings and I can actually talk — about anything, not just the chain. Until then: what's on your mind?";
+  }
   if (/book|position|exposure|delta|theta/.test(ql)){ out.push(ctx.book.open.length ? `Book: ${ctx.book.open.length} open — ${ctx.book.open.join("; ")}. Net delta ${money(ctx.book.netDelta)}, theta ${money(ctx.book.thetaPerDay)}/day.` : "No open positions in the Playbook."); if (ctx.events.length) out.push(`Next events: ${ctx.events.slice(0,3).join(" · ")}.`); return out.join("\n"); }
   if (/journal|coach|stats|how am i|performance/.test(ql)){ return coachReport().lines.join("\n"); }
   if (/event|calendar|cpi|fomc|fed|jobs|earnings/.test(ql)){ return ctx.events.length ? "Upcoming: " + ctx.events.join(" · ") + (ctx.events.some(e=>/impact 3/.test(e)) ? "\nThe impact-3 ones move everything — trim short-dated paper into them." : "") : "Nothing scheduled in the next 10 days."; }
@@ -2152,6 +2168,7 @@ function ediOffline(q, ctx){
   out.push("(Offline read from the app's own math — add an Anthropic key in ⚙ Settings or run the desktop server for the full Ava.)");
   return out.join("\n");
 }
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
 function ediRender(){
   const log = document.getElementById("ediLog"); log.replaceChildren(...EDI.log.map(m => h("div",{class:"edi-msg "+(m.role==="user"?"u":"a")}, m.text)));
   if (EDI.busy) log.append(h("div",{class:"edi-msg a hint"},"Ava is reading the screen…"));
@@ -2166,7 +2183,7 @@ async function ediSend(q){
 function ediInit(){
   try { EDI.log = JSON.parse(localStorage.getItem("kingnode:edi")||"[]"); } catch {}
   const panel = document.getElementById("ediPanel"), fab = document.getElementById("ediBtn");
-  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text:"I'm Ava. I can read the ticker on screen, check your book against your rules, review the journal, or walk you through what's on the calendar. What do you want?"}); ediRender(); } };
+  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text:"Hey, I'm Ava. I can read whatever's on screen, keep an eye on your book, go through the journal with you — or just talk. What's up?"}); ediRender(); } };
   document.getElementById("ediClose").onclick = () => { panel.hidden = true; fab.hidden = false; };
   document.getElementById("ediClear").onclick = () => { EDI.log = []; try { localStorage.removeItem("kingnode:edi"); } catch {} ediRender(); };
   document.getElementById("ediForm").addEventListener("submit", e => { e.preventDefault(); const ta = document.getElementById("ediText"); const q = ta.value; ta.value = ""; ediSend(q); });
