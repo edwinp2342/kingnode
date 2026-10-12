@@ -7,6 +7,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
-      - run: node --test test/
+      - run: node --test test/math.test.mjs
       - name: syntax check every script
         run: for f in api/*.js api/_lib/*.js api/cron/*.js scripts/*.mjs desktop/*.js desktop/*.mjs; do node --check "$f"; done

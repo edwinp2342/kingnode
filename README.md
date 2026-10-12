@@ -4,7 +4,7 @@ A personal options terminal. It reads the options chain the way a dealer desk do
 
 **Run it:** https://edwinp2342.github.io/kingnode/app.html (install from the browser as an app; see DESKTOP.md). Data: a GitHub Actions loop snapshots Cboe (chains, 15-min delayed) and Yahoo (bars/quotes, near real-time, pre/after-hours) about once a minute to the `data` branch; the site reads from there. Options: a Cloudflare proxy (proxy/), the desktop server (desktop/), or a vendor key for real-time (LIVE.md).
 
-**Tests:** `node --test test/` (math) and `python3 test/smoke.py` (every tab in a headless browser). CI runs the math tests on push. `node scripts/backtest.mjs` re-runs the Ideas validation.
+**Tests:** `node --test test/math.test.mjs` (math, 14 cases) and `python3 test/smoke.py` (every tab in a headless browser). CI runs the math tests on push. `node scripts/backtest.mjs` re-runs the Ideas validation.
 
 ## Files
 
@@ -31,7 +31,13 @@ Ticker tape (TradingView) → toolbar with search and quick tickers → symbol r
 
 ## Live data with no server: the GitHub Action feed
 
-`.github/workflows/data.yml` runs `scripts/snapshot.mjs` every 5 minutes during market hours (free on a public repo). It pulls the chain, 5-minute bars (with extended hours) and daily bars for 20 tickers plus the tape quotes, writes compact JSON, and force-pushes it to the `data` branch. The site reads `raw.githubusercontent.com/edwinp2342/kingnode/data/…`, which allows browser requests, so the static site and the phone app are live (15-minute delayed) with nothing running on your machine. Order of sources in the app: local server → snapshot feed → direct Cboe → proxy → demo. Add tickers with the `SNAPSHOT_SYMBOLS` variable in the workflow or just edit the list in `scripts/snapshot.mjs`.
+`.github/workflows/data.yml` runs `scripts/snapshot.mjs` as a 5.5-hour loop (free on a public repo). Every ~60 s while the market is open it pulls the tape quotes and 5-minute bars (extended hours) for ~300 tickers, every 3rd cycle the Cboe chains for 80 tickers, every 9th the daily bars, and once an hour FINRA's off-exchange short-volume file; it writes compact JSON and force-pushes it to the `data` branch. The site reads `raw.githubusercontent.com/edwinp2342/kingnode/data/…`, which allows browser requests, so the static site and the phone app are live (15-minute delayed chains, near-real-time prices) with nothing running on your machine.
+
+**The loop keeps itself alive.** GitHub does not guarantee cron (it fired once on Fri 10/9 and once on Mon 10/12, leaving the terminal dark for a session and a half), so four minutes before a run ends it dispatches its own successor with `workflow_dispatch`; the successor's start cancels it (concurrency group). The hourly cron is only a restarter. When the market is closed the loop idles at one heartbeat per 10 minutes. `scripts/market-clock.mjs` holds the NYSE calendar (holidays, 1 PM closes); the app has the same table.
+
+Files on the `data` branch: `index.json` (phase, cycle, when chains/bars were last written — the app shows a **Feed stale** banner when this stops moving during market hours), `quotes.json` (tape), `universe.json` (last/prev/regular price for every ticker: watchlist, halal screen, movers), `SYM.json` (chain, 8 expiries, ±15%), `SYM-bars.json` (5-minute, 5 days), `SYM-daily.json` (1 year), `shortvol.json` (FINRA, 10 days).
+
+Order of sources in the app: local server → snapshot feed → direct Cboe → proxy → demo. A real snapshot is never thrown away for being old: the app shows **stale** with its age (only during market hours — a Friday close on a Saturday is simply the last session). Demo appears only when there is no real data at all, and it says so everywhere. Add tickers with the `SNAPSHOT_SYMBOLS` variable in the workflow or just edit the list in `scripts/snapshot.mjs`. To restart the feed from the app, put a fine-grained GitHub token with **Actions: write** on this repo in ⚙ Settings; the stale banner then has a one-click **Restart feed**.
 
 ## Running it live on the free feed (static site, no server)
 

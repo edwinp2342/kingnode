@@ -1,6 +1,10 @@
 // Snapshots the chains, bars and quotes the terminal needs and writes them to ./data as compact JSON, then pushes.
-// Runs as a loop inside one GitHub Actions job (LOOP_MINUTES), so the feed refreshes about every minute for free:
-//   quotes + bars (Yahoo, near real-time incl. pre/after-hours) every cycle; chains (Cboe, 15-min delayed) every 3rd cycle.
+// Runs as a loop inside one GitHub Actions job (LOOP_MINUTES). Cadence follows the market clock (ET):
+//   pre 04:00–09:30 · regular 09:30–16:00 · post 16:00–20:00 · closed otherwise (weekends, NYSE holidays)
+//   quotes every cycle; bars for ~300 tickers every cycle while the market is open; chains (Cboe, 15-min delayed) every 3rd cycle
+//   in regular hours, every 5th pre/post; daily bars every 9th; FINRA off-exchange short volume hourly.
+// A few minutes before the loop ends it dispatches its own successor (workflow_dispatch), so the feed does not depend on
+// GitHub firing the hourly cron — which it skips freely. The cron stays as the restarter if a run ever dies.
 import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
@@ -9,12 +13,20 @@ const SYMS = (process.env.SNAPSHOT_SYMBOLS || "SPX,SPY,QQQ,IWM,VIX,NDX,RUT,DIA,T
 // bars for a much wider list (cheap: one small Yahoo request each), so every ticker in the app has a chart
 // every ticker the app knows: its built-in search universe + halal list + the extra list below
 const appHtml = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8");
-const fromApp = [...appHtml.matchAll(/\["([A-Z.]{1,6})","[^"]+"\]/g)].map(m => m[1]);
-const BAR_SYMS = [...new Set([...SYMS, ...fromApp, ...(process.env.BAR_SYMBOLS || "AVGO,QCOM,TXN,MU,ARM,ASML,AMAT,LRCX,KLAC,INTC,MRVL,ADBE,CRM,ORCL,NOW,CRWD,PANW,NET,DDOG,SNOW,ANET,CSCO,SHOP,ABNB,UBER,LLY,NVO,ISRG,JNJ,MRK,ABBV,AMGN,GILD,PFE,TEM,HIMS,XOM,CVX,COP,OXY,SLB,XLE,XOP,FCX,NEM,CAT,DE,GE,UPS,FDX,VRT,CEG,VST,ENPH,FSLR,PG,COST,WMT,HD,LOW,NKE,LULU,TJX,CMG,ELF,CELH,KO,PEP,RKLB,ASTS,IONQ,RGTI,APP,RDDT,DUOL,SPOT,DIS,JPM,BAC,GS,V,MA,HOOD,DKNG,BA,T,VZ,F,GM,CCL,LMT,RTX,SMH,XLF,KRE,XBI,XLK,XLV,XLI,XLU,XLP,XLY,ARKK,HYG,EEM,FXI,BITO,IBIT,UVXY,SQQQ,TQQQ,SOXL,UUP,SPUS,HLAL,SPSK,MSTR,SOFI,SQ,PYPL,AFRM,RBLX,DELL,HPQ,IBM,ADP,INTU,WDAY,TEAM,OKTA,ZS,MDB,ZM,TTD,ROKU,MELI,SE,BABA,PDD,JD,NIO,RIVN,LCID,MARA,RIOT,CLSK,OKLO,SMR,LUNR,NRG,CAVA,CRCL,CRWV,NBIS,SBET,MRNA,CVS,BMY,DAL,UAL,AAL,LUV,RCL,MAR,TGT,ISRG").split(",").map(s=>s.trim()).filter(Boolean)])];
+const fromApp = [...appHtml.matchAll(/\["([A-Z.]{2,6})","[^"]+"\]/g)].map(m => m[1]).filter(x => !["ALL","ASK","BID","MID","GEX","VEX","DEX","PRE","POST","ETF"].includes(x)); // 2+ letters: the 1-letter matches are UI labels, and the real 1-letter tickers (F, T, V, C) are listed below
+const BAR_SYMS = [...new Set([...SYMS, ...fromApp, ...(process.env.BAR_SYMBOLS || "AVGO,QCOM,TXN,MU,ARM,ASML,AMAT,LRCX,KLAC,INTC,MRVL,ADBE,CRM,ORCL,NOW,CRWD,PANW,NET,DDOG,SNOW,ANET,CSCO,SHOP,ABNB,UBER,LLY,NVO,ISRG,JNJ,MRK,ABBV,AMGN,GILD,PFE,TEM,HIMS,XOM,CVX,COP,OXY,SLB,XLE,XOP,FCX,NEM,CAT,DE,GE,UPS,FDX,VRT,CEG,VST,ENPH,FSLR,PG,COST,WMT,HD,LOW,NKE,LULU,TJX,CMG,ELF,CELH,KO,PEP,RKLB,ASTS,IONQ,RGTI,APP,RDDT,DUOL,SPOT,DIS,JPM,BAC,GS,V,MA,HOOD,DKNG,BA,T,VZ,F,GM,CCL,LMT,RTX,SMH,XLF,KRE,XBI,XLK,XLV,XLI,XLU,XLP,XLY,ARKK,HYG,EEM,FXI,BITO,IBIT,UVXY,SQQQ,TQQQ,SOXL,UUP,SPUS,HLAL,SPSK,MSTR,SOFI,XYZ,PYPL,AFRM,RBLX,DELL,HPQ,IBM,ADP,INTU,WDAY,TEAM,OKTA,ZS,MDB,ZM,TTD,ROKU,MELI,SE,BABA,PDD,JD,NIO,RIVN,LCID,MARA,RIOT,CLSK,OKLO,SMR,LUNR,NRG,CAVA,CRCL,CRWV,NBIS,SBET,MRNA,CVS,BMY,DAL,UAL,AAL,LUV,RCL,MAR,TGT,ISRG,HOOY,NFLY,C").split(",").map(s=>s.trim()).filter(Boolean)])];
+// tickers whose app spelling differs from Yahoo's (BRK.B is BRK-B on Yahoo; Block renamed SQ to XYZ)
+const YAHOO_ALIAS = { "BRK.B":"BRK-B", "BF.B":"BF-B", SQ:"XYZ" };
 const TAPE = ["SPX","NDX","RUT","VIX","SPY","QQQ","IWM","DIA"];
 const YAHOO = { SPX:"^GSPC", NDX:"^NDX", RUT:"^RUT", VIX:"^VIX", DJX:"^DJI", XSP:"^GSPC" };
 const LOOP_MIN = Number(process.env.LOOP_MINUTES || 0), EVERY = Number(process.env.EVERY_SEC || 60), PUSH = process.env.PUSH === "1";
+const HANDOFF_MIN = Number(process.env.HANDOFF_MINUTES || 4);   // dispatch the successor this long before the loop ends
+const end = Date.now() + LOOP_MIN * 60e3;
 fs.mkdirSync("data", { recursive: true });
+
+import { marketPhase } from "./market-clock.mjs";
+// what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all
+const PLAN = { regular: { every: EVERY, chainsEvery: 3, bars: true }, pre: { every: EVERY, chainsEvery: 5, bars: true }, post: { every: EVERY, chainsEvery: 5, bars: true }, closed: { every: 600, chainsEvery: 6, bars: false } };
 
 async function quote(sym) {
   const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[sym] || sym)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" }, signal: AbortSignal.timeout(15000) });
@@ -27,23 +39,58 @@ async function quote(sym) {
   const div = sym === "XSP" ? 10 : 1;
   return { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000 };
 }
-async function cycle(n) {
-  const t0 = Date.now(); const ok = [], fail = [];
+
+// ---------- FINRA off-exchange (dark pool / ATS) short volume: real, daily, free ----------
+let svAt = 0;
+async function shortVolume() {
+  const want = new Set(BAR_SYMS); const days = {};
+  const d = new Date(); let got = 0, tries = 0;
+  while (got < 10 && tries < 18) {
+    d.setUTCDate(d.getUTCDate() - (tries ? 1 : 0)); tries++;
+    const key = d.toISOString().slice(0, 10).replace(/-/g, "");
+    if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
+    try {
+      const r = await fetch(`https://cdn.finra.org/equity/regsho/daily/CNMSshvol${key}.txt`, { signal: AbortSignal.timeout(20000) });
+      if (!r.ok) continue;
+      const txt = await r.text(); let n = 0;
+      for (const line of txt.split("\n")) { const f = line.split("|"); if (f.length < 5 || !want.has(f[1])) continue; (days[f[1]] ||= []).push([f[0].replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3"), +f[2], +f[4]]); n++; }
+      if (n) got++;
+    } catch {}
+  }
+  if (!got) throw new Error("no finra files");
+  for (const s in days) days[s].sort((a, b) => a[0].localeCompare(b[0]));
+  fs.writeFileSync("data/shortvol.json", JSON.stringify({ at: Date.now(), source: "finra-cnms", days }));
+  svAt = Date.now(); return got;
+}
+
+let chainAt = 0, barsAt = 0, dispatched = false; const universe = {};
+async function cycle(n, ph) {
+  const t0 = Date.now(); const ok = [], fail = []; const plan = PLAN[ph];
   // quotes for the tape (fast, near real-time, extended hours)
   const quotes = [];
   for (const sym of TAPE) { try { quotes.push(await quote(sym)); } catch (e) { fail.push(`q:${sym}:${e.message}`); } }
   const spx = quotes.find(q => q.symbol === "SPX"); if (spx) quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 });
-  fs.writeFileSync("data/quotes.json", JSON.stringify({ at: Date.now(), quotes }));
-  // bars for every symbol (Yahoo, extended) every cycle; chains every 3rd cycle (they're big and 15-min delayed anyway)
-  // bars for every ticker in the app, 8 at a time
-  for (let i = 0; i < BAR_SYMS.length; i += 8) {
-    await Promise.all(BAR_SYMS.slice(i, i + 8).map(async sym => {
-      try { const b = await fetchBars(sym, "5m", "5d", true); fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, bars: b.bars.slice(-800), snapshotAt: Date.now() })); } catch (e) { fail.push(`b:${sym}`); }
-      if (n % 9 === 0) { try { const d = await fetchBars(sym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, bars: d.bars.slice(-300), snapshotAt: Date.now() })); } catch {} }
-    }));
+  if (quotes.length) fs.writeFileSync("data/quotes.json", JSON.stringify({ at: Date.now(), phase: ph, quotes }));
+  // bars for every ticker in the app, 8 at a time (not while closed: nothing moves, and the files already hold the last session)
+  if (plan.bars) {
+    for (let i = 0; i < BAR_SYMS.length; i += 8) {
+      await Promise.all(BAR_SYMS.slice(i, i + 8).map(async sym => {
+        const ysym = YAHOO_ALIAS[sym] || sym;
+        try {
+          const b = await fetchBars(ysym, "5m", "5d", true);
+          fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, symbol: sym, bars: b.bars.slice(-800), snapshotAt: Date.now() }));
+          const lastBar = b.bars.at(-1); const s = b.session || {};
+          if (lastBar) universe[sym] = [+lastBar[4].toFixed(4), s.prevClose != null ? +(+s.prevClose).toFixed(4) : null, lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null];
+        } catch (e) { fail.push(`b:${sym}`); }
+        if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: d.bars.slice(-300), snapshotAt: Date.now() })); } catch {} }
+      }));
+    }
+    barsAt = Date.now();
+    // one small file with last/prev/regular price for every ticker: watchlist, halal screen, movers and the scanner read this instead of 300 files
+    fs.writeFileSync("data/universe.json", JSON.stringify({ at: barsAt, phase: ph, cols: ["last", "prevClose", "lastT", "regularPrice", "state"], q: universe }));
   }
-  for (const sym of SYMS) {
-    if (n % 3 === 0) {
+  if (n % plan.chainsEvery === 0) {
+    for (const sym of SYMS) {
       try {
         const c = await fetchChain(sym);
         const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, 8), keep = new Set(exps);
@@ -51,15 +98,18 @@ async function cycle(n) {
         fs.writeFileSync(`data/${sym}.json`, JSON.stringify({ ...c, rows, snapshotAt: Date.now() })); ok.push(sym);
       } catch (e) { fail.push(`c:${sym}:${e.message}`); }
     }
+    if (ok.length) chainAt = Date.now();
   }
-  fs.writeFileSync("data/index.json", JSON.stringify({ at: Date.now(), cycle: n, ok, fail }));
-  await watchdog(n, ok, fail);
-  console.log(`cycle ${n} · ${((Date.now() - t0) / 1000).toFixed(1)}s · quotes ${quotes.length} · chains ${ok.length}${fail.length ? " · fail " + fail.join(" ") : ""}`);
+  if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
+  const loopEnd = end; const nextIn = plan.every * 1000;
+  fs.writeFileSync("data/index.json", JSON.stringify({ at: Date.now(), cycle: n, phase: ph, chainAt, barsAt, next: nextIn, loopEnd, run: process.env.GITHUB_RUN_ID || null, ok, fail }));
+  await watchdog(n, ok, fail, ph);
+  console.log(`cycle ${n} · ${ph} · ${((Date.now() - t0) / 1000).toFixed(1)}s · quotes ${quotes.length} · chains ${ok.length}${fail.length ? " · fail " + fail.join(" ") : ""}`);
   if (PUSH) push();
 }
 let badStreak = 0;
-async function watchdog(n, ok, fail) {
-  const hook = process.env.DISCORD_WEBHOOK; const chainCycle = n % 3 === 0;
+async function watchdog(n, ok, fail, ph) {
+  const hook = process.env.DISCORD_WEBHOOK; const chainCycle = n % PLAN[ph].chainsEvery === 0;
   const spxDown = chainCycle && !ok.includes("SPX"); const manyFails = fail.length > 12;
   if (spxDown || manyFails) badStreak++; else badStreak = 0;
   if (badStreak === 2 && hook) { try { await fetch(hook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: `⚠️ Kingnode feed: ${spxDown ? "SPX chain failed twice in a row" : fail.length + " fetch failures"} (cycle ${n}). ${fail.slice(0, 6).join(" ")}` }) }); } catch {} }
@@ -69,5 +119,28 @@ function push() {
     execSync(`cd data && ([ -d .git ] || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1; git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash", timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
   } catch (e) { console.error("push failed", e.message); }
 }
-const end = Date.now() + LOOP_MIN * 60e3; let n = 0;
-do { await cycle(n++); if (LOOP_MIN) { const wait = Math.max(5, EVERY - 1) * 1000; await new Promise(r => setTimeout(r, wait)); } } while (Date.now() < end);
+// Hand the baton to the next run. workflow_dispatch is one of the two events GITHUB_TOKEN is allowed to trigger.
+async function dispatchSuccessor() {
+  if (dispatched || !process.env.GITHUB_TOKEN || !process.env.GITHUB_REPOSITORY) return;
+  dispatched = true;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/${process.env.FEED_WORKFLOW || "data.yml"}/dispatches`, {
+      method: "POST", headers: { authorization: `Bearer ${process.env.GITHUB_TOKEN}`, accept: "application/vnd.github+json", "content-type": "application/json", "x-github-api-version": "2022-11-28" },
+      body: JSON.stringify({ ref: process.env.FEED_REF || "main" }), signal: AbortSignal.timeout(20000) });
+    console.log(`successor dispatched: http ${r.status}`);
+    if (!r.ok) console.error(await r.text());
+  } catch (e) { console.error("dispatch failed", e.message); }
+}
+let n = 0; const sleep = ms => new Promise(r => setTimeout(r, ms));
+if (process.argv.includes("--once") || !LOOP_MIN) { await cycle(0, marketPhase()); }
+else {
+  const handoffAt = end - HANDOFF_MIN * 60e3;
+  while (Date.now() < end) {
+    if (Date.now() >= handoffAt) await dispatchSuccessor();   // the successor's start cancels this run (concurrency group) — no gap, no overlap
+    const ph = marketPhase();
+    await cycle(n++, ph);
+    const wait = Math.max(5, PLAN[ph].every - 1) * 1000;
+    const cap = (dispatched ? end : handoffAt) - Date.now();   // never sleep past the handoff moment
+    await sleep(Math.min(wait, Math.max(1000, cap)));
+  }
+}

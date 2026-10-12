@@ -1,5 +1,5 @@
 // Unit tests for the positioning math. Runs the app's own computeFrom (extracted from app.html) and the server's levels.js
-// against a synthetic chain with known answers. `node --test test/`
+// against a synthetic chain with known answers. `node --test test/math.test.mjs`
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -84,4 +84,53 @@ test("exchange timestamps parse in New York time, DST-aware", () => {
 test("server levels agree with the app on the walls", () => {
   const l = computeLevels(chain(), 3, 15);
   assert.equal(l.callWall, 105); assert.equal(l.putWall, 95);
+});
+
+// ---------- trust layer: market clock, staleness, strike binning, chain-volume flow ----------
+import { marketPhase, NYSE_HOLIDAYS } from "../scripts/market-clock.mjs";
+test("feed market clock: phases, weekends, holidays, half days (ET)", () => {
+  assert.equal(marketPhase(new Date("2026-10-12T14:00:00Z")), "regular", "Columbus Day: stocks trade");
+  assert.equal(marketPhase(new Date("2026-10-12T10:30:00Z")), "pre");
+  assert.equal(marketPhase(new Date("2026-10-12T22:00:00Z")), "post");
+  assert.equal(marketPhase(new Date("2026-10-13T01:00:00Z")), "closed");
+  assert.equal(marketPhase(new Date("2026-10-17T15:00:00Z")), "closed", "Saturday");
+  assert.equal(marketPhase(new Date("2026-11-26T15:00:00Z")), "closed", "Thanksgiving");
+  assert.equal(marketPhase(new Date("2026-11-27T17:30:00Z")), "regular", "Black Friday before 1pm");
+  assert.equal(marketPhase(new Date("2026-11-27T18:30:00Z")), "post", "Black Friday after the 1pm close");
+  assert.ok(NYSE_HOLIDAYS.has("2026-12-25"));
+});
+test("app market clock matches the feed's, and staleness only counts while the market is open", () => {
+  const src2 = [grab("marketPhase"), grab("marketOpenNow"), grab("isStale"), grab("NYSE_HOLIDAYS"), grab("NYSE_HALF_DAYS")].join("\n");
+  const c2 = { Math, Date, Number, Map, Set, Array, Object, isFinite, String, Intl, marketDate: ctx.marketDate };
+  vm.createContext(c2); vm.runInContext(src2 + "\nthis.marketPhase = marketPhase; this.isStale = isStale;", c2);
+  for (const iso of ["2026-10-12T14:00:00Z", "2026-10-12T10:30:00Z", "2026-10-12T22:00:00Z", "2026-10-13T01:00:00Z", "2026-10-17T15:00:00Z", "2026-11-26T15:00:00Z", "2026-11-27T18:30:00Z"])
+    assert.equal(c2.marketPhase(Date.parse(iso)), marketPhase(new Date(iso)), iso);
+  const RealDate = Date;
+  const at = iso => { const fixed = RealDate.parse(iso); c2.Date = class extends RealDate { constructor(...a){ super(...(a.length ? a : [fixed])); } static now(){ return fixed; } static parse(x){ return RealDate.parse(x); } }; vm.runInContext("Date = this.Date", c2); };
+  at("2026-10-12T15:00:00Z"); // Monday 11:00 ET, market open
+  assert.equal(c2.isStale(RealDate.parse("2026-10-12T14:00:00Z"), 40), true, "an hour-old snapshot during the session is stale");
+  assert.equal(c2.isStale(RealDate.parse("2026-10-12T14:50:00Z"), 40), false, "10 minutes old is fine");
+  at("2026-10-17T15:00:00Z"); // Saturday
+  assert.equal(c2.isStale(RealDate.parse("2026-10-16T20:00:00Z"), 40), false, "Friday's close on a Saturday is the last session, not stale");
+});
+test("strike binning keeps dense chains readable and sums exposures", () => {
+  const src3 = [grab("autoStrikeStep"), grab("binCells")].join("\n");
+  const c3 = { Math, Map, Set, Array, Object, isFinite, Number }; vm.createContext(c3); vm.runInContext(src3 + "\nthis.autoStrikeStep = autoStrikeStep; this.binCells = binCells;", c3);
+  const ks5 = []; for (let k = 7400; k <= 8200; k += 5) ks5.push(k);
+  assert.equal(c3.autoStrikeStep(ks5), 25, "SPX 5-point strikes → 25-point bins");
+  assert.equal(c3.autoStrikeStep([95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105]), 1, "a short list is not binned");
+  const byCell = new Map(); for (const K of [7800, 7805, 7810]) byCell.set("e|" + K, { exp: "e", K, gex: K === 7805 ? -5 : 2, vex: 1, dex: 1, cG: 1, pG: 1, cOI: 10, pOI: 10, cVol: 1, pVol: 1 });
+  const b = c3.binCells({ byCell }, 25); const cell = b.get("e|7800");
+  assert.equal(cell.gex, -1, "exposures sum inside the bin"); assert.equal(cell.rep, 7805, "the strongest real strike represents the bin"); assert.equal(cell.cOI, 30);
+});
+test("chain-volume flow is real data: size = volume, side = where the last print sat, never synthetic", () => {
+  const src4 = grab("chainFlow");
+  const rows = [["2026-12-18", "C", 100, 500, 120, 0.3, 0.01, 0.5, 1.0, 1.2, 1.2], ["2026-12-18", "P", 95, 50, 40, 0.3, 0.01, -0.3, 2.0, 2.2, 2.0], ["2026-12-18", "C", 110, 10, 0, 0.3, 0.01, 0.2, 0.5, 0.6, 0.55]];
+  const c4 = { Math, Date, Map, Set, Array, Object, isFinite, Number, String, S: { chain: { rows, asOf: "2026-10-12 15:00:00" }, calc: {}, demo: false, allExps: ["2026-12-18"], sym: "T" } };
+  vm.createContext(c4); vm.runInContext(src4 + "\nthis.chainFlow = chainFlow;", c4);
+  const t = c4.chainFlow();
+  assert.equal(t.length, 2, "contracts with zero volume are not prints");
+  assert.equal(t[0].K, 100); assert.equal(t[0].side, "A", "last at the ask"); assert.equal(t[0].sz, 120); assert.equal(t[0].prem, Math.round(1.2 * 120 * 100));
+  assert.equal(t[1].side, "B", "last at the bid"); assert.equal(t[1].kind, "volume");
+  c4.S.demo = true; assert.equal(c4.chainFlow().length, 0, "demo mode never fabricates flow here");
 });

@@ -1,5 +1,8 @@
 # Daily maintenance
 
+## 0. The data feed (checks itself; here is what to do when it doesn't)
+The feed is a self-chaining GitHub Actions loop (see README → "Live data with no server"). If the app shows the **Feed stale** banner during market hours: press **Restart feed** (needs a GitHub token with Actions: write in ⚙ Settings) or open https://github.com/edwinp2342/kingnode/actions/workflows/data.yml and press **Run workflow**. One run = 5.5 hours, then it hands off by itself. Health at a glance: `curl -s https://raw.githubusercontent.com/edwinp2342/kingnode/data/index.json` — `at` should be within a couple of minutes while the market is open, `phase` says what the loop thinks the clock is, `fail` lists tickers that didn't fetch. Add `DISCORD_WEBHOOK` as a repo secret and the loop pings you when SPX's chain fails twice in a row.
+
 Two things run every day without you, and one agent checks on them.
 
 ## 1. Morning levels (automatic)
