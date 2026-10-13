@@ -35,7 +35,7 @@ async function quote(sym) {
   const q = res0.indicators?.quote?.[0], closes = (q?.close || []), ts = res0.timestamp || [];
   let last = +m.regularMarketPrice || 0, lastT = (m.regularMarketTime || 0) * 1000;
   for (let i = closes.length - 1; i >= 0; i--) if (closes[i] != null) { last = closes[i]; lastT = ts[i] * 1000; break; }
-  const price = +m.regularMarketPrice || last, prev = +(m.chartPreviousClose ?? m.previousClose ?? price);
+  const price = (YAHOO[sym] && last) ? last : (+m.regularMarketPrice || last), prev = +(m.chartPreviousClose ?? m.previousClose ?? price); // indices: Yahoo's meta price can lag the bars by an hour after the close
   const div = sym === "XSP" ? 10 : 1;
   return { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000 };
 }

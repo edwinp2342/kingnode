@@ -134,3 +134,24 @@ test("chain-volume flow is real data: size = volume, side = where the last print
   assert.equal(t[1].side, "B", "last at the bid"); assert.equal(t[1].kind, "volume");
   c4.S.demo = true; assert.equal(c4.chainFlow().length, 0, "demo mode never fabricates flow here");
 });
+test("Ava can log what she is told: open, close, note — and never on a bad payload", () => {
+  const names = ["fmt", "money", "JR_KEY", "getJournal", "setJournal", "PB_KEY", "PB_DEF", "getPb", "setPb", "uidj", "journalOpen", "journalClose", "AVA_NOTES_KEY", "avaNotes", "avaRemember", "avaForget", "ediApply", "ediRunActions"];
+  const src5 = names.map(grab).join("\n");
+  const store = new Map(); const localStorage = { getItem: k => store.has(k) ? store.get(k) : null, setItem: (k, v) => store.set(k, String(v)), removeItem: k => store.delete(k) };
+  const c5 = { Math, Date, Number, Map, Set, Array, Object, isFinite, String, JSON, Intl, localStorage, console, chainSnapshot: () => null, goSym: () => {}, renderTabs: () => {}, dte: () => 30, S: { tab: "x" }, marketDate: ctx.marketDate };
+  vm.createContext(c5); vm.runInContext(src5 + "\nthis.ediApply = ediApply; this.ediRunActions = ediRunActions; this.getPb = getPb; this.getJournal = getJournal; this.avaNotes = avaNotes;", c5);
+  const r1 = c5.ediRunActions('Logged it.\n<<kn {"action":"open","sym":"hood","kind":"option","cp":"C","strike":115,"exp":"2026-11-20","qty":2,"entry":3.4,"date":"2026-10-12","why":"flow at the ask"}>>');
+  assert.equal(r1.text, "Logged it.", "action lines are stripped from what the user sees");
+  assert.equal(r1.actions.length, 1); assert.ok(r1.actions[0].ok, r1.actions[0].msg);
+  const pb = c5.getPb(); assert.equal(pb.positions.length, 1); assert.equal(pb.positions[0].sym, "HOOD"); assert.equal(pb.positions[0].K, 115);
+  const j = c5.getJournal(); assert.equal(j.length, 1); assert.equal(j[0].strike, 115); assert.equal(j[0].expiration, "2026-11-20");
+  const r2 = c5.ediRunActions('Closed.\n<<kn {"action":"close","sym":"HOOD","strike":115,"exp":"2026-11-20","exit":4.1,"why":"took 20%"}>>');
+  assert.ok(r2.actions[0].ok, r2.actions[0].msg); assert.match(r2.actions[0].msg, /\+\$140/, "2 contracts × (4.10 − 3.40) × 100 = +$140");
+  assert.ok(c5.getPb().positions[0].closed, "position marked closed"); assert.equal(c5.getJournal()[0].exit, 4.1);
+  const r3 = c5.ediRunActions('<<kn {"action":"open","sym":"NFLY","kind":"shares","qty":65,"entry":15.2}>> <<kn {"action":"note","text":"buys the income sleeve weekly"}>>');
+  assert.ok(r3.actions.every(a => a.ok), JSON.stringify(r3.actions)); assert.equal(c5.avaNotes().length, 1);
+  const r4 = c5.ediRunActions('<<kn {"action":"close","sym":"NFLY","kind":"shares","exit":16}>>');
+  assert.match(r4.actions[0].msg, /\+\$52/, "65 shares × 0.80 = +$52, not ×100");
+  const r5 = c5.ediRunActions('<<kn {"action":"open","sym":"TLT","kind":"option","cp":"C","strike":80}>> <<kn {"action":"close","sym":"ZZZ","exit":1}>> <<kn {not json}>>');
+  assert.ok(r5.actions.every(a => !a.ok), "missing fields, unknown position and bad JSON all refuse"); assert.equal(c5.getPb().positions.length, 2, "nothing half-written");
+});

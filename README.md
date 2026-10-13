@@ -76,6 +76,10 @@ The GitHub Pages build pulls everything from Cboe's delayed feed directly in you
 - **Settings (⚙):** default ticker, refresh interval, default expiration count, strike range, dealer model, alert distance, fresh-positioning thresholds. Chart settings live on the chart toolbar. Everything persists in the browser.
 - **Personal use:** set `GATE_SYMBOLS=false` to make every ticker free while it's just you.
 
+## Ava (desk assistant)
+
+Ava is Claude. Without an Anthropic API key in ⚙ Settings she is an offline rule engine and says so on every answer; with one she reads the screen, your rules, open book, last 12 journal entries and her own memory, and talks like a colleague. Model is selectable (Sonnet 5.5 default, Opus 5.5, Haiku 5.5). She can write to the app: tell her a trade you took, shares you bought or a position you closed and she appends `<<kn {...}>>` action lines that the app executes (journal + playbook) and shows as green chips under her reply; she keeps durable facts in **Memory** (the button in her header; delete anything with ×). Everything stays in this browser — use Back up / Restore to carry it over.
+
 ## The math
 
 - **Dealer gamma per cell** = gamma × OI × 100 × spot² × 1%. Calls positive, puts negative (standard "dealers long calls, short puts" convention; a magnitude-only model is available in the controls).
