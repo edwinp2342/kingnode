@@ -178,3 +178,13 @@ test("feed: previous close for the movers comes from the prior session's last re
   assert.equal(prevSessionClose(bars, session), 112, "the 3:55 PM regular bar of the prior session, not the after-hours print and not Yahoo's number");
   assert.equal(prevSessionClose([[t("2026-10-14", 9, 30), 0, 0, 0, 108, 1]], session), 140.68, "falls back to Yahoo when there is no prior session in the window");
 });
+test("app: the chart knows whose bars it is holding (symbol switch reloads; same key dedupes), and greeks print as decimals", () => {
+  const fm = new Function(grab("barsMetaMatches") + "\n" + grab("barsCurrent") + "\n" + grab("fmtGreek") + "\n" + grab("fmt") + "; return { barsMetaMatches, barsCurrent, fmtGreek };")();
+  globalThis.S = { sym: "SPX", set: { interval: "5m", chartRange: "5d", extended: true }, bars: [[0, 1, 1, 1, 1, 1]], barsMeta: { sym: "SPX", iv: "5m", rg: "5d", ext: true } };
+  assert.equal(fm.barsMetaMatches(), true); assert.equal(fm.barsCurrent(), true);
+  S.sym = "HOOD"; assert.equal(fm.barsMetaMatches(), false, "another ticker's bars never pass as this one's");
+  S.sym = "SPX"; S.set.interval = "1d"; assert.equal(fm.barsMetaMatches(), false, "interval change → reload");
+  S.set.interval = "5m"; S.bars = null; assert.equal(fm.barsMetaMatches(), true, "no bars for this exact key (already tried) → no reload loop"); assert.equal(fm.barsCurrent(), false);
+  delete globalThis.S;
+  assert.equal(fm.fmtGreek(2e-4), "0.0002"); assert.equal(fm.fmtGreek(0.000123456), "0.000123"); assert.equal(fm.fmtGreek(0.0421), "0.0421"); assert.equal(fm.fmtGreek(-0.00007), "-0.00007"); assert.equal(fm.fmtGreek(0), "0"); assert.equal(fm.fmtGreek(NaN), "—");
+});
