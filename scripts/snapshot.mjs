@@ -75,6 +75,16 @@ async function shortVolume() {
 }
 
 let chainAt = 0, barsAt = 0, dispatched = false; const universe = {}; const scan = {};
+// The close of the session before the latest one, from the 5-minute bars: Yahoo's chartPreviousClose on a 5-day request is the close
+// before the whole window (five sessions back), which made the movers list show multi-day moves as "today".
+const ET_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+function etParts(ts) { const p = ET_FMT.formatToParts(new Date(ts)); const g = t => p.find(x => x.type === t)?.value; return { date: `${g("year")}-${g("month")}-${g("day")}`, min: (Number(g("hour")) % 24) * 60 + Number(g("minute")) }; }
+export function prevSessionClose(bars, session) {
+  if (!bars?.length) return null;
+  const latest = session?.regularStart ? etParts(session.regularStart).date : etParts(bars[bars.length - 1][0]).date;
+  let prev = null; for (const b of bars) { const e = etParts(b[0]); if (e.date >= latest) break; if (e.min >= 570 && e.min < 960) prev = b; } // last regular-session bar of the session before
+  return prev ? +prev[4].toFixed(4) : (session?.prevClose != null ? +(+session.prevClose).toFixed(4) : null);
+}
 // Yahoo's 1-year daily series often lacks the session in progress (and the one just closed) until late evening; build that bar from
 // the 5-minute regular-session bars so trend, RSI and realized vol see today.
 export function withToday(daily, intraday, session) {
@@ -117,7 +127,7 @@ async function cycle(n, ph) {
           b = await fetchBars(ysym, "5m", "5d", true);
           fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, symbol: sym, bars: b.bars.slice(-800), snapshotAt: Date.now() }));
           const lastBar = b.bars.at(-1); const s = b.session || {};
-          if (lastBar) universe[sym] = [+lastBar[4].toFixed(4), s.prevClose != null ? +(+s.prevClose).toFixed(4) : null, lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null];
+          if (lastBar) universe[sym] = [+lastBar[4].toFixed(4), prevSessionClose(b.bars, s), lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null];
         } catch (e) { fail.push(`b:${sym}`); }
         if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: withToday(d.bars.slice(-300), b?.bars, b?.session), snapshotAt: Date.now() })); } catch (e) { fail.push(`d:${sym}`); } }
       }));

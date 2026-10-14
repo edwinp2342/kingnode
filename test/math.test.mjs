@@ -167,3 +167,14 @@ test("feed: today's session is folded into the daily series from the 5-minute ba
   const again = withToday(out, intra, session); assert.equal(again.length, 3, "running it twice replaces, never duplicates");
   assert.equal(withToday(daily, [], session).length, 2, "no intraday bars → unchanged");
 });
+test("feed: previous close for the movers comes from the prior session's last regular bar, not Yahoo's 5-day window", () => {
+  const src = fs.readFileSync(new URL("../scripts/snapshot.mjs", import.meta.url), "utf8");
+  const grabF = name => { const i = src.indexOf(`function ${name}`); let j = src.indexOf("{", i), d = 0; for (; j < src.length; j++) { if (src[j] === "{") d++; else if (src[j] === "}") { d--; if (!d) break; } } return src.slice(i, j + 1); };
+  const fmtLine = src.slice(src.indexOf("const ET_FMT"), src.indexOf("\n", src.indexOf("const ET_FMT")));
+  const prevSessionClose = new Function(fmtLine + "\n" + grabF("etParts") + "\n" + grabF("prevSessionClose") + "; return prevSessionClose;")();
+  const t = (d, h, m) => Date.parse(`${d}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00-04:00`); // ET (EDT)
+  const bars = [[t("2026-10-13", 15, 55), 0, 0, 0, 112.0, 1], [t("2026-10-13", 19, 55), 0, 0, 0, 111.1, 1] /* after-hours print */, [t("2026-10-14", 9, 30), 0, 0, 0, 108, 1], [t("2026-10-14", 15, 55), 0, 0, 0, 100.6, 1]];
+  const session = { regularStart: t("2026-10-14", 9, 30), prevClose: 140.68 /* Yahoo's 5-day-window value — wrong for a daily change */ };
+  assert.equal(prevSessionClose(bars, session), 112, "the 3:55 PM regular bar of the prior session, not the after-hours print and not Yahoo's number");
+  assert.equal(prevSessionClose([[t("2026-10-14", 9, 30), 0, 0, 0, 108, 1]], session), 140.68, "falls back to Yahoo when there is no prior session in the window");
+});
