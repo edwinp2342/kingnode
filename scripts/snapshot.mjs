@@ -23,7 +23,17 @@ const YAHOO = { SPX:"^GSPC", NDX:"^NDX", RUT:"^RUT", VIX:"^VIX", DJX:"^DJI", XSP
 const LOOP_MIN = Number(process.env.LOOP_MINUTES || 0), EVERY = Number(process.env.EVERY_SEC || 60), PUSH = process.env.PUSH === "1";
 const HANDOFF_MIN = Number(process.env.HANDOFF_MINUTES || 4);   // dispatch the successor this long before the loop ends
 const end = Date.now() + LOOP_MIN * 60e3;
-fs.mkdirSync("data", { recursive: true });
+// Start from what the last run left on the data branch (daily bars, chains for names not refreshed yet, the scan), without its
+// history: the branch is force-pushed as a single commit every cycle, so the repo never accumulates a minute-by-minute history.
+function seed() {
+  if (fs.existsSync("data/.git")) return;
+  if (PUSH && process.env.GITHUB_TOKEN && process.env.GITHUB_REPOSITORY) {
+    try { execSync(`git clone -q --depth 1 -b data "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data && rm -rf data/.git`, { stdio: "inherit", shell: "/bin/bash", timeout: 240000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } }); console.log(`seeded data/ with ${fs.readdirSync("data").length} files from the data branch`); }
+    catch (e) { console.error("seed failed — starting empty", e.message); }
+  }
+  fs.mkdirSync("data", { recursive: true });
+}
+seed();
 
 import { marketPhase, etNow } from "./market-clock.mjs";
 // what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all
@@ -90,7 +100,7 @@ async function cycle(n, ph) {
   const spx = quotes.find(q => q.symbol === "SPX"); if (spx) quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 });
   if (quotes.length) fs.writeFileSync("data/quotes.json", JSON.stringify({ at: Date.now(), phase: ph, quotes }));
   // bars for every ticker in the app, 8 at a time (not while closed: nothing moves, and the files already hold the last session)
-  if (plan.bars) {
+  if (plan.bars || n === 0) { // cycle 0 always pulls bars so a run that starts overnight still has every chart
     for (let i = 0; i < BAR_SYMS.length; i += 8) {
       await Promise.all(BAR_SYMS.slice(i, i + 8).map(async sym => {
         const ysym = YAHOO_ALIAS[sym] || sym;
@@ -135,7 +145,8 @@ async function watchdog(n, ok, fail, ph) {
 }
 function push() {
   try {
-    execSync(`cd data && ([ -d .git ] || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1; git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash", timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    // one commit, amended every cycle and force-pushed: the branch is always a single snapshot, old blobs become garbage GitHub collects
+    execSync(`cd data && ([ -d .git ] || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && (git rev-parse -q --verify HEAD >/dev/null 2>&1 && git commit -q --amend -m "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1 || git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1); git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash", timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
   } catch (e) { console.error("push failed", e.message); }
 }
 // Hand the baton to the next run. workflow_dispatch is one of the two events GITHUB_TOKEN is allowed to trigger.
