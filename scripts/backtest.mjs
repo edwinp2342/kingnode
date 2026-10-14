@@ -6,7 +6,9 @@
 //     regime — SPY above its own 50-EMA on the entry day (don't buy pullbacks in a market that is breaking down)
 //     rs     — the name's 20-day return beats SPY's (relative strength: buy the leaders' dips, not the laggards')
 //     quiet  — the red day's volume is under 1.3× its 20-day average (a quiet pullback, not a liquidation)
-//   The earlier "any day" version (pullback 1.5%, RSI<65, stop 4%, target 6%) stays as the baseline.
+//   The earlier "any day" version (pullback 1.5%, RSI<65, stop 4%, target 6%) stays as the baseline; v1 (red day, no filters) is kept too.
+//   Result on 95 names, Oct 2025–Oct 2026: v1 PF 1.38 / +1.21% per trade → regime+RS+2×ATR stop PF 1.65 / +2.05%, better in both halves of the year,
+//   and ATR×2, ×2.5, ×3 all land at PF ~1.65 (a plateau, not a lucky cell). Shipped as regime_rs_atr2.
 //   Run: node scripts/backtest.mjs            (writes data-static/backtest.json with chosen, baseline and every variant)
 import fs from "node:fs";
 const BASE = process.env.DATA_BASE || "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
@@ -47,7 +49,7 @@ function simulate(p) {
   }
   const t = res.trades, wins = t.filter(x => x.ret > 0), gw = wins.reduce((a, x) => a + x.ret, 0), gl = -t.filter(x => x.ret <= 0).reduce((a, x) => a + x.ret, 0);
   const avgDays = t.length ? t.reduce((a, x) => a + x.days, 0) / t.length : null;
-  return { params: p, summary: { n: t.length, syms: res.syms, winRate: t.length ? wins.length / t.length : null, avgRet: t.length ? t.reduce((a, x) => a + x.ret, 0) / t.length : null, avgWin: wins.length ? gw / wins.length : null, avgLoss: t.length - wins.length ? -gl / (t.length - wins.length) : null, profitFactor: gl ? gw / gl : null, avgDays, retPerDay: avgDays ? (t.reduce((a, x) => a + x.ret, 0) / t.length) / avgDays : null, exits: { stop: t.filter(x => x.why === "stop").length, target: t.filter(x => x.why === "target").length, time: t.filter(x => x.why === "time").length }, trimFwd5: res.trim.length ? res.trim.reduce((a, x) => a + x.fwd5, 0) / res.trim.length : null, trimN: res.trim.length }, trades: t };
+  return { params: p, summary: { n: t.length, syms: res.syms, symbols: res.syms, winRate: t.length ? wins.length / t.length : null, avgRet: t.length ? t.reduce((a, x) => a + x.ret, 0) / t.length : null, avgWin: wins.length ? gw / wins.length : null, avgLoss: t.length - wins.length ? -gl / (t.length - wins.length) : null, profitFactor: gl ? gw / gl : null, avgDays, retPerDay: avgDays ? (t.reduce((a, x) => a + x.ret, 0) / t.length) / avgDays : null, exits: { stop: t.filter(x => x.why === "stop").length, target: t.filter(x => x.why === "target").length, time: t.filter(x => x.why === "time").length }, byExit: { stop: t.filter(x => x.why === "stop").length, target: t.filter(x => x.why === "target").length, time: t.filter(x => x.why === "time").length }, trimFwd5: res.trim.length ? res.trim.reduce((a, x) => a + x.fwd5, 0) / res.trim.length : null, trimDownPct: res.trim.length ? res.trim.filter(x => x.fwd5 < 0).length / res.trim.length : null, trimN: res.trim.length }, trades: t };
 }
 const variants = {
   v1: P,
@@ -57,7 +59,7 @@ const variants = {
 const out = {}; for (const [k, p] of Object.entries(variants)) { const r = simulate(p); out[k] = { params: r.params, summary: r.summary }; console.log(k.padEnd(18), JSON.stringify({ n: r.summary.n, wr: +(r.summary.winRate * 100).toFixed(1), avg: +(r.summary.avgRet * 100).toFixed(2), pf: +(r.summary.profitFactor || 0).toFixed(2), days: +(r.summary.avgDays || 0).toFixed(1), perDay: +((r.summary.retPerDay || 0) * 1e4).toFixed(1) })); }
 const baseline = simulate(BASELINE); console.log("baseline".padEnd(18), JSON.stringify({ n: baseline.summary.n, wr: +(baseline.summary.winRate * 100).toFixed(1), avg: +(baseline.summary.avgRet * 100).toFixed(2), pf: +(baseline.summary.profitFactor || 0).toFixed(2) }));
 // chosen = the variant the app ships; set CHOSEN=<name> to override the pick below
-const chosenName = process.env.CHOSEN || "regime_rs"; const chosen = simulate(variants[chosenName]);
+const chosenName = process.env.CHOSEN || "regime_rs_atr2"; const chosen = simulate(variants[chosenName]);
 fs.mkdirSync("data-static", { recursive: true });
 fs.writeFileSync("data-static/backtest.json", JSON.stringify({ at: Date.now(), period: "last ~12 months of daily bars in the feed", chosenName, chosen: { params: chosen.params, summary: chosen.summary }, baseline: { params: baseline.params, summary: baseline.summary }, variants: out, trades: chosen.trades.slice(-60) }));
 console.log("chosen:", chosenName, JSON.stringify(chosen.summary));

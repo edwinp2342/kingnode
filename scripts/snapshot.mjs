@@ -75,6 +75,15 @@ async function shortVolume() {
 }
 
 let chainAt = 0, barsAt = 0, dispatched = false; const universe = {}; const scan = {};
+// Yahoo's 1-year daily series often lacks the session in progress (and the one just closed) until late evening; build that bar from
+// the 5-minute regular-session bars so trend, RSI and realized vol see today.
+export function withToday(daily, intraday, session) {
+  if (!daily?.length || !intraday?.length || !session?.regularStart || !session?.regularEnd) return daily || [];
+  const reg = intraday.filter(b => b[0] >= session.regularStart && b[0] < session.regularEnd); if (!reg.length) return daily;
+  const bar = [session.regularStart, reg[0][1], Math.max(...reg.map(b => b[2])), Math.min(...reg.map(b => b[3])), reg[reg.length - 1][4], reg.reduce((a, b) => a + (b[5] || 0), 0)];
+  const day = t => new Date(t).toISOString().slice(0, 10); const last = daily[daily.length - 1];
+  if (day(last[0]) === day(bar[0])) return [...daily.slice(0, -1), bar]; if (day(last[0]) < day(bar[0])) return [...daily, bar]; return daily;
+}
 // One compact line per chain ticker for the desk assistant and the scanner: where the options money went today, the unusual
 // contract, ATM IV, and the levels. Computed from the full chain while it is in memory, so the app never has to pull 80 files.
 function scanRow(c0) {
@@ -110,7 +119,7 @@ async function cycle(n, ph) {
           const lastBar = b.bars.at(-1); const s = b.session || {};
           if (lastBar) universe[sym] = [+lastBar[4].toFixed(4), s.prevClose != null ? +(+s.prevClose).toFixed(4) : null, lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null];
         } catch (e) { fail.push(`b:${sym}`); }
-        if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: d.bars.slice(-300), snapshotAt: Date.now() })); } catch {} }
+        if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: withToday(d.bars.slice(-300), b.bars, b.session), snapshotAt: Date.now() })); } catch {} }
       }));
     }
     barsAt = Date.now();

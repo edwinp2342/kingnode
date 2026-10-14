@@ -265,7 +265,11 @@ body:not(.showhelp) .helptext{display:none !important}
 .edi-msg.u{justify-self:end; background:var(--panel2); color:var(--ink)} .edi-msg.a{justify-self:start; background:var(--bg); border:1px solid var(--rule)}
 .edi-msg.a b{color:var(--gold)}
 .edi-acts{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px} .edi-act{font-size:11px; border:1px solid var(--pos); color:var(--pos); border-radius:999px; padding:2px 8px} .edi-act.bad{border-color:var(--neg); color:var(--neg)}
-.edi-via{font-size:10.5px; color:var(--muted); margin-top:4px} .edi-setup{border-color:var(--gold) !important}
+.edi-via{font-size:10.5px; color:var(--muted); margin-top:6px; display:flex; gap:8px; align-items:center} .edi-setup{border-color:var(--gold) !important}
+.edi-copy{border:0; background:transparent; color:var(--muted); font-size:10.5px; cursor:pointer; padding:0} .edi-copy:hover{color:var(--ink)}
+.edi-msg.a p{margin:0 0 8px} .edi-msg.a p:last-child{margin-bottom:0} .edi-msg.a ul,.edi-msg.a ol{margin:4px 0 8px 18px; padding:0} .edi-msg.a li{margin:2px 0} .edi-msg.a code{font-family:var(--mono); font-size:12px; background:var(--panel2); padding:1px 4px; border-radius:3px} .edi-msg.a b{color:var(--gold)}
+.edi-msg.a{white-space:normal} .edi-cursor{display:inline-block; width:7px; height:13px; background:var(--gold); vertical-align:-2px; margin-left:2px; animation:blink 1s steps(2) infinite} @keyframes blink{to{opacity:0}}
+.edi-btns{display:flex; flex-direction:column; gap:4px} .edi-btns .btn.small{padding:3px 6px} #ediMic.on{background:var(--neg); color:#fff; border-color:var(--neg)} #ediSpeak[aria-pressed="true"]{background:var(--panel2); color:var(--gold); border-color:var(--gold)}
 .edi-input{display:flex; gap:8px; padding:10px 12px; border-top:1px solid var(--rule)} .edi-input textarea{flex:1; background:var(--bg); border:1px solid var(--rule2); border-radius:8px; color:var(--ink); padding:8px 10px; font:13px var(--sans); resize:none}
 @media (max-width:700px){ .edi{right:8px; bottom:8px; width:calc(100vw - 16px); height:calc(100vh - 16px)} .edi-fab{right:12px; bottom:12px} }
 .layopt{display:flex !important; flex-direction:row !important; justify-content:flex-start !important; align-items:center !important; gap:8px; font-size:13px; padding:4px 0}
@@ -318,7 +322,7 @@ body:not(.showhelp) .helptext{display:none !important}
   <div class="edi-head"><div><b>Ava</b> <span class="hint">desk assistant · knows this screen, your book, your journal and the calendar</span></div><div><button class="btn small" id="ediMem" type="button" title="What Ava remembers about you">Memory</button> <button class="btn small" id="ediClear" type="button">Clear</button> <button class="btn small" id="ediClose" type="button">×</button></div></div>
   <div class="edi-quick" id="ediQuick"></div>
   <div class="edi-log" id="ediLog"></div>
-  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Talk to Ava — the chain, your head, or anything else"></textarea><button class="btn gold" type="submit">Send</button></form>
+  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Talk to Ava — the chain, your head, or anything else"></textarea><div class="edi-btns"><button class="btn gold" type="submit">Send</button><button class="btn small" type="button" id="ediMic" title="Dictate (hold a second after you stop talking)">🎙</button><button class="btn small" type="button" id="ediSpeak" title="Read answers aloud" aria-pressed="false">🔊</button></div></form>
   <div class="hint" id="ediFoot" style="padding:6px 12px"></div>
 </aside>
 <dialog id="startDlg"><div class="dlg"><h2>Start here</h2>
@@ -1700,8 +1704,8 @@ function quantCandidates(){
     const T = Math.max(1, dte(x.exp))/365;
     if (QD.structures.call && x.type==="C" && bull && x.K >= spot*0.97 && x.K <= spot*1.08){ push({kind:"Long call", legs:[{...x, side:+1}], debit:x.mid, maxLoss:x.mid, maxGain:Infinity, be:x.K + x.mid, spreadPct:liq(x), exp:x.exp, T, dir:+1, K:x.K}); }
     if (QD.structures.put && x.type==="P" && bear && x.K <= spot*1.03 && x.K >= spot*0.92){ push({kind:"Long put", legs:[{...x, side:+1}], debit:x.mid, maxLoss:x.mid, maxGain:x.K - x.mid, be:x.K - x.mid, spreadPct:liq(x), exp:x.exp, T, dir:-1, K:x.K}); }
-    if (QD.structures.debit && bull && x.type==="C" && x.K >= spot*0.98 && x.K <= spot*1.05){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="C").map(y=>y.K))].sort((a,b)=>a-b); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|C|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05 || debit/(K2-x.K) > 1 - QD.minCreditPct/100) continue; push({kind:"Call debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(K2-x.K)-debit, be:x.K+debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:+1, K:x.K, K2}); } }
-    if (QD.structures.debit && bear && x.type==="P" && x.K <= spot*1.02 && x.K >= spot*0.95){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="P").map(y=>y.K))].sort((a,b)=>b-a); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|P|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05 || debit/(x.K-K2) > 1 - QD.minCreditPct/100) continue; push({kind:"Put debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(x.K-K2)-debit, be:x.K-debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:-1, K:x.K, K2}); } }
+    if (QD.structures.debit && bull && x.type==="C" && x.K >= spot*0.98 && x.K <= spot*1.05){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="C").map(y=>y.K))].sort((a,b)=>a-b); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|C|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05 || debit/(K2-x.K) > 1 - QD.minCreditPct/100 || debit/(K2-x.K) < 0.08) continue; push({kind:"Call debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(K2-x.K)-debit, be:x.K+debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:+1, K:x.K, K2}); } }
+    if (QD.structures.debit && bear && x.type==="P" && x.K <= spot*1.02 && x.K >= spot*0.95){ for (const w of [1,2,3]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="P").map(y=>y.K))].sort((a,b)=>b-a); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|P|${K2}`); if (!y) continue; const debit = x.mid - y.mid; if (debit <= 0.05 || debit/(x.K-K2) > 1 - QD.minCreditPct/100 || debit/(x.K-K2) < 0.08) continue; push({kind:"Put debit spread", legs:[{...x, side:+1},{...y, side:-1}], debit, maxLoss:debit, maxGain:(x.K-K2)-debit, be:x.K-debit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:-1, K:x.K, K2}); } }
     if (QD.structures.credit && (bull || QD.view==="neutral") && x.type==="P" && x.K <= spot*0.99 && x.K >= spot*0.90){ for (const w of [1,2]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="P").map(y=>y.K))].sort((a,b)=>b-a); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|P|${K2}`); if (!y) continue; const credit = x.mid - y.mid, width = x.K - K2; if (credit <= 0.05 || credit >= width || credit/width < QD.minCreditPct/100) continue; push({kind:"Put credit spread", legs:[{...x, side:-1},{...y, side:+1}], debit:-credit, maxLoss:width-credit, maxGain:credit, be:x.K-credit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:+1, K:x.K, K2, credit:true}); } }
     if (QD.structures.credit && (bear || QD.view==="neutral") && x.type==="C" && x.K >= spot*1.01 && x.K <= spot*1.10){ for (const w of [1,2]){ const ks = [...new Set(cs.filter(y=>y.exp===x.exp&&y.type==="C").map(y=>y.K))].sort((a,b)=>a-b); const i = ks.indexOf(x.K); const K2 = ks[i+w]; const y = K2 && byKey.get(`${x.exp}|C|${K2}`); if (!y) continue; const credit = x.mid - y.mid, width = K2 - x.K; if (credit <= 0.05 || credit >= width || credit/width < QD.minCreditPct/100) continue; push({kind:"Call credit spread", legs:[{...x, side:-1},{...y, side:+1}], debit:-credit, maxLoss:width-credit, maxGain:credit, be:x.K+credit, spreadPct:(liq(x)+liq(y))/2, exp:x.exp, T, dir:-1, K:x.K, K2, credit:true}); } }
   }
@@ -1870,7 +1874,12 @@ function quantNarrative(o, mc, rv){
 // momentum and vol pricing into a Buy / Trim / Avoid call for the stock, plus the best-priced option structure
 // from the Quant desk for the same view. Halal-aware.
 // =====================================================================================================
-const ID = { universe:"quick", running:false, results:new Map(), at:0, progress:"", halal:false, onlySignals:true };
+const ID = { universe:"quick", running:false, results:new Map(), at:0, progress:"", halal:false, onlySignals:true, spy:null, spyAt:0 };
+async function loadSpyDaily(){ if (ID.spy && Date.now() - ID.spyAt < 30*60e3) return ID.spy; const b = await fetchBarsAny("SPY"); if (b && b.length > 60){ ID.spy = b; ID.spyAt = Date.now(); } return ID.spy; }
+// Market regime and relative strength — the two filters the backtest paid for (see data-static/backtest.json)
+function marketFilters(closes, spy){ if (!spy || spy.length < 60) return { regimeUp:null, rs:null, spyChg20:null };
+  const sc = spy.map(b=>b[4]); const e50 = ema(sc, 50).at(-1); const regimeUp = sc.at(-1) > e50; const spyChg20 = sc.length > 21 ? sc.at(-1)/sc.at(-21)-1 : null;
+  const chg20 = closes.length > 21 ? closes.at(-1)/closes.at(-21)-1 : null; return { regimeUp, rs: chg20 != null && spyChg20 != null ? chg20 - spyChg20 : null, spyChg20, spyE50:e50, spyLast:sc.at(-1) }; }
 const IDEA_UNIVERSES = {
   quick: () => [...new Set(["SPX","SPY","QQQ","IWM",...QUICK.filter(s=>s!=="VIX")])],
   halal: () => HALAL_UNIVERSE.filter(r => r[3] !== "fails" && r[2] !== "Halal ETF" && !["GLD","SLV","XLE"].includes(r[0])).map(r => r[0]).slice(0, 36),
@@ -1902,6 +1911,8 @@ function analyzeTicker(sym, chain, daily){
   const trendUp = e21 && e50 ? (spot > e21 && e21 > e50) : (chg20 != null ? chg20 > 0 : null);
   const trendDown = e21 && e50 ? (spot < e21 && e21 < e50) : (chg20 != null ? chg20 < 0 : null);
   const pullback = e21 ? Math.abs(spot/e21-1) < 0.025 : false; const extended = e21 ? spot/e21-1 > 0.04 : chg5 != null && chg5 > 0.06; const redDay = chg1 < 0 && chg1 > -0.04;
+  const mf = marketFilters(closes, sym === "SPY" ? null : ID.spy); // regime + relative strength vs SPY (SPY itself: regime only via its own trend)
+  let atr14 = null; if (daily && daily.length > 15){ let a = null; for (let i = 1; i < daily.length; i++){ const tr = Math.max(daily[i][2]-daily[i][3], Math.abs(daily[i][2]-daily[i-1][4]), Math.abs(daily[i][3]-daily[i-1][4])); a = a == null ? tr : (a*13 + tr)/14; } atr14 = a; }
   const reasons = []; let signal = "Watch", score = 0, view = "neutral";
   // --- equity rules ---
   if (trendUp){ score += 25; reasons.push("uptrend (price > 21 EMA > 50 EMA)"); view = "bull"; }
@@ -1911,6 +1922,8 @@ function analyzeTicker(sym, chain, daily){
   if (toPW != null && toPW < 0.02 && toPW >= 0){ score += 12; reasons.push(`put wall ${fmt(pw)} within ${fmt(toPW*100,1)}% below — support under you`); }
   if (toCW != null && toCW < 0.01 && toCW >= 0){ score -= 10; reasons.push(`at the call wall ${fmt(cw)} — resistance`); }
   if (pullback && trendUp){ score += 12; reasons.push("pullback to the 21 EMA in an uptrend"); if (redDay){ score += 10; reasons.push("red day inside the uptrend — the entry the backtest pays (buy low)"); } else { score -= 6; reasons.push("green day — backtest says wait for a red one"); } }
+  if (mf.regimeUp === false){ score -= 15; reasons.push(`market regime off — SPY ${fmt(mf.spyLast,2)} is under its 50-EMA ${fmt(mf.spyE50,2)}; the backtest doesn't buy dips here`); } else if (mf.regimeUp === true && trendUp) reasons.push("market regime on — SPY above its 50-EMA");
+  if (mf.rs != null){ if (mf.rs > 0.01){ score += 8; reasons.push(`leading — ${fmt(chg20*100,1)}% over 20 days vs SPY ${fmt(mf.spyChg20*100,1)}%`); } else if (mf.rs < -0.01){ score -= 8; reasons.push(`lagging SPY over 20 days (${fmt(chg20*100,1)}% vs ${fmt(mf.spyChg20*100,1)}%) — the backtest buys the leaders' dips, not the laggards'`); } }
   if (r14 != null && r14 >= 55 && trendUp && pullback){ score -= 8; reasons.push(`RSI ${fmt(r14,0)} — not reset enough (backtest wants < 55)`); }
   if (extended){ score -= 12; reasons.push("extended above the 21 EMA — chase risk"); }
   if (r14 != null){ if (r14 < 35){ score += 8; reasons.push(`RSI ${fmt(r14,0)} — washed out`); } else if (r14 > 72){ score -= 10; reasons.push(`RSI ${fmt(r14,0)} — overbought`); } }
@@ -1920,12 +1933,12 @@ function analyzeTicker(sym, chain, daily){
   if (signal === "Watch" && view === "neutral") view = chg20 != null && chg20 > 0 ? "bull" : "bear";
   // --- equity plan ---
   const entry = signal === "Buy" || signal === "Accumulate" ? (pullback || !e21 ? spot : Math.max(e21, pw||0)) : null;
-  const stop = entry ? Math.min(e50 || entry*0.94, entry*0.94, pw && pw < entry ? pw*0.995 : Infinity) : null;
+  const stop = entry ? (atr14 ? Math.max(entry*0.85, entry - 2*atr14) : Math.min(e50 || entry*0.94, entry*0.94, pw && pw < entry ? pw*0.995 : Infinity)) : null; // 2×ATR14: the stop the backtest paid for
   const target = entry ? (cw && cw > entry*1.01 ? Math.min(cw, entry*1.08) : entry*1.08) : null;
   // --- option structure from the quant engine ---
   let best = null;
   try { best = withCalc(calc, daily, () => { const saveView = QD.view; QD.view = view === "bear" ? "bear" : "bull"; const rows = rankQuant(rvInfo); QD.view = saveView; return rows[0] || null; }); } catch {}
-  return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, trendUp, trendDown, aboveFlip, posG, cw, pw, flip:calc.flip, iv30, rv, vrp, score, signal, view, reasons, entry, stop, target, best, halal:halalStatus(sym), at:Date.now() };
+  return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, atr14, regimeUp:mf.regimeUp, rsVsSpy:mf.rs, trendUp, trendDown, aboveFlip, posG, cw, pw, flip:calc.flip, iv30, rv, vrp, score, signal, view, reasons, entry, stop, target, best, halal:halalStatus(sym), at:Date.now() };
 }
 async function runIdeas(){
   if (ID.running) return; ID.running = true; const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
@@ -1933,7 +1946,7 @@ async function runIdeas(){
   for (const sym of syms){
     const cached = ID.results.get(sym); if (cached && Date.now() - cached.at < 10*60e3){ done++; continue; }
     ID.progress = `${done+1}/${syms.length} · ${sym}`; if (S.tab === "ideas") renderTabs();
-    const [chain, daily] = await Promise.all([fetchChainAny(sym), fetchBarsAny(sym)]);
+    const [chain, daily] = await Promise.all([fetchChainAny(sym), fetchBarsAny(sym), loadSpyDaily()]);
     if (chain){ try { ID.results.set(sym, analyzeTicker(sym, chain, daily)); } catch(e){ console.warn("ideas", sym, e); } }
     else if (S.demo){ try { const demo = synthChain(sym); ID.results.set(sym, {...analyzeTicker(sym, demo, synthBars(demo.spot,"1d")), demo:true}); } catch(e){ console.error("ideas demo", sym, e.message, e.stack); } }
     done++;
@@ -1970,8 +1983,8 @@ function viewIdeas(){
   if (rows.length && !shown.length) box.append(h("div",{class:"empty"},"Everything scanned is a Watch right now — nothing extended enough to trim or set up enough to buy. Untick \"hide Watch\" to see them."));
   if (ID.sel) box.append(ideaCard(ID.sel));
   box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"The rules, in plain terms"),
-    h("div",{class:"grid2"}, h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Buy")," = uptrend (price above a rising 21-EMA above the 50) + within 2.5% of the 21-EMA + a red day (buy low) + RSI under 55 + above the gamma flip or above a put wall. The backtest card shows what that rule did."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Accumulate")," = most of that, missing one piece — a starter size, add on confirmation."), h("p",{style:{margin:0}},h("b",null,"Extended")," = more than 4% above the 21-EMA, at the call wall, or RSI over 72. Information only: the backtest found no edge in selling it.")),
-      h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Avoid / short")," = downtrend, below the flip, dealers short gamma — the tape where dips don't get bought."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Option idea")," = the Quant desk's top-ranked structure for the same direction: best EV per dollar of risk under realized vol, after the probability and spread filters. When IV is rich relative to realized, it leans to spreads; when cheap, to outright calls or puts."), h("p",{style:{margin:0,color:"var(--muted)"}},"Equity entries use the levels: entry near the 21-EMA or the put wall, stop under the put wall or the 50-EMA, target at the call wall. Not advice; a rules engine on delayed data.")))));
+    h("div",{class:"grid2"}, h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Buy")," = uptrend (price above a rising 21-EMA above the 50) + within 2.5% of the 21-EMA + a red day (buy low) + RSI under 55 + the market regime on (SPY above its 50-EMA) + leading SPY over 20 days + above the gamma flip or above a put wall. Stop = 2×ATR under the entry. The backtest card shows what that rule did, and what it did before the last three pieces were added."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Accumulate")," = most of that, missing one piece — a starter size, add on confirmation."), h("p",{style:{margin:0}},h("b",null,"Extended")," = more than 4% above the 21-EMA, at the call wall, or RSI over 72. Information only: the backtest found no edge in selling it.")),
+      h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"Avoid / short")," = downtrend, below the flip, dealers short gamma — the tape where dips don't get bought."), h("p",{style:{margin:"0 0 6px"}},h("b",null,"Option idea")," = the Quant desk's top-ranked structure for the same direction: best EV per dollar of risk under realized vol, after the probability and spread filters. When IV is rich relative to realized, it leans to spreads; when cheap, to outright calls or puts."), h("p",{style:{margin:0,color:"var(--muted)"}},"Equity entries use the levels: entry near the 21-EMA or the put wall, stop 2×ATR14 under the entry (the volatility-sized stop the backtest paid for), target at the call wall or +8%. Not advice; a rules engine on delayed data.")))));
   return box;
 }
 const BT = { data:null, tried:false };
@@ -1982,7 +1995,7 @@ function backtestCard(){
   const pctf = v => v == null ? "—" : (v*100).toFixed(1) + "%";
   return h("div",{class:"card",style:{marginBottom:"12px"}}, h("h2",null,`Backtest — the Buy rule on ${c.symbols} tickers, ${b.period}`),
     h("div",{class:"grid2"}, h("div",{class:"kv"}, h("div",null,h("span",null,"Trades"),h("span",null,c.n)), h("div",null,h("span",null,"Win rate"),h("span",{class:c.winRate>=0.5?"c":""},pctf(c.winRate))), h("div",null,h("span",null,"Avg per trade"),h("span",{class:c.avgRet>0?"c":"p"},pctf(c.avgRet))), h("div",null,h("span",null,"Avg win / loss"),h("span",null,`${pctf(c.avgWin)} / ${pctf(c.avgLoss)}`)), h("div",null,h("span",null,"Profit factor"),h("span",{class:c.profitFactor>=1.3?"c":""},c.profitFactor?.toFixed(2))), h("div",null,h("span",null,"Exits (stop / target / time)"),h("span",null,`${c.byExit.stop} / ${c.byExit.target} / ${c.byExit.time}`)), h("div",null,h("span",null,"Avg days held"),h("span",null,c.avgDays?.toFixed(1)))),
-      h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"What it says."),` Buying an uptrend pullback only on a red day (RSI under 55, within 2.5% of the 21-EMA), stop 6% or the 50-EMA, target 8%, 15-day limit: ${pctf(c.winRate)} wins, ${pctf(c.avgRet)} per trade, profit factor ${c.profitFactor?.toFixed(2)}. The same entry taken on any day (the first version of these rules) made ${pctf(base.avgRet)} per trade at profit factor ${base.profitFactor?.toFixed(2)}. The red-day requirement is the edge, which is your buy-low rule measured.`), h("p",{style:{margin:0}},h("b",null,"What it doesn't say."),` The "Extended" flag has no edge: after it fires, the next five days average ${pctf(c.trimFwd5)} and are down only ${pctf(c.trimDownPct)} of the time — a coin flip. It's shown as information, not a sell signal. Positioning (walls, flip) isn't in the backtest because there's no chain history yet; it's additive, unmeasured. One year, one regime, ${c.symbols} mostly large names: treat as a sanity check, not proof.`))),
+      h("div",null, h("p",{style:{margin:"0 0 6px"}},h("b",null,"What it says."),` Buying an uptrend pullback only on a red day (RSI under 55, within 2.5% of the 21-EMA), only when SPY is above its 50-EMA and the name is beating SPY over 20 days, with a 2×ATR stop, 8% target and a 15-day limit: ${pctf(c.winRate)} wins, ${pctf(c.avgRet)} per trade, profit factor ${c.profitFactor?.toFixed(2)}.${b.variants?.v1 ? ` Before the regime, relative-strength and ATR pieces (v1) the same red-day entry made ${pctf(b.variants.v1.summary.avgRet)} per trade at profit factor ${b.variants.v1.summary.profitFactor?.toFixed(2)}, and the new rules won in both halves of the year; ATR×2, ×2.5 and ×3 all land near the same profit factor, so it isn't a lucky setting.` : ""} The same entry taken on any day (the first version of these rules) made ${pctf(base.avgRet)} per trade at profit factor ${base.profitFactor?.toFixed(2)}. The red-day requirement is the edge, which is your buy-low rule measured.`), h("p",{style:{margin:0}},h("b",null,"What it doesn't say."),` The "Extended" flag has no edge: after it fires, the next five days average ${pctf(c.trimFwd5)} and are down only ${pctf(c.trimDownPct)} of the time — a coin flip. It's shown as information, not a sell signal. Positioning (walls, flip) isn't in the backtest because there's no chain history yet; it's additive, unmeasured. One year, one regime, ${c.symbols} mostly large names: treat as a sanity check, not proof.`))),
     h("p",{class:"hint",style:{margin:"8px 0 0"}},`Re-run anytime: node scripts/backtest.mjs. Last run ${new Date(b.at).toLocaleDateString()}.`));
 }
 function showIdea(r){ ID.sel = r; renderTabs(); setTimeout(()=>document.querySelector(".ideacard")?.scrollIntoView({behavior:"smooth",block:"start"}), 50); }
@@ -2060,7 +2073,8 @@ function coachReport(){
 async function aiCoach(report){
   const j = getJournal().filter(e=>e.closed).slice(-30);
   const prompt = `You are a trading coach reviewing a discretionary options/equities swing trader's journal. Their rules: 30+ DTE for directional trades, cut quickly when the thesis breaks (even if green), never let a green contract go red, no short-dated holds over weekends, buy low/sell high temperament, dealer-positioning (gamma walls, flip, king node) as the map, flow-tailing as the trigger.\n\nSTATS\n${JSON.stringify(report.stats)}\n\nRECENT TRADES (newest last)\n${j.map(e => `${new Date(e.opened).toISOString().slice(0,10)} ${e.contract} entry ${e.entry} exit ${e.exit} qty ${e.qty} pnl ${e.pnl} (${e.pnlPct?.toFixed?.(0)}%) why:"${e.why||""}" thesis:"${(e.thesis||"").slice(0,120)}" notes:"${(e.notes||"").slice(0,200)}" chain_at_entry:${e.snap?JSON.stringify({spot:e.snap.spot,pw:e.snap.pw,flip:e.snap.flip,cw:e.snap.cw,gex:Math.round(e.snap.gex/1e6)+"M",iv:e.snap.iv30,rv:e.snap.rv,flow:e.snap.flowLean}):"none"}`).join("\n")}\n\nGive specific, blunt feedback in under 220 words: the two biggest leaks, one thing they do well that they should do more, and one concrete rule change to test over the next 10 trades. No generic advice; cite their numbers and trades.`;
-  try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt, tier:"default"})}); if (!r.ok) return null; const t = await r.text(); return t && !t.includes("[[SHOPFRONT_ERROR]]") ? t : null; } catch { return null; }
+  try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return t; } } catch {}
+  return avaComplete(prompt); // the user's own key, same model as Ava
 }
 function viewJournal(){
   const money = v => (v<0?"-$":"$")+fmt(Math.abs(v),0);
@@ -2223,7 +2237,7 @@ function scanLine(sym, r, full){
   const u = r.unusual; const un = u ? ` · unusual ${u[0].slice(5)} ${fmt(u[2])}${u[1]} ${fmtK(u[3])}v vs ${fmtK(u[4])}oi (${u[6]}×${u[5]==="A"?", ask":u[5]==="B"?", bid":""})` : "";
   return `${base} · top ${top || "—"}${un}`;
 }
-function scanLines(){ const rows = SCAN.rows; if (!rows) return null; const syms = Object.keys(rows).sort((a,b) => ((rows[b].cPrem||0)+(rows[b].pPrem||0)) - ((rows[a].cPrem||0)+(rows[a].pPrem||0))); return syms.map((sym,i) => scanLine(sym, rows[sym], i < 45)); }
+function scanLines(){ const rows = SCAN.rows; if (!rows) return null; const syms = Object.keys(rows).sort((a,b) => ((rows[b].cPrem||0)+(rows[b].pPrem||0)) - ((rows[a].cPrem||0)+(rows[a].pPrem||0))); return syms.map((sym,i) => scanLine(sym, rows[sym], i < 30)); }
 function moversForAva(){ const q = UV.q; if (!q) return null; const rows = Object.keys(q).map(universeQuote).filter(x => x && x.prev && x.price && !INDEX_SYMS.has(x.symbol)).map(x => ({sym:x.symbol, pc:(x.price/x.prev-1)*100})).filter(x => isFinite(x.pc) && Math.abs(x.pc) < 60); if (!rows.length) return null; const f = x => `${x.sym} ${x.pc>=0?"+":""}${x.pc.toFixed(1)}%`; return { up: [...rows].sort((a,b)=>b.pc-a.pc).slice(0,10).map(f), down: [...rows].sort((a,b)=>a.pc-b.pc).slice(0,10).map(f), n: rows.length }; }
 function macroForAva(){ if (!MC.bars?.size) return null; const out = []; for (const [sym, b] of MC.bars){ if (!b || b.length < 22) continue; const c = b.map(x=>x[4]); const r = n => ((c.at(-1)/c.at(-1-n)-1)*100).toFixed(1); out.push(`${sym} 1d ${r(1)}% 5d ${r(5)}% 20d ${r(20)}%`); } return out.length ? out : null; }
 // a ticker's full read for Ava's "peek" tool: levels, fresh positioning, top nodes, today's heaviest contracts
@@ -2239,7 +2253,7 @@ async function peekTicker(sym){
 // Ava's memory: things she was told that should survive the session (positions she logged are in the journal; this is everything else)
 const AVA_NOTES_KEY = "kingnode:ava-notes";
 function avaNotes(){ try { return JSON.parse(localStorage.getItem(AVA_NOTES_KEY)||"[]"); } catch { return []; } }
-function avaRemember(text){ const l = avaNotes(); l.push({t:Date.now(), text:String(text).slice(0,300)}); try { localStorage.setItem(AVA_NOTES_KEY, JSON.stringify(l.slice(-80))); } catch {} }
+function avaRemember(text, kind){ const l = avaNotes(); const t = String(text||"").trim().slice(0,300); if (!t) return; if (l.some(n => n.text.toLowerCase() === t.toLowerCase())) return; l.push({t:Date.now(), kind: ["fact","plan","lesson","feedback"].includes(kind) ? kind : "note", text:t}); try { localStorage.setItem(AVA_NOTES_KEY, JSON.stringify(l.slice(-120))); } catch {} }
 function avaForget(i){ const l = avaNotes(); l.splice(i,1); try { localStorage.setItem(AVA_NOTES_KEY, JSON.stringify(l)); } catch {} }
 function prevTradingDay(from = marketDate()){ const d = new Date(from + "T12:00:00"); do { d.setDate(d.getDate()-1); } while (d.getDay() === 0 || d.getDay() === 6 || NYSE_HOLIDAYS.has(d.toISOString().slice(0,10))); return d.toISOString().slice(0,10); }
 // Actions Ava can take on the app. She appends <<kn {...}>> lines to a reply; the app runs them, hides them, and shows what it did.
@@ -2259,7 +2273,7 @@ function ediApply(a){
     journalClose(pos, exit, a.why||""); pos.closed = dateMs; pos.exit = exit; setPb(pb); const mult = pos.shares ? 1 : 100; const pnl = (exit - pos.entry)*pos.qty*mult;
     return `Closed ${pos.sym}${pos.shares ? " shares" : " " + pos.exp.slice(5) + " " + fmt(pos.K) + pos.cp} @ ${fmt(exit,2)} → ${pnl>=0?"+":""}${money(pnl)}`;
   }
-  if (a.action === "note"){ if (!a.text) throw new Error("note needs text"); avaRemember(a.text); return `Remembered: ${String(a.text).slice(0,80)}`; }
+  if (a.action === "note"){ if (!a.text) throw new Error("note needs text"); avaRemember(a.text, a.kind); return `Remembered: ${String(a.text).slice(0,80)}`; }
   if (a.action === "load"){ const sym = String(a.sym||"").toUpperCase(); if (!sym) throw new Error("load needs sym"); goSym(sym); return `Loaded ${sym}`; }
   if (a.action === "peek"){ return `Looked at ${String(a.sym||"").toUpperCase()}`; } // the lookup itself ran inside ediAsk
   throw new Error("unknown action " + a.action);
@@ -2283,65 +2297,167 @@ function ediContext(){
     market: { tape: [...tapeQuotes.values()].filter(q=>!q.demo && q.prev).map(q => `${q.symbol} ${fmt(INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price,2)} ${pct(((INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price)/q.prev-1)*100)}${q.stale ? " (stale)" : ""}`), movers: moversForAva(), scanAt: SCAN.at ? whenLabel(SCAN.at) : null, scan: scanLines(), macro: macroForAva() },
     book: { open: open.map(p => ({ id:p.id, text: p.shares ? `${p.sym} ${p.qty} shares @ ${p.entry}` : `${p.sym} ${p.exp} ${p.K}${p.cp} ×${p.qty} @ ${p.entry} (inval ${p.inval||"—"}, tgt ${p.target||"—"}, ${dte(p.exp)}d)` })), netDelta:delta, thetaPerDay:theta },
     recentJournal: getJournal().slice(-12).map(e => `${new Date(e.opened).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})} ${e.contract} ×${e.qty} @ ${e.entry}${e.closed ? ` → ${e.exit} (${e.pnl>=0?"+":""}${Math.round(e.pnl)} / ${fmt(e.pnlPct,0)}%)` : " open"}${e.thesis ? " · " + e.thesis.slice(0,60) : ""}${e.why ? " · exit: " + e.why.slice(0,40) : ""}`),
-    memory: avaNotes().slice(-40).map(n => `${new Date(n.t).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})}: ${n.text}`),
+    memory: avaNotes().slice(-60).map(n => `[${n.kind||"note"} ${new Date(n.t).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})}] ${n.text}`),
     watchlist: getWatch().map(sym => { const v = watchCache.get(sym)?.v; return v && !v.missing ? `${sym} ${fmt(v.spot,2)} PW ${fmt(v.pw)} flip ${fmt(v.flip)} CW ${fmt(v.cw)} EM ±${v.em?fmt(v.em.move,1):"—"}` : sym; }),
     journal: coach.stats && coach.stats.n ? { closed:coach.stats.n, winRate:coach.stats.wr, avgWin:coach.stats.avgW, avgLoss:coach.stats.avgL, expectancy:coach.stats.expectancy, bestSetup:coach.stats.setups?.[0]?.[0], worstSetup:coach.stats.setups?.at(-1)?.[0] } : null,
     events: ev.map(e => `${e.name} ${e.time||""} in ${e.days}d (impact ${e.impact||1})`),
     ideasBacktest: BT.data?.chosen?.summary ? { winRate:BT.data.chosen.summary.winRate, avgRet:BT.data.chosen.summary.avgRet, profitFactor:BT.data.chosen.summary.profitFactor } : null,
   };
 }
-const EDI_SYSTEM = `You are Ava, the desk analyst inside Kingnode, a personal options terminal. You sit next to the trader using it like a sharp, well-read colleague who has spent years on a desk. You talk in full, natural sentences, you lead with the specific thing — a name, a level, a number — and you say why it matters. Contractions, a little dry humor, no "Great question", no stacked disclaimers, no bullet lists unless asked. Paragraphs, the way a person talks.
+const EDI_SYSTEM = `You are Ava, the desk analyst inside Kingnode, a personal options terminal. You sit next to the trader using it like a sharp, well-read colleague who has spent years on a desk. You talk in full, natural sentences, you lead with the specific thing — a name, a level, a number — and you say why it matters. Contractions, a little dry humor, no "Great question", no stacked disclaimers. Prose by default; a short list only when they ask for one or when you are comparing several names side by side. You can use **bold** for the one number that matters in a paragraph.
 
-BE COMMUNICATIVE. A broad question ("what's the market doing", "what caught your eye today", "any names worth a look") gets a real rundown: the tape and the regime in a sentence or two, then four to six names with the actual numbers from the scan and what makes each one interesting, then what you'd watch next. A narrow question gets a tight answer. Match their length otherwise: a one-liner gets a line or two back. Never answer a market-wide question with only the loaded ticker — the context carries the whole scan, use it. Never pad, never repeat the disclaimer: the data is 15-minute-delayed Cboe/Yahoo and they know it; say "delayed" once when it changes the read.
+BE COMMUNICATIVE. A broad question ("what's the market doing", "what caught your eye", "any names worth a look") gets a real rundown: the tape and the regime in a sentence or two, then four to six names with the actual numbers and what makes each one interesting, then what you'd watch next. A narrow question gets a tight answer. Match their length otherwise: a one-liner gets a line or two back. Never answer a market-wide question with only the loaded ticker. Never pad, never repeat the disclaimer: the data is 15-minute-delayed Cboe/Yahoo and they know it; say "delayed" once when it changes the read.
+
+HOW A DESK THINKS (your frame for any trade question)
+1. Regime: positive gamma pins, negative gamma trends; where spot sits against the GEX crossover and zero gamma. 2. Levels: put wall under, call wall over, king node, expected move — the map. 3. Flow: where the money went today (premium, call share, volume vs OI, last print at the ask or bid) and whether it agrees with the map. 4. Price: trend (21/50/200 EMA), pullback or extension, RSI, ATR for the stop, relative strength. 5. Vol: IV vs realized — rich means spreads or shares, cheap means long premium works; the term structure says whether an event is priced. 6. Catalysts: what's on the calendar inside the holding period. 7. The trade: direction, structure, entry, invalidation (a level, not just a premium stop), target, size against their rules, one line on what would make you wrong. Say which of these the data supports and which is your judgment.
 
 WHAT YOU HAVE — the CONTEXT JSON
-- ticker: the loaded ticker's dealer positioning (call wall, put wall, GEX crossover, zero gamma, king node, expected move, regime, IV vs realized, flow lean) and sessionFlow: today's heaviest contracts on it (volume, OI, premium, whether the last print lifted the ask or hit the bid).
-- market.tape: the indexes. market.movers: biggest regular-session moves across ~300 names. market.scan: one line per chain ticker (~80 names): price and change, options premium traded today and the call share, put wall / flip / call wall / expected move / ATM IV, the top contracts by premium, and the most unusual contract (volume vs open interest). This is where "names that caught my eye" come from: premium that is big for that name, a lopsided call or put share (over 75% or under 30%), volume many times open interest with real size, price sitting on a wall or just through the flip, IV out of line with peers. market.macro: momentum for SPY/IWM/QQQ/TLT/GLD/UUP/XLE/SMH.
-- events, rules, book (open positions, with ids), recentJournal (last trades with P&L), memory (notes you saved in earlier sessions), watchlist, feed (whether the data loop is stale).
-If the context says demo or noChain, the levels are placeholders — say so. If feed.stale, the numbers are from when the feed stopped — say so.
+ticker (the loaded name's positioning and sessionFlow), market.tape, market.movers (regular-session moves across ~300 names), market.scan (one line per chain ticker, top 30 by premium — the full set is behind scan_market), market.macro, events, rules, book (open positions with ids), recentJournal, memory (what you saved in earlier sessions, tagged fact/plan/lesson/feedback), watchlist, feed (whether the data loop is stale). If the context says demo or noChain, the levels are placeholders — say so. If feed.stale, the numbers are from when the feed stopped — say so.
 
-TOOLS — you can act. Append action lines at the very end of a reply, one per line, exactly like these; the app runs them and hides them:
-<<kn {"action":"peek","sym":"HOOD"}>>
-  The app pulls that name's full chain and hands you its levels, fresh positioning, top nodes and heaviest contracts in a tool result; then you answer. Use it when they ask about a specific name and the scan line isn't enough, or to check up to three names before a rundown. One round of peeks per answer; after the tool result, answer — don't peek the same names again.
-<<kn {"action":"load","sym":"TLT"}>>  switches the screen to that ticker when they ask you to pull it up.
-<<kn {"action":"open","sym":"HOOD","kind":"option","cp":"C","strike":115,"exp":"2026-11-20","qty":2,"entry":3.4,"date":"2026-10-12","why":"flow at the ask above the flip"}>>
-<<kn {"action":"open","sym":"NFLY","kind":"shares","qty":65,"entry":15.2,"date":"2026-10-12","why":"income sleeve, long-term hold"}>>
-<<kn {"action":"close","id":"<the id from book.open>","exit":4.1,"date":"2026-10-13","why":"took 20%"}>>
-<<kn {"action":"note","text":"Buys NFLY/HOOY weekly for the dividend sleeve; wants to be told when he's chasing."}>>
-Logging rules: log only what they actually said — if price, size or expiry is missing, ask in the same reply and log when they answer; never invent a number; "today" is ctx.today and "yesterday" is ctx.prevTradingDay; a close must name the id of one of book.open, or sym plus strike/exp when that is unambiguous; use "note" for durable facts about their trading, their plans, and feedback about you. Say in one short sentence what you logged.
+TOOLS. You have real tools; use them freely and before asserting numbers you don't have. peek_ticker for any specific name (levels, fresh positioning, scan line). price_history before a directional view, a stop or a target. scan_market to look across the tape (premium, calls, puts, unusual, wall, iv, gainers, losers). session_flow for where the money went in a name. quant_structures when they want a strike and expiry, or ask what structure makes sense. idea_score for the Ideas engine's backtested verdict. journal to read their trades before judging them. log_trade / close_trade when they tell you what they took or closed — only with the numbers they stated; ask for what's missing, never invent. remember for durable facts, plans, lessons, and feedback about you (one sentence each; not what the journal already holds). load_ticker to pull a name up on screen. calendar for what's ahead. Call several tools at once when a question needs several. After the tools come back, answer the question — don't narrate the tool calls, just use what they returned, and never cite a number that isn't in the context or a tool result.
 
 THE DESK, YOUR WAY
-When they want a trade: direction, the structure, entry, invalidation (the level, not just a premium stop), target, and one line on risk. Their rules are their own words — hold them to them like a friend would, not a compliance officer: 30+ DTE for directional, cut fast when the thesis breaks even if green, never let a green contract go red, no short-dated holds over weekends, buy low. Market-adjacent questions (macro, an earnings print, how a product works) are on the desk. Anything unrelated to markets or Kingnode — an email, schoolwork, a recipe — isn't; say in a line that their personal Ava app handles that, then offer what you can do here.
+Their rules are their own words — hold them to them like a friend would, not a compliance officer: 30+ DTE for directional, cut fast when the thesis breaks even if green, never let a green contract go red, no short-dated holds over weekends, buy low. Market-adjacent questions (macro, an earnings print, how a product works) are on the desk. Anything unrelated to markets or Kingnode — an email, schoolwork, a recipe — isn't; say in a line that their personal Ava app handles that, then offer what you can do here.
 
 TRADING PSYCHOLOGY — as important as the levels. Watch for tilt, revenge trading, FOMO, chasing, oversizing after a win, freezing after a loss, moving a stop, holding a loser hoping, trading to make back a number, trading when they said they'd take the day off. Name it plainly and kindly when you see it in what they say or in the journal (loss streaks, losses past the stop, losers held longer than winners, green trades turned red). Ask what's actually going on before prescribing. Offer the small concrete thing: close the screen, size down, write the trade down before taking it, wait for the level, sleep on it. If they're stressed or down, be there for that first. You're not a therapist and don't diagnose; if something sounds serious — persistent hopelessness, not sleeping for days, thoughts of harming themselves — say gently that it's bigger than you, that talking to someone they trust or a professional is the right move, and stay in the conversation.
 
-Remember what they said earlier in the conversation and in memory, and refer back to it like a person would.`;
+Remember what they said earlier in the conversation and in memory, and refer back to it like a person would. "Today" is ctx.today; "yesterday" is ctx.prevTradingDay.`;
+// For the server path (no tool interface): the same actions as text lines the app parses
+const EDI_KN_FALLBACK = `If you cannot call tools, append action lines at the very end of a reply, one per line, exactly like: <<kn {"action":"open","sym":"HOOD","kind":"option","cp":"C","strike":115,"exp":"2026-11-20","qty":2,"entry":3.4,"date":"2026-10-12","why":"..."}>> · <<kn {"action":"open","sym":"NFLY","kind":"shares","qty":65,"entry":15.2}>> · <<kn {"action":"close","id":"<id from book.open>","exit":4.1,"why":"..."}>> · <<kn {"action":"note","kind":"plan","text":"..."}>> · <<kn {"action":"load","sym":"TLT"}>> · <<kn {"action":"peek","sym":"HOOD"}>>. The app runs them and hides them.`;
+// ===== Ava: native tools (Anthropic Messages API tool use) =====
+// Each tool is something the app can compute from the feed. Ava decides when to call them; the loop below runs them and feeds the results back.
+const AVA_TOOLS = [
+  { name:"peek_ticker", description:"Dealer positioning for any ticker on the feed: spot, call wall, put wall, GEX crossover, zero gamma, king node, max pain, expected move, regime, ATM IV, top gamma nodes, fresh positioning (contracts trading well above their open interest) and the scan line (today's premium, call share, unusual contract). Use it for any question about a specific name, including names not on screen.", input_schema:{ type:"object", properties:{ sym:{ type:"string", description:"ticker, e.g. HOOD" } }, required:["sym"] } },
+  { name:"price_history", description:"Daily price read for a ticker: last close, 1d/5d/20d/60d returns, position vs the 21/50/200-day EMAs, RSI14, ATR14 (for stops), 20-day realized vol, distance from the 52-week high and low, today's volume vs its 20-day average, and whether it is in the Ideas engine's buy-the-dip setup. Use before giving a directional view, a stop, or a target.", input_schema:{ type:"object", properties:{ sym:{ type:"string" } }, required:["sym"] } },
+  { name:"scan_market", description:"Filter today's scan of ~80 chain tickers. filter = 'premium' (most options premium traded), 'calls' (highest call share of premium), 'puts' (highest put share), 'unusual' (contract volume many times its open interest), 'wall' (price sitting on its call or put wall), 'iv' (highest ATM IV), 'cheap_iv' (lowest), 'gainers', 'losers', 'all'. Returns one line per name with the numbers.", input_schema:{ type:"object", properties:{ filter:{ type:"string" }, limit:{ type:"integer", description:"default 12" } }, required:["filter"] } },
+  { name:"session_flow", description:"Today's options volume by contract for a ticker — size, open interest, premium, and whether the last print lifted the ask or hit the bid — excluding deep-in-the-money financing trades. Use to say where the money went in a name.", input_schema:{ type:"object", properties:{ sym:{ type:"string" }, limit:{ type:"integer", description:"default 10" } }, required:["sym"] } },
+  { name:"quant_structures", description:"Run the Quant desk on a ticker: ranked option structures (long calls, long puts, debit spreads, credit spreads) priced against realized vol — cost, max loss, max gain, breakeven, P(ITM) under implied and realized vol, P(profit), EV per dollar of risk, tail (max loss per dollar of max gain). Use when they want an actual trade structure or ask which strike/expiry.", input_schema:{ type:"object", properties:{ sym:{ type:"string" }, view:{ type:"string", description:"bull | bear | neutral" }, horizonDays:{ type:"integer" }, minDte:{ type:"integer" }, maxDte:{ type:"integer" }, limit:{ type:"integer", description:"default 6" } }, required:["sym","view"] } },
+  { name:"idea_score", description:"The Ideas engine's verdict on a ticker: Buy / Accumulate / Watch / Extended / Avoid, the score, the reasons (trend, pullback, RSI, flip, walls, IV vs realized), and the equity plan (entry, stop, target off the levels). Backtested rules; cite them as such.", input_schema:{ type:"object", properties:{ sym:{ type:"string" } }, required:["sym"] } },
+  { name:"journal", description:"Read the trading journal and playbook: entries with entry/exit/P&L and the thesis, open or closed, optionally for one ticker, plus the stats (win rate, expectancy, best and worst setups).", input_schema:{ type:"object", properties:{ sym:{ type:"string" }, status:{ type:"string", description:"open | closed | all" }, limit:{ type:"integer", description:"default 20" } } } },
+  { name:"log_trade", description:"Write a position the user says they took into the journal and playbook. Only with numbers the user actually stated — ask for anything missing instead of guessing.", input_schema:{ type:"object", properties:{ sym:{ type:"string" }, kind:{ type:"string", description:"option | shares" }, cp:{ type:"string", description:"C | P (options)" }, strike:{ type:"number" }, exp:{ type:"string", description:"YYYY-MM-DD (options)" }, qty:{ type:"number" }, entry:{ type:"number" }, date:{ type:"string", description:"YYYY-MM-DD, default today" }, why:{ type:"string" } }, required:["sym","kind","qty","entry"] } },
+  { name:"close_trade", description:"Close an open position in the journal and playbook at the exit the user stated. Give the id from book.open, or sym plus strike/exp when that is unambiguous.", input_schema:{ type:"object", properties:{ id:{ type:"string" }, sym:{ type:"string" }, kind:{ type:"string" }, strike:{ type:"number" }, exp:{ type:"string" }, exit:{ type:"number" }, date:{ type:"string" }, why:{ type:"string" } }, required:["exit"] } },
+  { name:"remember", description:"Save a durable fact for future sessions. kind = 'fact' (holdings, sleeves, habits, how they trade), 'plan' (what they intend to do or watch), 'lesson' (what a trade taught them), 'feedback' (how they want you to behave). Keep it to one sentence. Don't save what the journal already holds.", input_schema:{ type:"object", properties:{ kind:{ type:"string" }, text:{ type:"string" } }, required:["kind","text"] } },
+  { name:"load_ticker", description:"Switch the Kingnode screen to a ticker (when they ask you to pull something up).", input_schema:{ type:"object", properties:{ sym:{ type:"string" } }, required:["sym"] } },
+  { name:"calendar", description:"Scheduled events ahead: macro releases, Fed, opex, the usual earnings slots, market holidays, plus whatever the user added.", input_schema:{ type:"object", properties:{ days:{ type:"integer", description:"default 10" } } } },
+];
+// session flow for any chain (chainFlow() is the loaded-ticker wrapper)
+function flowFromChain(chain, sym, exps){
+  const t = chain.snapAt || chain._at || Date.now(); const keep = new Set(exps); const out = [];
+  for (const r of chain.rows){ const [exp, cp, K, oi, vol, , , delta, bid, ask, last] = r; if (!vol || !keep.has(exp)) continue; const mid = bid && ask ? (bid+ask)/2 : (last || bid || ask); const px = last || mid; if (!px) continue;
+    out.push({ t, u:sym, exp, K, cp, px:+px.toFixed(2), sz:vol, oi, prem: Math.round(px*vol*100), side: ask && last >= ask - 0.01 ? "A" : bid && last <= bid + 0.01 ? "B" : "M", kind:"volume", volOi: oi ? vol/oi : null, deep: Math.abs(delta||0) >= 0.9 }); }
+  return out.sort((a,b)=>b.prem-a.prem);
+}
+async function priceHistory(sym){
+  sym = String(sym||"").toUpperCase(); const bars = await fetchBarsAny(sym); if (!bars || bars.length < 30) return { sym, error:"no daily bars on the feed for this name yet" };
+  const c = bars.map(b=>b[4]), v = bars.map(b=>b[5]||0), n = c.length, last = c[n-1];
+  const e = k => n > k ? ema(c, k).at(-1) : null; const e21 = e(21), e50 = e(50), e200 = e(200); const r14 = n > 16 ? rsi(c, 14).at(-1) : null;
+  let a = null; for (let i = 1; i < n; i++){ const tr = Math.max(bars[i][2]-bars[i][3], Math.abs(bars[i][2]-c[i-1]), Math.abs(bars[i][3]-c[i-1])); a = a == null ? tr : (a*13 + tr)/14; }
+  const ret = k => n > k ? +((last/c[n-1-k]-1)*100).toFixed(2) : null;
+  const hi52 = Math.max(...bars.slice(-252).map(b=>b[2])), lo52 = Math.min(...bars.slice(-252).map(b=>b[3]));
+  const rv = realizedVol(bars); const avgV = v.slice(-21,-1).reduce((x,y)=>x+y,0)/20;
+  const chg1 = ret(1)/100; const pullback = e21 ? Math.abs(last/e21-1) < 0.025 : false; const trendUp = e21 && e50 ? last > e21 && e21 > e50 : null;
+  return { sym, lastClose:last, date: new Date(bars[n-1][0]).toISOString().slice(0,10), returns:{ d1:ret(1), d5:ret(5), d20:ret(20), d60:ret(60) }, ema:{ e21:e21?+e21.toFixed(2):null, e50:e50?+e50.toFixed(2):null, e200:e200?+e200.toFixed(2):null, vsE21Pct: e21 ? +((last/e21-1)*100).toFixed(2) : null, trend: trendUp ? "up (price > 21 > 50)" : e21 && e50 && last < e21 && e21 < e50 ? "down (price < 21 < 50)" : "mixed" }, rsi14: r14 != null ? +r14.toFixed(1) : null, atr14: a ? +a.toFixed(2) : null, atrPct: a ? +(a/last*100).toFixed(2) : null, realizedVol20: rv ? +(rv.rv*100).toFixed(1) + "%" : null, range52w:{ high:hi52, low:lo52, fromHighPct: +((last/hi52-1)*100).toFixed(1), fromLowPct: +((last/lo52-1)*100).toFixed(1) }, volumeVsAvg: avgV ? +(v[n-1]/avgV).toFixed(2) : null, ideasSetup: trendUp && pullback && chg1 < 0 && chg1 > -0.04 && r14 != null && r14 < 55 ? "yes — uptrend, pullback to the 21-EMA on a red day, RSI < 55 (the backtested buy-the-dip entry)" : trendUp ? (pullback ? "almost — pullback in an uptrend, but today isn't a red day or RSI isn't reset" : "uptrend, not pulled back") : "no (not in an uptrend)" };
+}
+function scanMarket(filter, limit){
+  const rows = SCAN.rows; if (!rows) return { error:"no scan yet — the feed writes it every chain cycle" }; limit = Math.min(40, Number(limit)||12);
+  const syms = Object.keys(rows); const tot = s => (rows[s].cPrem||0)+(rows[s].pPrem||0); const callShare = s => tot(s) ? rows[s].cPrem/tot(s) : 0.5;
+  const sorters = { premium: (a,b)=>tot(b)-tot(a), calls: (a,b)=>callShare(b)-callShare(a), puts: (a,b)=>callShare(a)-callShare(b), unusual: (a,b)=>((rows[b].unusual?.[6])||0)-((rows[a].unusual?.[6])||0), iv: (a,b)=>(rows[b].iv30||0)-(rows[a].iv30||0), cheap_iv: (a,b)=>(rows[a].iv30||9)-(rows[b].iv30||9), gainers: (a,b)=>(rows[b].chg||0)-(rows[a].chg||0), losers: (a,b)=>(rows[a].chg||0)-(rows[b].chg||0), all: (a,b)=>tot(b)-tot(a) };
+  let list = [...syms]; const f = String(filter||"all").toLowerCase();
+  if (f === "wall") list = list.filter(s => { const r = rows[s]; return r.spot && ((r.cw && Math.abs(r.spot/r.cw-1) < 0.005) || (r.pw && Math.abs(r.spot/r.pw-1) < 0.005)); });
+  if (f === "calls" || f === "puts") list = list.filter(s => tot(s) > 1e6);
+  if (f === "unusual") list = list.filter(s => rows[s].unusual && rows[s].unusual[3] >= 500);
+  list.sort(sorters[f] || sorters.all);
+  return { filter:f, asOf: SCAN.at ? whenLabel(SCAN.at) : null, names: list.slice(0, limit).map(s => scanLine(s, rows[s], true)) };
+}
+async function quantFor(sym, view, horizonDays, minDte, maxDte, limit){
+  sym = String(sym||"").toUpperCase(); const chain = (S.chain && S.chain.symbol === sym && !S.demo) ? S.chain : await fetchChainAny(sym); if (!chain) return { sym, error:"no options chain on the free feed for this name" };
+  const exps = liveExps([...new Set(chain.rows.map(r=>r[0]))].sort()).slice(0, 10); const calc = computeFrom({...chain, symbol:sym}, exps, 15, S.set.model); calc.symbol = sym;
+  const daily = await fetchBarsAny(sym); const rvInfo = daily && daily.length > 12 ? realizedVol(daily) : realizedVol(S.bars);
+  const save = { view:QD.view, horizon:QD.horizon, minDte:QD.minDte, maxDte:QD.maxDte, sel:QD.sel }; QD.view = ["bull","bear","neutral"].includes(view) ? view : "bull"; if (horizonDays) QD.horizon = Number(horizonDays); if (minDte != null) QD.minDte = Number(minDte); if (maxDte != null) QD.maxDte = Number(maxDte);
+  try { const rows = withCalc(calc, daily, () => rankQuant(rvInfo)); const n = Math.min(12, Number(limit)||6);
+    return { sym, spot:calc.spot, view:QD.view, realizedVol: rvInfo ? +(rvInfo.rv*100).toFixed(1)+"%" : null, iv30: withCalc(calc, daily, () => { const v = ivAt(30); return v ? +(v*100).toFixed(1)+"%" : null; }), filters:{ horizonDays:QD.horizon, minDte:QD.minDte, maxDte:QD.maxDte, minPopPct:QD.minPop, maxSpreadPct:QD.maxSpread, minPayoffPctOfWidth:QD.minCreditPct },
+      structures: rows.slice(0, n).map(r => ({ kind:r.kind, legs: r.legs.map(l => `${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join(" / ") + ` ${r.exp} (${dte(r.exp)}d)`, cost:+r.debit.toFixed(2), maxLoss:+r.maxLoss.toFixed(2), maxGain: isFinite(r.maxGain) ? +r.maxGain.toFixed(2) : "unlimited", breakeven:+r.be.toFixed(2), pItmIV:+(r.pItmIV*100).toFixed(0)+"%", pItmRV:+(r.pItmRV*100).toFixed(0)+"%", pProfitRV:+(r.popRV*100).toFixed(0)+"%", evPerContractRV:+r.evRV.toFixed(2), evPerDollarOfRisk:+(r.evr*100).toFixed(0)+"%", tail: r.tail ? +r.tail.toFixed(1)+":1" : null, spreadPct:+(r.spreadPct*100).toFixed(0)+"%", agreesWithLevels:r.posAlign, score:+r.score.toFixed(0) })), note: rows.length ? "EV and P(profit) are model outputs under realized vol on delayed data — a pricing comparison, not a forecast." : "nothing passes the filters — loosen min P(profit) or widen DTE" }; }
+  finally { Object.assign(QD, save); }
+}
+async function ideaFor(sym){
+  sym = String(sym||"").toUpperCase(); const chain = (S.chain && S.chain.symbol === sym && !S.demo) ? S.chain : await fetchChainAny(sym); if (!chain) return { sym, error:"no options chain on the free feed for this name" };
+  const [daily] = await Promise.all([fetchBarsAny(sym), loadSpyDaily()]); const r = analyzeTicker(sym, {...chain, rows: chain.rows.filter(x => liveExps([x[0]]).length)}, daily);
+  return { sym, spot:r.spot, signal:r.signal, view:r.view, score:r.score, reasons:r.reasons, equityPlan: r.entry ? { entry:+r.entry.toFixed(2), stop:+r.stop.toFixed(2), stopBasis: r.atr14 ? `2×ATR14 (ATR ${r.atr14.toFixed(2)})` : "50-EMA / −6%", target:+r.target.toFixed(2) } : null, marketRegime: r.regimeUp == null ? null : r.regimeUp ? "SPY above its 50-EMA (buy-the-dip regime on)" : "SPY below its 50-EMA (regime off)", relativeStrength20d: r.rsVsSpy != null ? +(r.rsVsSpy*100).toFixed(1) + "% vs SPY" : null, bestStructure: r.best ? { kind:r.best.kind, legs:r.best.legs.map(l => `${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join(" / ") + " " + r.best.exp, evPerDollarOfRisk:+(r.best.evr*100).toFixed(0)+"%", pProfitRV:+(r.best.popRV*100).toFixed(0)+"%" } : null, trend:{ up:r.trendUp, down:r.trendDown, rsi:r.rsi!=null?+r.rsi.toFixed(0):null, chg1:r.chg1!=null?+(r.chg1*100).toFixed(2)+"%":null, chg20:r.chg20!=null?+(r.chg20*100).toFixed(1)+"%":null }, options:{ iv30:r.iv30?+(r.iv30*100).toFixed(0)+"%":null, realized:r.rv?+(r.rv*100).toFixed(0)+"%":null }, halal:r.halal, backtest: BT.data?.chosen?.summary ? { winRate:+(BT.data.chosen.summary.winRate*100).toFixed(0)+"%", avgRet:+(BT.data.chosen.summary.avgRet*100).toFixed(2)+"%", profitFactor:+(BT.data.chosen.summary.profitFactor||0).toFixed(2), n:BT.data.chosen.summary.n } : null };
+}
+function journalRead(sym, status, limit){
+  let j = getJournal(); if (sym) j = j.filter(e => e.sym === String(sym).toUpperCase()); if (status === "open") j = j.filter(e => !e.closed); if (status === "closed") j = j.filter(e => e.closed);
+  const coach = coachReport(); const n = Math.min(60, Number(limit)||20);
+  return { count:j.length, stats: coach.stats || null, entries: j.slice(-n).map(e => ({ id:e.id, opened:new Date(e.opened).toISOString().slice(0,10), contract:e.contract, qty:e.qty, entry:e.entry, exit:e.exit ?? null, closed: e.closed ? new Date(e.closed).toISOString().slice(0,10) : null, pnl: e.pnl != null ? Math.round(e.pnl) : null, pnlPct: e.pnlPct != null ? +e.pnlPct.toFixed(1) : null, thesis:e.thesis||"", exitWhy:e.why||"", notes:e.notes||"", levelsAtEntry: e.snap ? { pw:e.snap.pw, flip:e.snap.flip, cw:e.snap.cw, regime:e.snap.regime } : null })) };
+}
+async function avaTool(name, input){
+  input = input || {};
+  switch (name){
+    case "peek_ticker": return peekTicker(input.sym);
+    case "price_history": return priceHistory(input.sym);
+    case "scan_market": await loadScan(); return scanMarket(input.filter, input.limit);
+    case "session_flow": { const sym = String(input.sym||"").toUpperCase(); const chain = (S.chain && S.chain.symbol === sym && !S.demo) ? S.chain : await fetchChainAny(sym); if (!chain) return { sym, error:"no chain on the feed" }; const exps = liveExps([...new Set(chain.rows.map(r=>r[0]))].sort()); const fl = flowFromChain(chain, sym, exps).filter(t=>!t.deep); const n = Math.min(25, Number(input.limit)||10); const callP = fl.filter(t=>t.cp==="C").reduce((a,t)=>a+t.prem,0), putP = fl.filter(t=>t.cp==="P").reduce((a,t)=>a+t.prem,0); return { sym, asOf: whenLabel(chain.snapAt || chain._at || Date.now()), callPremium:money(callP), putPremium:money(putP), callShare: callP+putP ? Math.round(callP/(callP+putP)*100)+"%" : null, contracts: fl.slice(0,n).map(t => `${t.exp} ${fmt(t.K)}${t.cp} vol ${fmtK(t.sz)} oi ${fmtK(t.oi)} (${t.volOi!=null?t.volOi.toFixed(1)+"×":"new"}) ${money(t.prem)} last ${t.side==="A"?"at the ask":t.side==="B"?"at the bid":"mid"}`) }; }
+    case "quant_structures": return quantFor(input.sym, input.view, input.horizonDays, input.minDte, input.maxDte, input.limit);
+    case "idea_score": return ideaFor(input.sym);
+    case "journal": return journalRead(input.sym, input.status, input.limit);
+    case "log_trade": return { done: ediApply({ action:"open", ...input }) };
+    case "close_trade": return { done: ediApply({ action:"close", ...input }) };
+    case "remember": { avaRemember(input.text, input.kind); return { done:`remembered (${input.kind||"fact"})` }; }
+    case "load_ticker": return { done: ediApply({ action:"load", sym:input.sym }) };
+    case "calendar": { const days = Math.min(60, Number(input.days)||10); const today = new Date(); today.setHours(0,0,0,0); return { events: [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= 0 && e.days <= days).sort((a,b)=>a.days-b.days).map(e => `${e.date}${e.time?" "+e.time+" ET":""} · ${e.name} · impact ${e.impact||1} · in ${e.days}d`) }; }
+    default: throw new Error("unknown tool " + name);
+  }
+}
+const TOOL_LABEL = { peek_ticker:i=>`Looked at ${String(i.sym||"").toUpperCase()}`, price_history:i=>`Price history ${String(i.sym||"").toUpperCase()}`, scan_market:i=>`Scanned: ${i.filter}`, session_flow:i=>`Flow ${String(i.sym||"").toUpperCase()}`, quant_structures:i=>`Quant ${String(i.sym||"").toUpperCase()} (${i.view})`, idea_score:i=>`Ideas ${String(i.sym||"").toUpperCase()}`, journal:()=>"Read the journal", log_trade:()=>"Logged a trade", close_trade:()=>"Closed a trade", remember:i=>`Remembered (${i.kind||"fact"})`, load_ticker:i=>`Loaded ${String(i.sym||"").toUpperCase()}`, calendar:()=>"Checked the calendar" };
+
+// ===== Ava: streaming call to the Messages API (SSE) =====
+function parseSse(chunk){ let ev = null, data = ""; for (const line of chunk.split("\n")){ if (line.startsWith("event:")) ev = line.slice(6).trim(); else if (line.startsWith("data:")) data += line.slice(5).trim(); } if (!data) return null; try { return { event: ev, data: JSON.parse(data) }; } catch { return null; } }
+async function avaStream({ key, model, system, messages, tools, maxTokens, onText, signal }){
+  const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal, headers:{ "content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" }, body: JSON.stringify({ model, max_tokens: maxTokens || 2400, system, messages, tools, stream:true }) });
+  if (!r.ok){ let msg = String(r.status); try { const j = await r.json(); msg = j.error?.message || msg; } catch {} const e = new Error(msg); e.status = r.status; throw e; }
+  const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "", stop = null; const blocks = []; let text = "";
+  const handle = ev => { const d = ev.data; if (!d) return;
+    if (d.type === "content_block_start"){ blocks[d.index] = d.content_block.type === "tool_use" ? { type:"tool_use", id:d.content_block.id, name:d.content_block.name, json:"" } : { type:"text", text: d.content_block.text || "" }; }
+    else if (d.type === "content_block_delta"){ const b = blocks[d.index]; if (!b) return; if (d.delta.type === "text_delta"){ b.text += d.delta.text; text += d.delta.text; onText && onText(text); } else if (d.delta.type === "input_json_delta"){ b.json += d.delta.partial_json; } }
+    else if (d.type === "message_delta"){ stop = d.delta?.stop_reason || stop; }
+    else if (d.type === "error"){ throw new Error(d.error?.message || "stream error"); } };
+  while (true){ const { value, done } = await reader.read(); if (done) break; buf += dec.decode(value, { stream:true }); let i; while ((i = buf.indexOf("\n\n")) >= 0){ const ev = parseSse(buf.slice(0, i)); buf = buf.slice(i + 2); if (ev) handle(ev); } }
+  if (buf.trim()){ const ev = parseSse(buf); if (ev) handle(ev); }
+  return { blocks: blocks.filter(Boolean), stop, text };
+}
+// non-streaming one-shot (journal coach, desk notes) — same key, same model
+async function avaComplete(prompt, system, maxTokens){
+  const key = (S.set.anthropicKey||"").trim(); if (!key) return null;
+  try { const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{ "content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" }, body: JSON.stringify({ model:(S.set.ediModel||"claude-sonnet-5-5").trim(), max_tokens:maxTokens||1800, system: system || "You are Ava, a sharp, plain-spoken trading coach and desk analyst. Full sentences, specifics, no filler.", messages:[{role:"user", content:prompt}] }) }); const j = await r.json(); if (!r.ok) return null; return (j.content||[]).map(x=>x.text||"").join("\n").trim(); } catch { return null; }
+}
+
+// ===== Ava: the conversation loop =====
 async function ediAsk(question){
   await Promise.all([loadScan(), loadUniverse(), loadMacro()].map(p => p && p.catch ? p.catch(()=>null) : p));
-  const ctx = ediContext(); const history = EDI.log.slice(-24).map(m => ({role:m.role, content:m.text}));
+  const ctx = ediContext(); const history = EDI.log.slice(-24).filter(m => m.text).map(m => ({ role:m.role, content:m.text }));
   const key = (S.set.anthropicKey||"").trim();
-  // 1. local server (desktop) 2. direct with the user's key 3. offline read
-  try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt:`${EDI_SYSTEM}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
+  // 1. local server (desktop) — text-embedded actions, no tools
+  try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt:`${EDI_SYSTEM}\n${EDI_KN_FALLBACK}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
+  // 2. direct with the user's key: streaming, native tools, prompt caching on the static part
   if (key){
     const models = [...new Set([(S.set.ediModel||"claude-sonnet-5-5").trim(), "claude-sonnet-5-5", "claude-sonnet-4-5"])]; let lastErr = "";
-    const system = EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx);
-    const call = async (model, messages) => { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model,max_tokens:2200,system,messages})}); const j = await r.json(); return { ok:r.ok, text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), err: j.error?.message || String(r.status) }; };
+    const system = [ { type:"text", text:EDI_SYSTEM, cache_control:{ type:"ephemeral" } }, { type:"text", text:"CONTEXT (live, delayed data from the app)\n" + JSON.stringify(ctx) } ];
     for (const model of models){
+      const messages = [...history, { role:"user", content:question }]; const used = [];
       try {
-        const messages = [...history, {role:"user", content:question}];
-        for (let round = 0; round < 3; round++){
-          const r = await call(model, messages);
-          if (!r.ok){ lastErr = r.err; break; }
-          const peeks = [...new Set([...r.text.matchAll(/<<kn\s*(\{[^}]*"action"\s*:\s*"peek"[^}]*\})\s*>>/g)].map(m => { try { return String(JSON.parse(m[1]).sym||"").toUpperCase(); } catch { return ""; } }).filter(Boolean))].slice(0,3);
-          if (!peeks.length || round === 2) return {text:r.text, via:model};
-          EDI.busy = `Ava is pulling ${peeks.join(", ")}…`; ediRender();
-          const results = await Promise.all(peeks.map(peekTicker));
-          messages.push({role:"assistant", content:r.text}, {role:"user", content:"[Kingnode tool result — data from the app, not the user speaking]\n" + JSON.stringify(results) + "\n\nNow answer the user's last message with this. Do not peek these names again."});
+        for (let round = 0; round < 7; round++){
+          EDI.partial = ""; const r = await avaStream({ key, model, system, messages, tools:AVA_TOOLS, onText: t => { EDI.partial = t; ediRenderPartial(); } });
+          const uses = r.blocks.filter(b => b.type === "tool_use");
+          if (r.stop !== "tool_use" || !uses.length || round === 6) return { text: r.text, via: model, actions: used };
+          messages.push({ role:"assistant", content: r.blocks.map(b => b.type === "text" ? { type:"text", text:b.text } : { type:"tool_use", id:b.id, name:b.name, input: (() => { try { return JSON.parse(b.json||"{}"); } catch { return {}; } })() }).filter(b => b.type !== "text" || b.text.trim()) });
+          EDI.busy = `Ava: ${uses.map(u => u.name.replace(/_/g," ")).join(", ")}…`; ediRender();
+          const results = await Promise.all(uses.map(async u => { let input = {}; try { input = JSON.parse(u.json||"{}"); } catch {} try { const out = await avaTool(u.name, input); used.push({ ok:true, msg:(TOOL_LABEL[u.name]||(()=>u.name))(input) }); return { type:"tool_result", tool_use_id:u.id, content: JSON.stringify(out).slice(0, 14000) }; } catch (e) { used.push({ ok:false, msg:`${u.name}: ${e.message}` }); return { type:"tool_result", tool_use_id:u.id, content:"error: " + e.message, is_error:true }; } }));
+          messages.push({ role:"user", content: results });
         }
-        if (!/model|not_found/i.test(lastErr)) break; // only a bad model name is worth retrying with the next model
-      } catch(e){ return {text:"Ava couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
-    return {text:"Ava couldn't reach Claude: " + lastErr + ". Check the key and model in ⚙ Settings.", via:"error"}; }
-  return {text: ediOffline(question, ctx), via:"offline"};
+      } catch (e) { lastErr = e.message || String(e); if (!(e.status === 404 || /model|not_found/i.test(lastErr))) break; }
+    }
+    return { text:"Ava couldn't reach Claude: " + lastErr + ". Check the key and model in ⚙ Settings.", via:"error" };
+  }
+  return { text: ediOffline(question, ctx), via:"offline" };
 }
 function ediMarketRundown(ctx){
   const m = ctx.market || {}; const out = [];
@@ -2395,34 +2511,70 @@ function ediOffline(q, ctx){
   return out.join("\n");
 }
 function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+// ===== Ava: rendering (markdown-lite, streaming), voice, panel =====
+function mdLite(text){
+  const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const inline = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<i>$2</i>").replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  const lines = String(text||"").replace(/\r/g,"").split("\n"); const out = []; let list = null;
+  const flush = () => { if (list){ out.push(`<${list.tag}>${list.items.map(i=>`<li>${i}</li>`).join("")}</${list.tag}>`); list = null; } };
+  for (const raw of lines){ const line = raw.trimEnd();
+    const m = line.match(/^\s*([-*•]|\d+[.)])\s+(.*)$/);
+    if (m){ const tag = /^\d/.test(m[1]) ? "ol" : "ul"; if (!list || list.tag !== tag){ flush(); list = { tag, items:[] }; } list.items.push(inline(m[2])); continue; }
+    flush();
+    if (!line.trim()){ out.push(""); continue; }
+    const hm = line.match(/^#{1,4}\s+(.*)$/); if (hm){ out.push(`<p><b>${inline(hm[1])}</b></p>`); continue; }
+    out.push(`<p>${inline(line)}</p>`); }
+  flush(); return out.join("");
+}
+function ediMsgEl(m){
+  const el = h("div",{class:"edi-msg "+(m.role==="user"?"u":"a")});
+  if (m.role === "user") el.textContent = m.text; else el.innerHTML = mdLite(m.text);
+  if (m.role !== "user" && m.actions?.length) el.append(h("div",{class:"edi-acts"}, ...m.actions.map(a => h("span",{class:"edi-act" + (a.ok ? "" : " bad")}, a.msg))));
+  if (m.role !== "user" && m.via) el.append(h("div",{class:"edi-via"}, m.via === "offline" ? "offline read — app math, not AI" : m.via === "server" ? "Claude via your server" : m.via === "error" ? "error" : m.via, " ", h("button",{class:"edi-copy", type:"button", title:"copy", onclick:()=>{ navigator.clipboard?.writeText(m.text).then(()=>notice("Copied.")).catch(()=>{}); }},"copy"), VOICE.canSpeak ? h("button",{class:"edi-copy", type:"button", title:"read aloud", onclick:()=>speak(m.text)},"🔊") : null));
+  return el;
+}
+function ediRenderPartial(){ const log = document.getElementById("ediLog"); if (!log) return; let p = log.querySelector(".edi-msg.streaming"); if (!p){ log.querySelector(".edi-busy")?.remove(); p = h("div",{class:"edi-msg a streaming"}); log.append(p); } p.innerHTML = mdLite(EDI.partial || "") + '<span class="edi-cursor"></span>'; log.scrollTop = log.scrollHeight; }
 function ediRender(){
-  const log = document.getElementById("ediLog"); const key = (S.set.anthropicKey||"").trim();
-  const msgs = EDI.log.map(m => h("div",{class:"edi-msg "+(m.role==="user"?"u":"a")}, m.text,
-    m.role !== "user" && m.actions?.length ? h("div",{class:"edi-acts"}, ...m.actions.map(a => h("span",{class:"edi-act" + (a.ok ? "" : " bad")}, a.msg))) : null,
-    m.role !== "user" && m.via ? h("div",{class:"edi-via"}, m.via === "offline" ? "offline read — app math, not AI" : m.via === "server" ? "Claude via your server" : m.via === "error" ? "error" : m.via) : null));
-  if (!key) msgs.unshift(h("div",{class:"edi-msg a edi-setup"}, h("b",null,"Ava is running without a brain."), " Right now every answer is the app's own rules — instant, canned, not a conversation. Paste an Anthropic API key in ⚙ Settings and she becomes Claude: she reads the screen, your book and your journal, remembers what you tell her, and can log the trades you describe. ", h("a",{href:"https://console.anthropic.com/settings/keys",target:"_blank",rel:"noopener"},"Get a key"), " · costs cents per conversation.", h("div",{style:{marginTop:"6px"}}, h("button",{class:"btn small gold", type:"button", onclick:()=>document.getElementById("settingsBtn").click()},"Open settings"))));
-  if (EDI.showMem){ const notes = avaNotes(); msgs.push(h("div",{class:"edi-msg a"}, h("b",null,"What I remember"), notes.length ? h("div",{style:{display:"grid",gap:"4px",marginTop:"6px"}}, ...notes.map((n,i) => h("div",{style:{display:"flex",gap:"8px",alignItems:"flex-start"}}, h("span",{class:"hint",style:{flex:"none"}}, new Date(n.t).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})), h("span",{style:{flex:1}}, n.text), h("button",{class:"btn small", type:"button", title:"forget", onclick:()=>{ avaForget(i); ediRender(); }},"×")))) : h("div",{class:"hint",style:{marginTop:"4px"}},"Nothing yet. Tell me about your trades, what you're holding, how you want to be coached — I'll keep the parts worth keeping."))); }
+  const log = document.getElementById("ediLog"); if (!log) return; const key = (S.set.anthropicKey||"").trim();
+  const msgs = EDI.log.map(ediMsgEl);
+  if (!key) msgs.unshift(h("div",{class:"edi-msg a edi-setup"}, h("b",null,"Ava is running without a brain."), " Right now every answer is the app's own rules — instant, canned, not a conversation. Paste an Anthropic API key in ⚙ Settings and she becomes Claude: she reads the screen, the whole scan, your book and your journal, pulls any chain mid-answer, remembers what you tell her, and logs the trades you describe. ", h("a",{href:"https://console.anthropic.com/settings/keys",target:"_blank",rel:"noopener"},"Get a key"), " · cents per conversation.", h("div",{style:{marginTop:"6px"}}, h("button",{class:"btn small gold", type:"button", onclick:()=>document.getElementById("settingsBtn").click()},"Open settings"))));
+  if (EDI.showMem){ const notes = avaNotes(); const kinds = ["feedback","fact","plan","lesson","note"]; const label = {feedback:"How you want me to be", fact:"About you and your book", plan:"Plans and things to watch", lesson:"Lessons", note:"Notes"};
+    msgs.push(h("div",{class:"edi-msg a"}, h("b",null,"What I remember"), notes.length ? kinds.filter(k => notes.some(n => (n.kind||"note") === k)).map(k => h("div",{style:{marginTop:"8px"}}, h("div",{class:"hint",style:{textTransform:"uppercase",letterSpacing:".06em",fontSize:"10.5px"}}, label[k]), ...notes.map((n,i)=>[n,i]).filter(([n]) => (n.kind||"note") === k).map(([n,i]) => h("div",{style:{display:"flex",gap:"8px",alignItems:"flex-start",padding:"3px 0"}}, h("span",{class:"hint",style:{flex:"none"}}, new Date(n.t).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})), h("span",{style:{flex:1}}, n.text), h("button",{class:"btn small", type:"button", title:"forget", onclick:()=>{ avaForget(i); ediRender(); }},"×"))))) : h("div",{class:"hint",style:{marginTop:"4px"}},"Nothing yet. Tell me about your trades, what you're holding, how you want to be coached — I'll keep the parts worth keeping."))); }
   log.replaceChildren(...msgs);
-  if (EDI.busy) log.append(h("div",{class:"edi-msg a hint"}, typeof EDI.busy === "string" ? EDI.busy : "Ava is reading the screen…"));
+  if (EDI.busy){ if (EDI.partial) ediRenderPartial(); else log.append(h("div",{class:"edi-msg a hint edi-busy"}, typeof EDI.busy === "string" ? EDI.busy : "Ava is reading the screen…")); }
   log.scrollTop = log.scrollHeight;
-  const foot = document.getElementById("ediFoot"); foot.textContent = key ? `Claude (${(S.set.ediModel||"claude-sonnet-5-5")}) with your key, from this browser · ${avaNotes().length} things remembered` : "Offline — add an Anthropic API key in ⚙ Settings to make Ava a real assistant.";
+  const foot = document.getElementById("ediFoot"); foot.textContent = key ? `Claude (${(S.set.ediModel||"claude-sonnet-5-5")}) with your key, from this browser · tools on · ${avaNotes().length} things remembered` : "Offline — add an Anthropic API key in ⚙ Settings to make Ava a real assistant.";
 }
 async function ediSend(q){
-  q = (q||"").trim(); if (!q || EDI.busy) return; EDI.log.push({role:"user", text:q}); EDI.busy = true; ediRender();
-  const a = await ediAsk(q); const ran = a.via === "offline" || a.via === "error" ? { text:a.text, actions:[] } : ediRunActions(a.text);
-  EDI.log.push({role:"assistant", text: ran.text || a.text, via:a.via, actions:ran.actions}); EDI.busy = false; ediRender();
+  q = (q||"").trim(); if (!q || EDI.busy) return; EDI.log.push({role:"user", text:q}); EDI.busy = true; EDI.partial = ""; ediRender();
+  let a; try { a = await ediAsk(q); } catch (e) { a = { text:"Something broke on my side: " + (e.message||e), via:"error" }; }
+  const ran = a.via === "offline" || a.via === "error" ? { text:a.text, actions:[] } : ediRunActions(a.text); // text-embedded actions still honoured (server path, older habits)
+  EDI.log.push({role:"assistant", text: ran.text || a.text, via:a.via, actions:[...(a.actions||[]), ...ran.actions]}); EDI.busy = false; EDI.partial = ""; ediRender();
+  if (VOICE.speakOn && a.via !== "error") speak(ran.text || a.text);
   try { localStorage.setItem("kingnode:edi", JSON.stringify(EDI.log.slice(-60))); } catch {}
 }
+// voice: dictate (Web Speech API where the browser has it) and read answers aloud
+const VOICE = { rec:null, listening:false, speakOn:false, canSpeak: typeof speechSynthesis !== "undefined" && !!window.SpeechSynthesisUtterance, canListen: !!(window.SpeechRecognition || window.webkitSpeechRecognition) };
+function speak(text){ if (!VOICE.canSpeak) return; try { speechSynthesis.cancel(); const plain = String(text||"").replace(/[*_`#>]/g,"").replace(/\s+/g," ").slice(0, 1600); const u = new SpeechSynthesisUtterance(plain); const v = speechSynthesis.getVoices().find(x => /en[-_]US/i.test(x.lang) && /female|samantha|ava|zira|aria|jenny/i.test(x.name)) || speechSynthesis.getVoices().find(x => /^en/i.test(x.lang)); if (v) u.voice = v; u.rate = 1.03; speechSynthesis.speak(u); } catch {} }
+function listen(){ if (!VOICE.canListen) return; if (VOICE.listening){ try { VOICE.rec.stop(); } catch {} return; } const R = window.SpeechRecognition || window.webkitSpeechRecognition; const rec = new R(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; const ta = document.getElementById("ediText"); const mic = document.getElementById("ediMic"); let final = "";
+  rec.onresult = e => { let interim = ""; for (let i = e.resultIndex; i < e.results.length; i++){ const t = e.results[i][0].transcript; if (e.results[i].isFinal) final += t; else interim += t; } ta.value = (final + " " + interim).trim(); };
+  rec.onend = () => { VOICE.listening = false; mic.classList.remove("on"); if (final.trim()){ ta.value = final.trim(); document.getElementById("ediForm").requestSubmit(); } };
+  rec.onerror = () => { VOICE.listening = false; mic.classList.remove("on"); };
+  VOICE.rec = rec; VOICE.listening = true; mic.classList.add("on"); try { rec.start(); } catch { VOICE.listening = false; mic.classList.remove("on"); } }
 function ediInit(){
   try { EDI.log = JSON.parse(localStorage.getItem("kingnode:edi")||"[]"); } catch {}
+  try { VOICE.speakOn = localStorage.getItem("kingnode:ava-speak") === "1"; } catch {}
   const panel = document.getElementById("ediPanel"), fab = document.getElementById("ediBtn");
-  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ loadScan(); loadUniverse(); loadMacro(); ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text: (S.set.anthropicKey||"").trim() ? "Hey, I'm Ava. I can read whatever's on screen, keep an eye on your book, remember what you tell me, log the trades you describe, and talk you down when the tape's got you tilted. What's up?" : "Hey, I'm Ava — running offline right now, so I can only read the screen with the app's math. Add an Anthropic key in ⚙ Settings and we can actually talk."}); ediRender(); } };
+  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ loadScan(); loadUniverse(); loadMacro(); ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text: (S.set.anthropicKey||"").trim() ? "Hey, I'm Ava. I've got the whole tape in front of me — the scan, your book, your journal — and I can pull any name's chain while we talk. Ask me what caught my eye, tell me what you took, or just think out loud." : "Hey, I'm Ava — running offline right now, so I can only read the screen with the app's math. Add an Anthropic key in ⚙ Settings and we can actually talk."}); ediRender(); } };
   document.getElementById("ediClose").onclick = () => { panel.hidden = true; fab.hidden = false; };
   document.getElementById("ediClear").onclick = () => { EDI.log = []; try { localStorage.removeItem("kingnode:edi"); } catch {} ediRender(); };
   document.getElementById("ediMem").onclick = () => { EDI.showMem = !EDI.showMem; ediRender(); };
   document.getElementById("ediForm").addEventListener("submit", e => { e.preventDefault(); const ta = document.getElementById("ediText"); const q = ta.value; ta.value = ""; ediSend(q); });
   document.getElementById("ediText").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); document.getElementById("ediForm").requestSubmit(); } });
-  const quick = [["What caught your eye", () => "Give me the rundown: what the tape did, the regime, and which names caught your eye in the scan today and why — with the numbers. Then what you'd watch tomorrow."],["Unusual flow", () => "Go through the scan for unusual options activity: volume way over open interest, lopsided call or put share, premium that's big for the name. Which three are worth a closer look, and peek at them."],["Log a trade", () => "I want to log a trade I took. Ask me what you need and write it to the journal."],["Yesterday's trades", () => "Go through what I traded yesterday and today from the journal and what I told you. What did I do well, what was sloppy?"],["Read this ticker", () => `Read ${S.sym} for me: regime, levels, flow, and a plan with entry, invalidation and target.`],["Check my book", () => "Look at my open book against my rules. Anything oversized, too short-dated, or against the tape?"],["Review my journal", () => "Review my journal stats and tell me the two biggest leaks and one rule change to test."],["Today's plan", () => "Given the calendar and my book, what's the plan for today? What do I avoid?"],["I'm tilted", () => "I'm tilted. Talk me down before I do something stupid."],["Talk me out of this", () => `I want to take a trade on ${S.sym} right now. Talk me out of it if I shouldn't.`],["Just talk", () => "Not about trading. Just want to talk for a minute."]];
+  const mic = document.getElementById("ediMic"), spk = document.getElementById("ediSpeak");
+  if (mic){ if (!VOICE.canListen) mic.hidden = true; else mic.onclick = listen; }
+  if (spk){ if (!VOICE.canSpeak) spk.hidden = true; else { spk.setAttribute("aria-pressed", String(VOICE.speakOn)); spk.onclick = () => { VOICE.speakOn = !VOICE.speakOn; spk.setAttribute("aria-pressed", String(VOICE.speakOn)); try { localStorage.setItem("kingnode:ava-speak", VOICE.speakOn ? "1" : "0"); } catch {} if (!VOICE.speakOn) speechSynthesis.cancel(); else speak("Read-aloud is on."); }; } }
+  const quick = [["What caught your eye", () => "Give me the rundown: what the tape did, the regime, and which names caught your eye in the scan today and why — with the numbers. Then what you'd watch tomorrow."],["Unusual flow", () => "Scan for unusual options activity — volume way over open interest, lopsided call or put share, premium that's big for the name — and look closer at the three most interesting."],["Desk note", () => "Write me a desk note for today: the tape, the regime, three names from the scan with the numbers, what's on the calendar, and what to watch tomorrow. Save the watch items as a plan."],["Log a trade", () => "I want to log a trade I took. Ask me what you need and write it to the journal."],["Yesterday's trades", () => "Go through what I traded yesterday and today from the journal and what I told you. What did I do well, what was sloppy?"],["Read this ticker", () => `Read ${S.sym} for me: regime, levels, flow, price history, and a plan with entry, invalidation and target — and the best structure from the quant desk.`],["Check my book", () => "Look at my open book against my rules and the current levels. Anything oversized, too short-dated, or against the tape?"],["Review my journal", () => "Review my journal stats and tell me the two biggest leaks and one rule change to test."],["I'm tilted", () => "I'm tilted. Talk me down before I do something stupid."],["Talk me out of this", () => `I want to take a trade on ${S.sym} right now. Talk me out of it if I shouldn't.`]];
   document.getElementById("ediQuick").replaceChildren(...quick.map(([l,f]) => h("button",{type:"button", onclick:()=>ediSend(f())}, l)));
 }
 // ---------- Halal: screened universe, movers, purification ----------

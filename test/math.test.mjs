@@ -155,3 +155,15 @@ test("Ava can log what she is told: open, close, note — and never on a bad pay
   const r5 = c5.ediRunActions('<<kn {"action":"open","sym":"TLT","kind":"option","cp":"C","strike":80}>> <<kn {"action":"close","sym":"ZZZ","exit":1}>> <<kn {not json}>>');
   assert.ok(r5.actions.every(a => !a.ok), "missing fields, unknown position and bad JSON all refuse"); assert.equal(c5.getPb().positions.length, 2, "nothing half-written");
 });
+test("feed: today's session is folded into the daily series from the 5-minute bars", async () => {
+  const src = fs.readFileSync(new URL("../scripts/snapshot.mjs", import.meta.url), "utf8"); const i = src.indexOf("export function withToday"); let j = src.indexOf("{", i), d = 0; for (; j < src.length; j++) { if (src[j] === "{") d++; else if (src[j] === "}") { d--; if (!d) break; } }
+  const withToday = new Function(src.slice(i + 7, j + 1) + "; return withToday;")();
+  const day = (s, h = 13, m = 30) => Date.parse(`${s}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00Z`);
+  const daily = [[day("2026-10-09"), 100, 101, 99, 100.5, 1000], [day("2026-10-12"), 101, 102, 100, 101.5, 1100]];
+  const session = { regularStart: day("2026-10-13"), regularEnd: day("2026-10-13", 20, 0) };
+  const intra = [[day("2026-10-13", 13, 25), 90, 90, 90, 90, 5], [day("2026-10-13", 13, 30), 102, 103, 101.5, 102.5, 10], [day("2026-10-13", 15, 0), 102.5, 104, 102, 103.8, 20], [day("2026-10-13", 20, 5), 50, 50, 50, 50, 7]];
+  const out = withToday(daily, intra, session);
+  assert.equal(out.length, 3, "a new session is appended"); assert.deepEqual(out[2], [session.regularStart, 102, 104, 101.5, 103.8, 30], "open/high/low/close/volume from regular-session bars only");
+  const again = withToday(out, intra, session); assert.equal(again.length, 3, "running it twice replaces, never duplicates");
+  assert.equal(withToday(daily, [], session).length, 2, "no intraday bars → unchanged");
+});
