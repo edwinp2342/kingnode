@@ -112,14 +112,14 @@ async function cycle(n, ph) {
   if (plan.bars || n === 0) { // cycle 0 always pulls bars so a run that starts overnight still has every chart
     for (let i = 0; i < BAR_SYMS.length; i += 8) {
       await Promise.all(BAR_SYMS.slice(i, i + 8).map(async sym => {
-        const ysym = YAHOO_ALIAS[sym] || sym;
+        const ysym = YAHOO_ALIAS[sym] || sym; let b = null;
         try {
-          const b = await fetchBars(ysym, "5m", "5d", true);
+          b = await fetchBars(ysym, "5m", "5d", true);
           fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, symbol: sym, bars: b.bars.slice(-800), snapshotAt: Date.now() }));
           const lastBar = b.bars.at(-1); const s = b.session || {};
           if (lastBar) universe[sym] = [+lastBar[4].toFixed(4), s.prevClose != null ? +(+s.prevClose).toFixed(4) : null, lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null];
         } catch (e) { fail.push(`b:${sym}`); }
-        if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: withToday(d.bars.slice(-300), b.bars, b.session), snapshotAt: Date.now() })); } catch {} }
+        if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: withToday(d.bars.slice(-300), b?.bars, b?.session), snapshotAt: Date.now() })); } catch (e) { fail.push(`d:${sym}`); } }
       }));
     }
     barsAt = Date.now();
