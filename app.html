@@ -2210,6 +2210,32 @@ function viewMacro(){
 // without a key, answers from the app's own reads (levels, coach, book, calendar) so it is never dead.
 // =====================================================================================================
 const EDI = { open:false, log:[], busy:false, showMem:false };
+// data/scan.json — the feed's one-line-per-ticker read of ~80 chains: premium today, call share, unusual contract, IV, levels.
+const SCAN = { at:0, rows:null, loading:false, fetchedAt:0 };
+async function loadScan(force){ if (SCAN.pending) return SCAN.pending; if (!force && Date.now() - SCAN.fetchedAt < 3*60e3) return SCAN.rows;
+  SCAN.pending = (async () => { try { const j = await snapshotJson("scan.json", 0); if (j?.rows){ SCAN.rows = j.rows; SCAN.at = j.at; SCAN.fetchedAt = Date.now(); } } catch {} SCAN.pending = null; return SCAN.rows; })(); return SCAN.pending; }
+const fmtK = n => n >= 1e6 ? (n/1e6).toFixed(1)+"M" : n >= 1000 ? (n/1000).toFixed(1)+"K" : String(Math.round(n||0));
+function scanLine(sym, r, full){
+  const tot = (r.cPrem||0) + (r.pPrem||0); const pctC = tot ? Math.round(r.cPrem/tot*100) : 0; const px = n => fmt(n, n != null && n < 1000 ? 2 : 0);
+  const base = `${sym} ${px(r.spot)} ${r.chg>=0?"+":""}${r.chg}% · opts ${money(tot)} (${pctC}% calls) · PW ${fmt(r.pw)} flip ${fmt(r.flip)} CW ${fmt(r.cw)} EM ±${r.em ?? "—"} IV30 ${r.iv30 ? Math.round(r.iv30*100)+"%" : "—"}`;
+  if (!full) return base;
+  const top = (r.top||[]).map(t => `${t[0].slice(5)} ${fmt(t[2])}${t[1]} ${fmtK(t[3])}v/${fmtK(t[4])}oi ${money(t[5])}${t[6]==="A"?" ask":t[6]==="B"?" bid":""}`).join(", ");
+  const u = r.unusual; const un = u ? ` · unusual ${u[0].slice(5)} ${fmt(u[2])}${u[1]} ${fmtK(u[3])}v vs ${fmtK(u[4])}oi (${u[6]}×${u[5]==="A"?", ask":u[5]==="B"?", bid":""})` : "";
+  return `${base} · top ${top || "—"}${un}`;
+}
+function scanLines(){ const rows = SCAN.rows; if (!rows) return null; const syms = Object.keys(rows).sort((a,b) => ((rows[b].cPrem||0)+(rows[b].pPrem||0)) - ((rows[a].cPrem||0)+(rows[a].pPrem||0))); return syms.map((sym,i) => scanLine(sym, rows[sym], i < 45)); }
+function moversForAva(){ const q = UV.q; if (!q) return null; const rows = Object.keys(q).map(universeQuote).filter(x => x && x.prev && x.price && !INDEX_SYMS.has(x.symbol)).map(x => ({sym:x.symbol, pc:(x.price/x.prev-1)*100})).filter(x => isFinite(x.pc) && Math.abs(x.pc) < 60); if (!rows.length) return null; const f = x => `${x.sym} ${x.pc>=0?"+":""}${x.pc.toFixed(1)}%`; return { up: [...rows].sort((a,b)=>b.pc-a.pc).slice(0,10).map(f), down: [...rows].sort((a,b)=>a.pc-b.pc).slice(0,10).map(f), n: rows.length }; }
+function macroForAva(){ if (!MC.bars?.size) return null; const out = []; for (const [sym, b] of MC.bars){ if (!b || b.length < 22) continue; const c = b.map(x=>x[4]); const r = n => ((c.at(-1)/c.at(-1-n)-1)*100).toFixed(1); out.push(`${sym} 1d ${r(1)}% 5d ${r(5)}% 20d ${r(20)}%`); } return out.length ? out : null; }
+// a ticker's full read for Ava's "peek" tool: levels, fresh positioning, top nodes, today's heaviest contracts
+async function peekTicker(sym){
+  sym = String(sym||"").toUpperCase(); if (!sym) return {sym, error:"no symbol"};
+  const chain = (S.chain && S.chain.symbol === sym && !S.demo) ? S.chain : await fetchChainAny(sym);
+  const uq = UV.q ? universeQuote(sym) : null;
+  if (!chain){ return { sym, error: "no options chain on the free feed for this name", price: uq ? `${fmt(uq.price,2)} ${pct((uq.price/uq.prev-1)*100)}` : null }; }
+  const exps = liveExps([...new Set(chain.rows.map(r=>r[0]))].sort()).slice(0, 6); const c = computeFrom({...chain, symbol:sym}, exps, 8, S.set.model);
+  const at = chain.snapAt || chain._at || 0;
+  return { sym, spot:c.spot, changePct:chain.changePct, asOf: at ? whenLabel(at) : null, stale: !!chain._stale || isStale(at, 40), regime: c.total > 0 ? "positive gamma (pinned, dips bought, rallies sold)" : "negative gamma (trending, moves amplified)", gex:money(c.total), callWall:c.callWall?.K, putWall:c.putWall?.K, gexCrossover:c.flip, zeroGamma:c.zeroGamma, maxPain:c.maxPain, kingNode: c.top?.[0] ? `${c.top[0].K} ${c.top[0].exp} ${money(c.top[0].gex)}` : null, expectedMove: c.em?.[0] ? `±${fmt(c.em[0].move,2)} (${fmt(c.em[0].pct,2)}%) into ${c.em[0].exp}` : null, atmIv: c.em?.[0]?.iv ? Math.round(c.em[0].iv*100)+"%" : null, expirations: exps, topNodes: (c.top||[]).slice(0,4).map(t=>`${t.exp} ${t.K} ${money(t.gex)}`), freshPositioning: (c.fresh||[]).slice(0,6).map(f=>`${f.exp} ${f.K}${f.type} vol ${f.vol} oi ${f.oi} (${(f.vol/Math.max(1,f.oi)).toFixed(1)}×) mid ${fmt(f.mid,2)}`), scan: SCAN.rows?.[sym] ? scanLine(sym, SCAN.rows[sym], true) : null };
+}
 // Ava's memory: things she was told that should survive the session (positions she logged are in the journal; this is everything else)
 const AVA_NOTES_KEY = "kingnode:ava-notes";
 function avaNotes(){ try { return JSON.parse(localStorage.getItem(AVA_NOTES_KEY)||"[]"); } catch { return []; } }
@@ -2235,6 +2261,7 @@ function ediApply(a){
   }
   if (a.action === "note"){ if (!a.text) throw new Error("note needs text"); avaRemember(a.text); return `Remembered: ${String(a.text).slice(0,80)}`; }
   if (a.action === "load"){ const sym = String(a.sym||"").toUpperCase(); if (!sym) throw new Error("load needs sym"); goSym(sym); return `Loaded ${sym}`; }
+  if (a.action === "peek"){ return `Looked at ${String(a.sym||"").toUpperCase()}`; } // the lookup itself ran inside ediAsk
   throw new Error("unknown action " + a.action);
 }
 function ediRunActions(text){
@@ -2252,6 +2279,8 @@ function ediContext(){
     ticker: { sym:S.sym, spot:c?.spot, change:S.chain?.change, regime: c ? (c.total>0?"positive gamma (pinned)":"negative gamma (trending)") : null, gex:c?.total, vex:c?.totalVex, callWall:c?.callWall?.K, putWall:c?.putWall?.K, flip:c?.flip, flipConf:c?.flipConf, maxPain:c?.maxPain, kingNode:c?.top?.[0] ? `${c.top[0].K} ${c.top[0].exp}` : null, expectedMove:c?.em?.[0] ? {move:c.em[0].move, exp:c.em[0].exp} : null, iv30:c?ivAt(30):null, rv, flowLean:(b-sl)/((b+sl)||1), flowPrints:tr.length, topFresh:(c?.fresh||[]).slice(0,5).map(f=>`${f.exp} ${f.K}${f.type} vol ${f.vol} oi ${f.oi}`), halal:halalStatus(S.sym) },
     rules: { account:pb.account, maxRiskPct:pb.maxRiskPct, maxPositions:pb.maxPositions, minDte:pb.minDte, stopPct:pb.stopPct, style:"swing trader; 30+ DTE directional; cuts quickly when thesis breaks even if green; never lets a green contract go red; no short-dated holds over weekends; buy low / sell high" },
     today: marketDate(), prevTradingDay: prevTradingDay(), marketPhase: marketPhase(), feed: S.feed ? { lastWrite: whenLabel(S.feed.at), stale: feedStale() } : null,
+    sessionFlow: (S.flow?.session||S.flow?.trades||[]).filter(t=>!t.deep).slice(0,8).map(t => `${t.exp.slice(5)} ${fmt(t.K)}${t.cp} ${fmtK(t.sz)}v${t.oi!=null?"/"+fmtK(t.oi)+"oi":""} ${money(t.prem)}${t.side==="A"?" ask":t.side==="B"?" bid":""}`),
+    market: { tape: [...tapeQuotes.values()].filter(q=>!q.demo && q.prev).map(q => `${q.symbol} ${fmt(INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price,2)} ${pct(((INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price)/q.prev-1)*100)}${q.stale ? " (stale)" : ""}`), movers: moversForAva(), scanAt: SCAN.at ? whenLabel(SCAN.at) : null, scan: scanLines(), macro: macroForAva() },
     book: { open: open.map(p => ({ id:p.id, text: p.shares ? `${p.sym} ${p.qty} shares @ ${p.entry}` : `${p.sym} ${p.exp} ${p.K}${p.cp} ×${p.qty} @ ${p.entry} (inval ${p.inval||"—"}, tgt ${p.target||"—"}, ${dte(p.exp)}d)` })), netDelta:delta, thetaPerDay:theta },
     recentJournal: getJournal().slice(-12).map(e => `${new Date(e.opened).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})} ${e.contract} ×${e.qty} @ ${e.entry}${e.closed ? ` → ${e.exit} (${e.pnl>=0?"+":""}${Math.round(e.pnl)} / ${fmt(e.pnlPct,0)}%)` : " open"}${e.thesis ? " · " + e.thesis.slice(0,60) : ""}${e.why ? " · exit: " + e.why.slice(0,40) : ""}`),
     memory: avaNotes().slice(-40).map(n => `${new Date(n.t).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})}: ${n.text}`),
@@ -2261,45 +2290,83 @@ function ediContext(){
     ideasBacktest: BT.data?.chosen?.summary ? { winRate:BT.data.chosen.summary.winRate, avgRet:BT.data.chosen.summary.avgRet, profitFactor:BT.data.chosen.summary.profitFactor } : null,
   };
 }
-const EDI_SYSTEM = `You are Ava, the trading agent inside Kingnode, a personal options terminal. You sit next to the person using it like a sharp desk colleague. Your scope is Kingnode and trading only: the screen, dealer positioning, flow, the book, the journal, the playbook, risk, market events, options mechanics, and the psychology of trading. Talk like a person: natural, direct, a little dry. Contractions, short sentences, no "Great question", no stacked disclaimers, no bullet essays unless they ask for a list. Match their length: a one-liner gets a one- or two-liner back; depth when they ask for it.
+const EDI_SYSTEM = `You are Ava, the desk analyst inside Kingnode, a personal options terminal. You sit next to the trader using it like a sharp, well-read colleague who has spent years on a desk. You talk in full, natural sentences, you lead with the specific thing — a name, a level, a number — and you say why it matters. Contractions, a little dry humor, no "Great question", no stacked disclaimers, no bullet lists unless asked. Paragraphs, the way a person talks.
 
-TWO JOBS, SAME VOICE
-1) Trading desk — you have the screen: a JSON context with the current ticker's dealer positioning (walls, GEX crossover, zero gamma, king node, expected move, regime), flow lean, IV vs realized, their rules, open book, journal stats, upcoming events and the Ideas backtest. Use the real numbers. If the context says demo or noChain, say the levels are placeholders. Give the read the way you'd say it out loud; when they want a trade, entry, invalidation and target in plain words. One line on risk when a trade is involved; no certainty claims, it's delayed positioning data, not advice.
-2) Trading psychology — this matters as much as the levels. Watch for tilt, revenge trading, FOMO, chasing, oversizing after a win, freezing after a loss, moving a stop, holding a loser hoping, trading to make back a number, trading when they said they'd take the day off. Name it plainly and kindly when you see it in what they say or in the journal stats (loss streaks, big losses past their stop, losers held longer than winners, green trades turned red). Ask what's actually going on before prescribing. Offer the small concrete thing: close the screen, size down, write the trade down before taking it, wait for the level, sleep on it. Their rules are their own words — hold them to them like a friend would, not like a compliance officer: 30+ DTE for directional, cut fast when the thesis breaks even if green, never let a green contract go red, no short-dated holds over weekends, buy low.
+BE COMMUNICATIVE. A broad question ("what's the market doing", "what caught your eye today", "any names worth a look") gets a real rundown: the tape and the regime in a sentence or two, then four to six names with the actual numbers from the scan and what makes each one interesting, then what you'd watch next. A narrow question gets a tight answer. Match their length otherwise: a one-liner gets a line or two back. Never answer a market-wide question with only the loaded ticker — the context carries the whole scan, use it. Never pad, never repeat the disclaimer: the data is 15-minute-delayed Cboe/Yahoo and they know it; say "delayed" once when it changes the read.
 
-STAY ON THE DESK
-If they ask for something outside trading and Kingnode (an email, schoolwork, a recipe, general chat), don't do it. Say in one line that you're the desk agent here and their personal Ava app handles the rest, then offer what you can do on the desk. Market-adjacent questions (macro, a company's earnings, how an options product works) are on the desk.
+WHAT YOU HAVE — the CONTEXT JSON
+- ticker: the loaded ticker's dealer positioning (call wall, put wall, GEX crossover, zero gamma, king node, expected move, regime, IV vs realized, flow lean) and sessionFlow: today's heaviest contracts on it (volume, OI, premium, whether the last print lifted the ask or hit the bid).
+- market.tape: the indexes. market.movers: biggest regular-session moves across ~300 names. market.scan: one line per chain ticker (~80 names): price and change, options premium traded today and the call share, put wall / flip / call wall / expected move / ATM IV, the top contracts by premium, and the most unusual contract (volume vs open interest). This is where "names that caught my eye" come from: premium that is big for that name, a lopsided call or put share (over 75% or under 30%), volume many times open interest with real size, price sitting on a wall or just through the flip, IV out of line with peers. market.macro: momentum for SPY/IWM/QQQ/TLT/GLD/UUP/XLE/SMH.
+- events, rules, book (open positions, with ids), recentJournal (last trades with P&L), memory (notes you saved in earlier sessions), watchlist, feed (whether the data loop is stale).
+If the context says demo or noChain, the levels are placeholders — say so. If feed.stale, the numbers are from when the feed stopped — say so.
 
-WHEN THEY'RE STRUGGLING
-If they're stressed or down, be there for that first, even when it isn't about trading. Never turn someone away who is struggling. Listen, reflect back what you heard, ask one good question, don't rush to fix. You're not a therapist and don't diagnose; if something sounds serious — persistent hopelessness, not sleeping for days, thoughts of harming themselves — say gently that it's bigger than you and that talking to someone they trust or a professional is the right move, and stay in the conversation. Money stress and trading losses are real stress; treat them that way.
-
-Remember what they said earlier in the conversation and refer back to it like a person would. The context also carries MEMORY — notes you saved in earlier sessions — and recentJournal, their last trades with P&L. Use them: if they mention yesterday's trade, you already know it.
-
-YOU CAN WRITE TO KINGNODE
-When they tell you about a trade they took, shares they bought, a position they closed, or something about them worth keeping, append action lines at the very end of your reply, one per line, exactly like these:
+TOOLS — you can act. Append action lines at the very end of a reply, one per line, exactly like these; the app runs them and hides them:
+<<kn {"action":"peek","sym":"HOOD"}>>
+  The app pulls that name's full chain and hands you its levels, fresh positioning, top nodes and heaviest contracts in a tool result; then you answer. Use it when they ask about a specific name and the scan line isn't enough, or to check up to three names before a rundown. One round of peeks per answer; after the tool result, answer — don't peek the same names again.
+<<kn {"action":"load","sym":"TLT"}>>  switches the screen to that ticker when they ask you to pull it up.
 <<kn {"action":"open","sym":"HOOD","kind":"option","cp":"C","strike":115,"exp":"2026-11-20","qty":2,"entry":3.4,"date":"2026-10-12","why":"flow at the ask above the flip"}>>
 <<kn {"action":"open","sym":"NFLY","kind":"shares","qty":65,"entry":15.2,"date":"2026-10-12","why":"income sleeve, long-term hold"}>>
 <<kn {"action":"close","id":"<the id from book.open>","exit":4.1,"date":"2026-10-13","why":"took 20%"}>>
 <<kn {"action":"note","text":"Buys NFLY/HOOY weekly for the dividend sleeve; wants to be told when he's chasing."}>>
-<<kn {"action":"load","sym":"TLT"}>>
-Rules: log only what they actually said — if price, size or expiry is missing, ask for it in the same reply and log once they answer; never invent a number; "today" is ctx.today and "yesterday" is ctx.prevTradingDay; a close must name the id of one of book.open, or sym plus strike/exp if that is unambiguous; use "note" for facts about their trading, plans, and feedback about you. The app runs the lines and hides them; tell them in one short sentence what you logged. "load" switches the screen to another ticker when they ask you to look at one.`;
+Logging rules: log only what they actually said — if price, size or expiry is missing, ask in the same reply and log when they answer; never invent a number; "today" is ctx.today and "yesterday" is ctx.prevTradingDay; a close must name the id of one of book.open, or sym plus strike/exp when that is unambiguous; use "note" for durable facts about their trading, their plans, and feedback about you. Say in one short sentence what you logged.
+
+THE DESK, YOUR WAY
+When they want a trade: direction, the structure, entry, invalidation (the level, not just a premium stop), target, and one line on risk. Their rules are their own words — hold them to them like a friend would, not a compliance officer: 30+ DTE for directional, cut fast when the thesis breaks even if green, never let a green contract go red, no short-dated holds over weekends, buy low. Market-adjacent questions (macro, an earnings print, how a product works) are on the desk. Anything unrelated to markets or Kingnode — an email, schoolwork, a recipe — isn't; say in a line that their personal Ava app handles that, then offer what you can do here.
+
+TRADING PSYCHOLOGY — as important as the levels. Watch for tilt, revenge trading, FOMO, chasing, oversizing after a win, freezing after a loss, moving a stop, holding a loser hoping, trading to make back a number, trading when they said they'd take the day off. Name it plainly and kindly when you see it in what they say or in the journal (loss streaks, losses past the stop, losers held longer than winners, green trades turned red). Ask what's actually going on before prescribing. Offer the small concrete thing: close the screen, size down, write the trade down before taking it, wait for the level, sleep on it. If they're stressed or down, be there for that first. You're not a therapist and don't diagnose; if something sounds serious — persistent hopelessness, not sleeping for days, thoughts of harming themselves — say gently that it's bigger than you, that talking to someone they trust or a professional is the right move, and stay in the conversation.
+
+Remember what they said earlier in the conversation and in memory, and refer back to it like a person would.`;
 async function ediAsk(question){
+  await Promise.all([loadScan(), loadUniverse(), loadMacro()].map(p => p && p.catch ? p.catch(()=>null) : p));
   const ctx = ediContext(); const history = EDI.log.slice(-24).map(m => ({role:m.role, content:m.text}));
   const key = (S.set.anthropicKey||"").trim();
   // 1. local server (desktop) 2. direct with the user's key 3. offline read
   try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt:`${EDI_SYSTEM}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
   if (key){
     const models = [...new Set([(S.set.ediModel||"claude-sonnet-5-5").trim(), "claude-sonnet-5-5", "claude-sonnet-4-5"])]; let lastErr = "";
+    const system = EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx);
+    const call = async (model, messages) => { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model,max_tokens:2200,system,messages})}); const j = await r.json(); return { ok:r.ok, text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), err: j.error?.message || String(r.status) }; };
     for (const model of models){
-      try { const r = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"content-type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model,max_tokens:1800,system:EDI_SYSTEM + "\n\nCONTEXT\n" + JSON.stringify(ctx),messages:[...history,{role:"user",content:question}]})}); const j = await r.json();
-        if (r.ok) return {text:(j.content||[]).map(x=>x.text||"").join("\n").trim(), via:model};
-        lastErr = j.error?.message || String(r.status); if (!/model|not_found/i.test(lastErr)) break; } // only a bad model name is worth retrying with the next model
-      catch(e){ return {text:"Ava couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
+      try {
+        const messages = [...history, {role:"user", content:question}];
+        for (let round = 0; round < 3; round++){
+          const r = await call(model, messages);
+          if (!r.ok){ lastErr = r.err; break; }
+          const peeks = [...new Set([...r.text.matchAll(/<<kn\s*(\{[^}]*"action"\s*:\s*"peek"[^}]*\})\s*>>/g)].map(m => { try { return String(JSON.parse(m[1]).sym||"").toUpperCase(); } catch { return ""; } }).filter(Boolean))].slice(0,3);
+          if (!peeks.length || round === 2) return {text:r.text, via:model};
+          EDI.busy = `Ava is pulling ${peeks.join(", ")}…`; ediRender();
+          const results = await Promise.all(peeks.map(peekTicker));
+          messages.push({role:"assistant", content:r.text}, {role:"user", content:"[Kingnode tool result — data from the app, not the user speaking]\n" + JSON.stringify(results) + "\n\nNow answer the user's last message with this. Do not peek these names again."});
+        }
+        if (!/model|not_found/i.test(lastErr)) break; // only a bad model name is worth retrying with the next model
+      } catch(e){ return {text:"Ava couldn't reach Claude from this browser: " + e.message, via:"error"}; } }
     return {text:"Ava couldn't reach Claude: " + lastErr + ". Check the key and model in ⚙ Settings.", via:"error"}; }
   return {text: ediOffline(question, ctx), via:"offline"};
 }
+function ediMarketRundown(ctx){
+  const m = ctx.market || {}; const out = [];
+  if (m.tape?.length) out.push(`Tape (${ctx.marketPhase}): ${m.tape.join(" · ")}.`);
+  const t = ctx.ticker; if (t?.spot) out.push(`${t.sym} ${fmt(t.spot,2)} is in ${t.regime}; put wall ${fmt(t.putWall)}, flip ${fmt(t.flip)}, call wall ${fmt(t.callWall)}, expected move ±${t.expectedMove ? fmt(t.expectedMove.move,1) : "—"}.`);
+  if (m.movers) out.push(`Movers across ${m.movers.n} names — up: ${m.movers.up.slice(0,6).join(", ")}. Down: ${m.movers.down.slice(0,6).join(", ")}.`);
+  const rows = SCAN.rows; if (rows){
+    const syms = Object.keys(rows); const tot = s => (rows[s].cPrem||0)+(rows[s].pPrem||0);
+    const byPrem = [...syms].sort((a,b)=>tot(b)-tot(a)).slice(0,6).map(s => `${s} ${money(tot(s))} (${Math.round((rows[s].cPrem||0)/Math.max(1,tot(s))*100)}% calls)`);
+    const lop = syms.filter(s => tot(s) > 2e6).map(s => ({s, c:(rows[s].cPrem||0)/Math.max(1,tot(s))})).filter(x => x.c >= 0.78 || x.c <= 0.28).sort((a,b)=>Math.abs(b.c-0.5)-Math.abs(a.c-0.5)).slice(0,5).map(x => `${x.s} ${Math.round(x.c*100)}% calls`);
+    const un = syms.filter(s => rows[s].unusual && rows[s].unusual[6] >= 4 && rows[s].unusual[3] >= 1000).sort((a,b)=>rows[b].unusual[6]-rows[a].unusual[6]).slice(0,5).map(s => { const u = rows[s].unusual; return `${s} ${u[0].slice(5)} ${fmt(u[2])}${u[1]} ${fmtK(u[3])} traded vs ${fmtK(u[4])} open (${u[6]}×${u[5]==="A"?", at the ask":u[5]==="B"?", at the bid":""})`; });
+    const atWall = syms.filter(s => { const r = rows[s]; return r.cw && r.pw && r.spot && (Math.abs(r.spot/r.cw-1) < 0.004 || Math.abs(r.spot/r.pw-1) < 0.004); }).slice(0,5).map(s => { const r = rows[s]; return `${s} ${fmt(r.spot,2)} on its ${Math.abs(r.spot/r.cw-1) < 0.004 ? "call wall " + fmt(r.cw) : "put wall " + fmt(r.pw)}`; });
+    if (byPrem.length) out.push(`Most options premium today: ${byPrem.join(", ")}.`);
+    if (lop.length) out.push(`Lopsided: ${lop.join(", ")}.`);
+    if (un.length) out.push(`Unusual contracts (volume vs open interest): ${un.join("; ")}.`);
+    if (atWall.length) out.push(`Sitting on a wall: ${atWall.join(", ")}.`);
+  } else out.push("The scan file hasn't landed yet — the feed writes it every chain cycle.");
+  if (m.macro) out.push(`Macro momentum: ${m.macro.join("; ")}.`);
+  if (ctx.events?.length) out.push(`Ahead: ${ctx.events.slice(0,3).join("; ")}.`);
+  out.push("That's the app's own math talking — add an Anthropic key in ⚙ and I can actually reason about it with you.");
+  return out.join("\n\n");
+}
 function ediOffline(q, ctx){
   const t = ctx.ticker, ql = q.toLowerCase(); const out = [];
+  if (/caught (your|ur) eye|what'?s (the )?market|market (doing|today)|rundown|names|tickers|movers|unusual|scan|what (are|r) you (seeing|watching)|anything interesting|standing out/.test(ql)) return ediMarketRundown(ctx);
   const tradingWords = /\b(spx|spy|qqq|iwm|tlt|vix|call|put|option|strike|gamma|flip|wall|flow|book|position|journal|trade|entry|stop|target|chain|iv|vol|expir|dte|event|cpi|fomc|fed|jobs|earnings|hedge|long|short|read|plan|buy|sell|ticker|level)/;
   if (!tradingWords.test(ql)){
     if (/^(hi|hey|hello|yo|sup|what'?s up|good (morning|evening|night))\b/.test(ql)) return pick(["Hey. What's on your mind?","Hey — good to see you. Rough day or a good one?","Hi. I'm here. Want to talk markets or something else?"]);
@@ -2336,7 +2403,7 @@ function ediRender(){
   if (!key) msgs.unshift(h("div",{class:"edi-msg a edi-setup"}, h("b",null,"Ava is running without a brain."), " Right now every answer is the app's own rules — instant, canned, not a conversation. Paste an Anthropic API key in ⚙ Settings and she becomes Claude: she reads the screen, your book and your journal, remembers what you tell her, and can log the trades you describe. ", h("a",{href:"https://console.anthropic.com/settings/keys",target:"_blank",rel:"noopener"},"Get a key"), " · costs cents per conversation.", h("div",{style:{marginTop:"6px"}}, h("button",{class:"btn small gold", type:"button", onclick:()=>document.getElementById("settingsBtn").click()},"Open settings"))));
   if (EDI.showMem){ const notes = avaNotes(); msgs.push(h("div",{class:"edi-msg a"}, h("b",null,"What I remember"), notes.length ? h("div",{style:{display:"grid",gap:"4px",marginTop:"6px"}}, ...notes.map((n,i) => h("div",{style:{display:"flex",gap:"8px",alignItems:"flex-start"}}, h("span",{class:"hint",style:{flex:"none"}}, new Date(n.t).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})), h("span",{style:{flex:1}}, n.text), h("button",{class:"btn small", type:"button", title:"forget", onclick:()=>{ avaForget(i); ediRender(); }},"×")))) : h("div",{class:"hint",style:{marginTop:"4px"}},"Nothing yet. Tell me about your trades, what you're holding, how you want to be coached — I'll keep the parts worth keeping."))); }
   log.replaceChildren(...msgs);
-  if (EDI.busy) log.append(h("div",{class:"edi-msg a hint"},"Ava is reading the screen…"));
+  if (EDI.busy) log.append(h("div",{class:"edi-msg a hint"}, typeof EDI.busy === "string" ? EDI.busy : "Ava is reading the screen…"));
   log.scrollTop = log.scrollHeight;
   const foot = document.getElementById("ediFoot"); foot.textContent = key ? `Claude (${(S.set.ediModel||"claude-sonnet-5-5")}) with your key, from this browser · ${avaNotes().length} things remembered` : "Offline — add an Anthropic API key in ⚙ Settings to make Ava a real assistant.";
 }
@@ -2349,13 +2416,13 @@ async function ediSend(q){
 function ediInit(){
   try { EDI.log = JSON.parse(localStorage.getItem("kingnode:edi")||"[]"); } catch {}
   const panel = document.getElementById("ediPanel"), fab = document.getElementById("ediBtn");
-  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text: (S.set.anthropicKey||"").trim() ? "Hey, I'm Ava. I can read whatever's on screen, keep an eye on your book, remember what you tell me, log the trades you describe, and talk you down when the tape's got you tilted. What's up?" : "Hey, I'm Ava — running offline right now, so I can only read the screen with the app's math. Add an Anthropic key in ⚙ Settings and we can actually talk."}); ediRender(); } };
+  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ loadScan(); loadUniverse(); loadMacro(); ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text: (S.set.anthropicKey||"").trim() ? "Hey, I'm Ava. I can read whatever's on screen, keep an eye on your book, remember what you tell me, log the trades you describe, and talk you down when the tape's got you tilted. What's up?" : "Hey, I'm Ava — running offline right now, so I can only read the screen with the app's math. Add an Anthropic key in ⚙ Settings and we can actually talk."}); ediRender(); } };
   document.getElementById("ediClose").onclick = () => { panel.hidden = true; fab.hidden = false; };
   document.getElementById("ediClear").onclick = () => { EDI.log = []; try { localStorage.removeItem("kingnode:edi"); } catch {} ediRender(); };
   document.getElementById("ediMem").onclick = () => { EDI.showMem = !EDI.showMem; ediRender(); };
   document.getElementById("ediForm").addEventListener("submit", e => { e.preventDefault(); const ta = document.getElementById("ediText"); const q = ta.value; ta.value = ""; ediSend(q); });
   document.getElementById("ediText").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); document.getElementById("ediForm").requestSubmit(); } });
-  const quick = [["Log a trade", () => "I want to log a trade I took. Ask me what you need and write it to the journal."],["Yesterday's trades", () => "Go through what I traded yesterday and today from the journal and what I told you. What did I do well, what was sloppy?"],["Read this ticker", () => `Read ${S.sym} for me: regime, levels, flow, and a plan with entry, invalidation and target.`],["Check my book", () => "Look at my open book against my rules. Anything oversized, too short-dated, or against the tape?"],["Review my journal", () => "Review my journal stats and tell me the two biggest leaks and one rule change to test."],["Today's plan", () => "Given the calendar and my book, what's the plan for today? What do I avoid?"],["I'm tilted", () => "I'm tilted. Talk me down before I do something stupid."],["Talk me out of this", () => `I want to take a trade on ${S.sym} right now. Talk me out of it if I shouldn't.`],["Just talk", () => "Not about trading. Just want to talk for a minute."]];
+  const quick = [["What caught your eye", () => "Give me the rundown: what the tape did, the regime, and which names caught your eye in the scan today and why — with the numbers. Then what you'd watch tomorrow."],["Unusual flow", () => "Go through the scan for unusual options activity: volume way over open interest, lopsided call or put share, premium that's big for the name. Which three are worth a closer look, and peek at them."],["Log a trade", () => "I want to log a trade I took. Ask me what you need and write it to the journal."],["Yesterday's trades", () => "Go through what I traded yesterday and today from the journal and what I told you. What did I do well, what was sloppy?"],["Read this ticker", () => `Read ${S.sym} for me: regime, levels, flow, and a plan with entry, invalidation and target.`],["Check my book", () => "Look at my open book against my rules. Anything oversized, too short-dated, or against the tape?"],["Review my journal", () => "Review my journal stats and tell me the two biggest leaks and one rule change to test."],["Today's plan", () => "Given the calendar and my book, what's the plan for today? What do I avoid?"],["I'm tilted", () => "I'm tilted. Talk me down before I do something stupid."],["Talk me out of this", () => `I want to take a trade on ${S.sym} right now. Talk me out of it if I shouldn't.`],["Just talk", () => "Not about trading. Just want to talk for a minute."]];
   document.getElementById("ediQuick").replaceChildren(...quick.map(([l,f]) => h("button",{type:"button", onclick:()=>ediSend(f())}, l)));
 }
 // ---------- Halal: screened universe, movers, purification ----------
@@ -2363,9 +2430,8 @@ const HQ = { quotes:new Map(), at:0, loading:false, sector:"all", status:"passes
 // data/universe.json — last/prev/regular price for every ticker the feed pulls bars for (one small file instead of 300).
 const UV = { at:0, q:null, loading:false, stale:false };
 async function loadUniverse(force){
-  if (UV.loading || (!force && Date.now() - UV.at < 60e3)) return UV.q; UV.loading = true;
-  try { const u = await snapshotJson("universe.json", 10); if (u?.q){ UV.q = u.q; UV.at = Date.now(); UV.stale = !!u._stale; UV.snapAt = u._at; } } catch {}
-  UV.loading = false; return UV.q;
+  if (UV.pending) return UV.pending; if (!force && Date.now() - UV.at < 60e3) return UV.q;
+  UV.pending = (async () => { try { const u = await snapshotJson("universe.json", 10); if (u?.q){ UV.q = u.q; UV.at = Date.now(); UV.stale = !!u._stale; UV.snapAt = u._at; } } catch {} UV.pending = null; return UV.q; })(); return UV.pending;
 }
 function universeQuote(sym){ const r = UV.q?.[sym]; if (!r || !r[0]) return null; const reg = r[3] ?? r[0]; return { symbol:sym, price:reg, prev:(r[1] ?? reg), last:r[0], t:r[2], state:r[4], src:"feed", stale:UV.stale, snapAt:UV.snapAt }; }
 async function loadHalalQuotes(){

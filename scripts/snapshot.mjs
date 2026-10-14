@@ -6,6 +6,7 @@
 // A few minutes before the loop ends it dispatches its own successor (workflow_dispatch), so the feed does not depend on
 // GitHub firing the hourly cron — which it skips freely. The cron stays as the restarter if a run ever dies.
 import { fetchChain, fetchBars } from "../api/_lib/data.js";
+import { computeLevels } from "../api/_lib/levels.js";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 
@@ -24,7 +25,7 @@ const HANDOFF_MIN = Number(process.env.HANDOFF_MINUTES || 4);   // dispatch the 
 const end = Date.now() + LOOP_MIN * 60e3;
 fs.mkdirSync("data", { recursive: true });
 
-import { marketPhase } from "./market-clock.mjs";
+import { marketPhase, etNow } from "./market-clock.mjs";
 // what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all
 const PLAN = { regular: { every: EVERY, chainsEvery: 3, bars: true }, pre: { every: EVERY, chainsEvery: 5, bars: true }, post: { every: EVERY, chainsEvery: 5, bars: true }, closed: { every: 600, chainsEvery: 6, bars: false } };
 
@@ -63,7 +64,24 @@ async function shortVolume() {
   svAt = Date.now(); return got;
 }
 
-let chainAt = 0, barsAt = 0, dispatched = false; const universe = {};
+let chainAt = 0, barsAt = 0, dispatched = false; const universe = {}; const scan = {};
+// One compact line per chain ticker for the desk assistant and the scanner: where the options money went today, the unusual
+// contract, ATM IV, and the levels. Computed from the full chain while it is in memory, so the app never has to pull 80 files.
+function scanRow(c0) {
+  const t = etNow(); const c = { ...c0, rows: c0.rows.filter(r => r[0] > t.date || (r[0] === t.date && t.min < 16 * 60)) }; // settled expiries are not positioning
+  const spot = c.spot; let cVol = 0, pVol = 0, cPrem = 0, pPrem = 0; const contracts = [];
+  for (const r of c.rows) { const [exp, type, K, oi, vol, iv, , delta, bid, ask, last] = r; if (!vol) continue; const mid = bid && ask ? (bid + ask) / 2 : (last || bid || ask); const px = last || mid; if (!px) continue;
+    const prem = px * vol * 100; if (type === "C") { cVol += vol; cPrem += prem; } else { pVol += vol; pPrem += prem; }
+    contracts.push({ exp, type, K, vol, oi, prem, side: ask && last >= ask - 0.01 ? "A" : bid && last <= bid + 0.01 ? "B" : "M", deep: Math.abs(delta || 0) >= 0.9, volOi: oi ? vol / oi : null }); }
+  const dir = contracts.filter(x => !x.deep);
+  const top = dir.sort((a, b) => b.prem - a.prem).slice(0, 3).map(x => [x.exp, x.type, x.K, x.vol, x.oi, Math.round(x.prem), x.side]);
+  const exps = [...new Set(c.rows.map(r => r[0]))].sort(); const dte = e => Math.round((Date.parse(e + "T16:00:00-04:00") - Date.now()) / 86400000);
+  const byUn = dir.filter(x => x.vol >= 300 && x.oi >= 50).sort((a, b) => (b.volOi || 0) - (a.volOi || 0));
+  const un = byUn.find(x => dte(x.exp) >= 4) || byUn[0]; // a brand-new weekly always trades many times its day-old OI; prefer something with a few days on it
+  const e30 = exps.find(e => dte(e) >= 20) || exps.at(-1); const near = c.rows.filter(r => r[0] === e30 && r[5] > 0); const atm = near.length ? near.reduce((a, r) => Math.abs(r[2] - spot) < Math.abs(a[2] - spot) ? r : a, near[0]) : null;
+  let lv = {}; try { lv = computeLevels(c, 6, 8, "standard"); } catch {}
+  return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), top, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, gex: lv.total != null ? Math.round(lv.total) : null };
+}
 async function cycle(n, ph) {
   const t0 = Date.now(); const ok = [], fail = []; const plan = PLAN[ph];
   // quotes for the tape (fast, near real-time, extended hours)
@@ -96,9 +114,10 @@ async function cycle(n, ph) {
         const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, 8), keep = new Set(exps);
         const rows = c.rows.filter(r => keep.has(r[0]) && Math.abs(r[2] / c.spot - 1) <= 0.15).map(r => r.map((v, i) => typeof v === "number" && i >= 3 ? +v.toPrecision(6) : v));
         fs.writeFileSync(`data/${sym}.json`, JSON.stringify({ ...c, rows, snapshotAt: Date.now() })); ok.push(sym);
+        try { scan[sym] = { ...scanRow(c), at: Date.now() }; } catch (e) { console.error("scan", sym, e.message); }
       } catch (e) { fail.push(`c:${sym}:${e.message}`); }
     }
-    if (ok.length) chainAt = Date.now();
+    if (ok.length) { chainAt = Date.now(); fs.writeFileSync("data/scan.json", JSON.stringify({ at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em gex", rows: scan })); }
   }
   if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
   const loopEnd = end; const nextIn = plan.every * 1000;
