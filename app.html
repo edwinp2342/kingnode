@@ -2050,16 +2050,21 @@ function analyzeTicker(sym, chain, daily){
   if (r14 != null){ if (r14 < 35){ score += 8; reasons.push(`RSI ${fmt(r14,0)} — washed out`); } else if (r14 > 72){ score -= 10; reasons.push(`RSI ${fmt(r14,0)} — overbought`); } }
   if (chg1 > 0.04){ score -= 6; reasons.push(`+${fmt(chg1*100,1)}% today — don't chase`); } if (chg1 < -0.04 && trendUp){ score += 6; reasons.push(`${fmt(chg1*100,1)}% today inside an uptrend — buy-low candidate`); }
   if (vrp != null){ if (vrp > 0.04) reasons.push(`options rich (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — prefer spreads / shares`); else if (vrp < -0.02) reasons.push(`options cheap (IV ${fmt(iv30*100,0)}% vs RV ${fmt(rv*100,0)}%) — long premium works`); }
-  if (score >= 30) signal = "Buy"; else if (score >= 15) signal = "Accumulate"; else if (score <= -25) signal = "Avoid / short"; else if (score <= -10) signal = "Extended";
+  // The label follows the rule the backtest tested; the score only ranks. "Buy" = every piece present; "Accumulate" = trend + pullback (or a wall under you) with one piece missing; positioning alone never earns a buy label.
+  const okRegime = mf.regimeUp !== false, notLagging = mf.rs == null || mf.rs >= -0.01, rsiReset = r14 == null || r14 < 55, notBelowFlip = aboveFlip !== false;
+  const full = trendUp && pullback && redDay && rsiReset && okRegime && notLagging && notBelowFlip;
+  const partial = trendUp && okRegime && (pullback || (toPW != null && toPW >= 0 && toPW < 0.02)) && !extended;
+  if (full && score >= 30) signal = "Buy"; else if (partial && score >= 15) signal = "Accumulate"; else if (score <= -25) signal = "Avoid / short"; else if (score <= -10 || extended) signal = "Extended";
+  if (signal === "Watch" && trendUp && okRegime && score >= 15) reasons.push("ranked, not a buy: " + (!pullback ? "no pullback to the 21 EMA yet" : !redDay ? "waiting for a red day" : !rsiReset ? "RSI not reset" : !notLagging ? "lagging SPY" : "below the flip"));
   if (signal === "Watch" && view === "neutral") view = chg20 != null && chg20 > 0 ? "bull" : "bear";
   // --- equity plan ---
-  const entry = signal === "Buy" || signal === "Accumulate" ? (pullback || !e21 ? spot : Math.max(e21, pw||0)) : null;
+  const entry = signal === "Buy" || signal === "Accumulate" ? (pullback || !e21 ? spot : Math.max(e21, pw||0)) : null; const entryKind = entry == null ? null : entry > spot*1.005 ? "reclaim" : entry < spot*0.995 ? "limit" : "market";
   const stop = entry ? (atr14 ? Math.max(entry*0.85, entry - 2*atr14) : Math.min(e50 || entry*0.94, entry*0.94, pw && pw < entry ? pw*0.995 : Infinity)) : null; // 2×ATR14: the stop the backtest paid for
-  const target = entry ? (cw && cw > entry*1.01 ? Math.min(cw, entry*1.08) : entry*1.08) : null;
+  const target = entry ? (cw && cw >= entry + (atr14 || entry*0.01) ? Math.min(cw, entry*1.08) : Math.min(atr14 ? entry + 3*atr14 : entry*1.08, entry*1.08)) : null; // the call wall if it leaves room for at least one ATR, else 3×ATR; never the old flat +8% that put an index target 600 points away
   // --- option structure from the quant engine ---
   let best = null;
   try { best = withCalc(calc, daily, () => { const saveView = QD.view; QD.view = view === "bear" ? "bear" : "bull"; const rows = rankQuant(rvInfo); QD.view = saveView; return rows[0] || null; }); } catch {}
-  return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, atr14, regimeUp:mf.regimeUp, rsVsSpy:mf.rs, trendUp, trendDown, aboveFlip, posG, cw, pw, flip:calc.flip, iv30, rv, vrp, score, signal, view, reasons, entry, stop, target, best, halal:halalStatus(sym), at:Date.now() };
+  return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, atr14, regimeUp:mf.regimeUp, rsVsSpy:mf.rs, trendUp, trendDown, pullback, redDay, aboveFlip, posG, cw, pw, flip:calc.flip, iv30, rv, vrp, score, signal, view, reasons, entry, entryKind, stop, target, best, halal:halalStatus(sym), at:Date.now() };
 }
 async function runIdeas(){
   if (ID.running) return; ID.running = true; const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
@@ -2097,7 +2102,7 @@ function viewIdeas(){
           h("td",{class: r.halal.s==="excluded"?"p":r.halal.s==="passes"?"c":"", title:r.halal.why}, r.halal.s==="excluded"?"✕":r.halal.s==="passes"?"✓":r.halal.s==="mixed"?"±":"~"),
           h("td",{class:sigCls(r.signal), style:{fontWeight:700,textAlign:"left"}}, r.signal), h("td",{class:r.score>=0?"c":"p"}, (r.score>0?"+":"")+r.score), h("td",null,fmt(r.spot,2)), h("td",{class:r.chg1>=0?"c":"p"},pct(r.chg1*100)), h("td",{class:(r.chg5||0)>=0?"c":"p"}, r.chg5!=null?pct(r.chg5*100):"—"), h("td",{class: r.rsi>70?"p":r.rsi<35?"c":""}, r.rsi!=null?fmt(r.rsi,0):"—"),
           h("td",{class:r.posG?"c":"p"}, r.posG ? "+γ" : "−γ"), h("td",{class: r.aboveFlip===true?"c":r.aboveFlip===false?"p":""}, r.flip?fmt(r.flip):"—"), h("td",null,r.pw?fmt(r.pw):"—"), h("td",null,r.cw?fmt(r.cw):"—"), h("td",{class: r.vrp==null?"":r.vrp>0.04?"p":r.vrp<-0.02?"c":""}, r.vrp!=null ? `${fmt(r.iv30*100,0)} / ${fmt(r.rv*100,0)}` : fmt(r.iv30*100,0)+" / —"),
-          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.entry ? `buy ~${fmt(r.entry,2)} · stop ${fmt(r.stop,2)} · tgt ${fmt(r.target,2)}` : r.signal==="Extended" || r.signal.startsWith("Avoid") ? `sell into ${r.cw?fmt(r.cw):"strength"} · reclaim ${r.flip?fmt(r.flip):"—"}` : "—"),
+          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.entry ? `${r.entryKind === "reclaim" ? "buy on reclaim of " : r.entryKind === "limit" ? "bid " : "buy ~"}${fmt(r.entry,2)} · stop ${fmt(r.stop,2)} (${fmt((1-r.stop/r.entry)*100,1)}%) · tgt ${fmt(r.target,2)} (+${fmt((r.target/r.entry-1)*100,1)}%)` : r.signal==="Extended" || r.signal.startsWith("Avoid") ? `sell into ${r.cw?fmt(r.cw):"strength"} · reclaim ${r.flip?fmt(r.flip):"—"}` : "—"),
           h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.best ? `${r.best.kind}: ${r.best.legs.map(l=>`${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join("/")} ${r.best.exp.slice(5)} · P(profit) ${fmt(r.best.popRV*100,0)}% · EV/risk ${(r.best.evr>=0?"+":"")+fmt(r.best.evr*100,0)}%` : "—"),
           h("td",null, h("button",{class:"btn small", onclick:ev=>{ ev.stopPropagation(); showIdea(r); }},"Why")))))))));
   }
