@@ -220,7 +220,7 @@ dialog input{width:100%; margin-top:4px; background:var(--bg); border:1px solid 
 .insp-drawer .insp-what label{grid-template-columns:92px 1fr 52px !important}
 .insp-drawer .insp-hint{font-size:11.5px; color:var(--muted); margin:0 0 10px}
 .insp-drawer .insp-foot{margin-top:4px; font-size:11.5px; color:var(--muted)}
-.insp-drawer .insp-foot kbd{font:inherit; border:1px solid var(--rule2); border-radius:4px; padding:0 5px}
+.insp-drawer .insp-foot kbd,dialog kbd{font:inherit; font-family:var(--mono); font-size:11px; border:1px solid var(--rule2); border-radius:4px; padding:0 5px; background:var(--bg)}
 .kv{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:4px 14px; font-size:12px; align-content:start} /* rows keep their height when a taller sibling stretches the grid */
 .kv div{display:flex; justify-content:space-between; gap:8px; padding:4px 0; border-bottom:1px solid var(--rule)}
 .kv span:last-child{font-family:var(--mono)}
@@ -333,11 +333,11 @@ body:not(.showhelp) .helptext{display:none !important}
   <form class="sym" id="symForm" autocomplete="off"><div class="search"><input id="symIn" value="SPX" aria-label="Search ticker or company" placeholder="Search ticker or company  /" maxlength="30"><div class="sug" id="sug" hidden></div></div><button class="btn small" type="submit">Go</button></form>
   <div class="chips" id="chips"></div>
   <div class="right">
-    <button class="btn small" id="refreshBtn">Refresh</button>
+    <button class="btn small" id="refreshBtn" title="Reload the chain now (R)">Refresh</button>
     <button class="btn small" id="halalBtn" title="Hide tickers that fail standard halal screens">☪ Halal</button>
     <button class="btn small" id="flagBtn" title="Flag what you're looking at — sends a note with context to your Discord">⚑ Flag</button>
-    <button class="btn small" id="settingsBtn" title="Settings">⚙</button>
-    <button class="btn small" id="themeBtn" title="Toggle theme">☾</button>
+    <button class="btn small" id="settingsBtn" title="Settings" aria-label="Settings">⚙</button>
+    <button class="btn small" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">☾</button>
   </div>
 </header>
 <div class="symrow">
@@ -361,12 +361,12 @@ body:not(.showhelp) .helptext{display:none !important}
   </aside>
 </div>
 <div class="tip" id="tip"></div>
-<button id="ediBtn" class="edi-fab" title="Ava — your desk assistant">♛ Ava</button>
+<button id="ediBtn" class="edi-fab" title="Ava — your desk assistant (A)">♛ Ava</button>
 <aside id="ediPanel" class="edi" hidden>
-  <div class="edi-head"><div><b>Ava</b> <span class="hint">desk assistant · knows this screen, your book, your journal and the calendar</span></div><div><button class="btn small" id="ediMem" type="button" title="What Ava remembers about you">Memory</button> <button class="btn small" id="ediClear" type="button">Clear</button> <button class="btn small" id="ediClose" type="button">×</button></div></div>
+  <div class="edi-head"><div><b>Ava</b> <span class="hint">desk assistant · knows this screen, your book, your journal and the calendar</span></div><div><button class="btn small" id="ediMem" type="button" title="What Ava remembers about you">Memory</button> <button class="btn small" id="ediClear" type="button">Clear</button> <button class="btn small" id="ediClose" type="button" aria-label="Close Ava">×</button></div></div>
   <div class="edi-quick" id="ediQuick"></div>
   <div class="edi-log" id="ediLog"></div>
-  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Talk to Ava — the chain, your head, or anything else"></textarea><div class="edi-btns"><button class="btn gold" type="submit">Send</button><button class="btn small" type="button" id="ediMic" title="Dictate (hold a second after you stop talking)">🎙</button><button class="btn small" type="button" id="ediSpeak" title="Read answers aloud" aria-pressed="false">🔊</button></div></form>
+  <form class="edi-input" id="ediForm"><textarea id="ediText" rows="2" placeholder="Talk to Ava — the chain, your head, or anything else"></textarea><div class="edi-btns"><button class="btn gold" type="submit">Send</button><button class="btn small" type="button" id="ediMic" title="Dictate (hold a second after you stop talking)" aria-label="Dictate">🎙</button><button class="btn small" type="button" id="ediSpeak" title="Read answers aloud" aria-label="Read answers aloud" aria-pressed="false">🔊</button></div></form>
   <div class="hint" id="ediFoot" style="padding:6px 12px"></div>
 </aside>
 <dialog id="startDlg"><div class="dlg"><h2>Start here</h2>
@@ -377,6 +377,7 @@ body:not(.showhelp) .helptext{display:none !important}
 <li><b>Trade → Playbook</b>: your rules (risk %, stop %, DTE) and your positions. <b>Desk → Journal</b> logs every trade with the chain attached and coaches you from the data.</li>
 <li>Hide anything you don't use with <b>Customize</b>. Turn explanations off with <b>Help</b> once you know the screens.</li>
 </ol>
+<p class="hint">Keys: <kbd>/</kbd> search · <kbd>R</kbd> refresh · <kbd>A</kbd> Ava · <kbd>[</kbd> <kbd>]</kbd> switch tabs · <kbd>H</kbd> help · <kbd>Esc</kbd> closes the inspector or full screen.</p>
 <p class="hint">Data is 15-minute delayed on the free feed. Ideas and the Quant desk are labeled LABS: useful, measured where possible, not proven. Nothing here is advice.</p>
 <div class="actions"><button class="btn gold" id="startDone" type="button">Got it</button></div></div></dialog>
 <dialog id="layDlg"><div class="dlg"><h2>Customize Kingnode</h2><p class="hint">Hide what you don't use. Everything can be turned back on here.</p><div id="layBody"></div><div class="actions"><button class="btn gold" id="layDone" type="button">Done</button> <button class="btn" id="layReset" type="button">Show everything</button></div></div></dialog>
@@ -732,7 +733,7 @@ function computeFrom(d, expsSel, range, model){
   const contracts = [], allContracts = [];
   for (const r of d.rows){
     const [exp, type, K, oi, vol, iv, gamma, delta, bid, ask, last] = r;
-    allContracts.push({exp, type, K, oi, vol, iv, delta, bid, ask, mid:(bid+ask)/2 || last});
+    allContracts.push({exp, type, K, oi, vol, iv, gamma, delta, bid, ask, last, mid:(bid+ask)/2 || last, gex: dealerSide(exp, type, K, model, d.flowSign) * gamma * oi * mult}); // every expiry, with its dealer gamma, so the inspector can open any cell the Heatseeker or Chain shows
     if (!expsSel.includes(exp)) continue;
     // Standard dealer model: dealers are long calls (positive gamma) and short puts (negative gamma).
     // "Net short" model treats dealers as short everything customers bought: both signs negative → magnitude only.
@@ -744,7 +745,7 @@ function computeFrom(d, expsSel, range, model){
     const vanna = -phi * d2 / sig;                        // per 1.0 vol (100 pts); same for calls and puts
     const vex = sign * vanna * oi * 100 * spot * 0.01;    // $ delta change per 1-pt move in IV, dealer sign
     const dex = sign * delta * oi * 100 * spot;            // dealer delta $: dealer position (sign) × option delta × OI — same side convention as GEX/VEX
-    contracts.push({exp, type, K, oi, vol, iv, gamma, delta, mid:(bid+ask)/2 || last, gex, vex, dex, vanna});
+    contracts.push({exp, type, K, oi, vol, iv, gamma, delta, bid, ask, last, mid:(bid+ask)/2 || last, gex, vex, dex, vanna});
     if (K < lo || K > hi) continue;
     const key = exp + "|" + K;
     const c = byCell.get(key) || {exp, K, gex:0, vex:0, dex:0, cOI:0, pOI:0, cVol:0, pVol:0, cG:0, pG:0};
@@ -1023,7 +1024,7 @@ function renderTabsNow(){
   const groups = TAB_GROUPS.map(g => ({...g, tabs: g.tabs.filter(id => T.some(([x]) => x === id))})).filter(g => g.tabs.length);
   const tabsEl = document.getElementById("tabs");
   tabsEl.replaceChildren(
-    h("div",{class:"tabs-primary"}, h("button",{class:"tab-g util", style:{marginLeft:"0",order:"99"}, title:"Show or hide the explanations", "aria-pressed":String(document.body.classList.contains("showhelp")), onclick:()=>{ document.body.classList.toggle("showhelp"); try{ localStorage.setItem("kingnode:help", document.body.classList.contains("showhelp") ? "1" : "0"); }catch{} renderTabs(); }}, document.body.classList.contains("showhelp") ? "Help: on" : "Help"), ...groups.map(g => h("button",{class:"tab-g", role:"tab", "aria-selected":String(g.name===curGroup), onclick:()=>{ if (g.name !== curGroup){ S.tab = g.tabs[0]; renderTabs(); } }}, g.name)), h("button",{class:"tab-g util", title:"Choose which tabs and cards you see", onclick:openCustomize},"Customize")),
+    h("div",{class:"tabs-primary"}, h("button",{class:"tab-g util", id:"helpBtn", style:{marginLeft:"0",order:"99"}, title:"Show or hide the explanations (H)", "aria-pressed":String(document.body.classList.contains("showhelp")), onclick:()=>{ document.body.classList.toggle("showhelp"); try{ localStorage.setItem("kingnode:help", document.body.classList.contains("showhelp") ? "1" : "0"); }catch{} renderTabs(); }}, document.body.classList.contains("showhelp") ? "Help: on" : "Help"), ...groups.map(g => h("button",{class:"tab-g", role:"tab", "aria-selected":String(g.name===curGroup), onclick:()=>{ if (g.name !== curGroup){ S.tab = g.tabs[0]; renderTabs(); } }}, g.name)), h("button",{class:"tab-g util", title:"Choose which tabs and cards you see", onclick:openCustomize},"Customize")),
     h("div",{class:"tabs-secondary"}, ...(groups.find(g => g.name === curGroup)?.tabs || []).map(id => h("button",{class:"tab",role:"tab","aria-selected":String(S.tab===id), onclick:()=>{S.tab=id; renderTabs();}}, label[id]))));
   const p = document.getElementById("panel");
   { const tip = document.getElementById("tip"); if (tip) tip.style.display = "none"; } // a hover tooltip must not outlive the cell it described
@@ -2977,7 +2978,7 @@ function scenarioBox(x){
   render();
   return h("div",{style:{marginTop:"10px", padding:"10px", border:"1px solid var(--rule)", borderRadius:"6px"}}, h("div",{style:{fontSize:"11px",fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:"6px"}},"What if"), slider("Price move %","px",-10,10,0.25), slider("Days forward","days",0,Math.max(1,dte(x.exp)),1), slider("IV change","iv",-20,20,1), out, h("p",{class:"hint",style:{margin:"6px 0 0"}},"Black-Scholes from the quoted IV, scaled to the current mid. Good enough to see the shape of theta and vol crush; not a fill."));
 }
-function contractsAt(exp, K){ return S.calc.contracts.filter(x => x.exp === exp && x.K === K); }
+function contractsAt(exp, K){ const sel = S.calc.contracts.filter(x => x.exp === exp && x.K === K); return sel.length ? sel : S.calc.allContracts.filter(x => x.exp === exp && x.K === K); } // selected expiries first (full greeks); any other expiry still opens
 // gamma is a small number (0.0002 on SPX); show it as a plain decimal with enough digits to mean something, never in e-notation
 function fmtGreek(v){ if (v == null || !isFinite(v)) return "—"; const a = Math.abs(v); if (a === 0) return "0"; const d = a >= 0.01 ? 4 : Math.min(8, 2 - Math.floor(Math.log10(a))); return v.toFixed(d).replace(/(\.\d*?[1-9])0+$|\.0+$/, "$1"); }
 function inspectPanel(){
@@ -2986,7 +2987,7 @@ function inspectPanel(){
   const c = S.calc, tracked = getTracked();
   const row = x => { const key = `${S.sym}|${x.exp}|${x.K}|${x.type}`, on = tracked.some(t=>t.key===key);
     return h("div",{class:"insp-contract"}, h("h3",null, h("span",{class:x.type==="C"?"c":"p"}, `${S.sym} ${x.exp} ${fmt(x.K)} ${x.type==="C"?"Call":"Put"}`), h("button",{class:"btn small"+(on?"":" gold"), onclick:()=>{ toggleTracked(key, x); renderInspector(); if (S.tab === "tracked") renderTabs(); }}, on ? "Untrack" : "Track")),
-      h("div",{class:"kv"}, [["Mid",fmt(x.mid,2)],["Bid / Ask",`${fmt(x.bid,2)} / ${fmt(x.ask,2)}`],["Open interest",fmt(x.oi)],["Volume today",fmt(x.vol)],["Vol / OI", x.oi ? fmt(x.vol/x.oi,2)+"×" : "—"],["IV",fmt(x.iv*100,1)+"%"],["Delta",fmt(x.delta,3)],["Gamma",fmtGreek(x.gamma)],["OI notional",money(x.oi*x.mid*100)],["Volume notional",money(x.vol*x.mid*100)],["Dealer gamma $",money(x.gex)],["Distance from spot",pct((x.K/c.spot-1)*100)],["DTE",dte(x.exp)]].map(([k,v]) => h("div",null, h("span",null,k), h("span",null,v)))),
+      h("div",{class:"kv"}, [["Mid",fmt(x.mid,2)],["Bid / Ask",`${fmt(x.bid,2)} / ${fmt(x.ask,2)}`],["Last trade", x.last ? fmt(x.last,2) + (x.bid && x.ask ? ` (${{A:"at ask",B:"at bid",M:"inside"}[printSide(x.last, x.bid, x.ask)]})` : "") : "—"],["Open interest",fmt(x.oi)],["Volume today",fmt(x.vol)],["Vol / OI", x.oi ? fmt(x.vol/x.oi,2)+"×" : "—"],["IV",fmt(x.iv*100,1)+"%"],["Delta",fmt(x.delta,3)],["Gamma",fmtGreek(x.gamma)],["OI notional",money(x.oi*x.mid*100)],["Volume notional",money(x.vol*x.mid*100)],["Dealer gamma $",money(x.gex)],["Distance from spot",pct((x.K/c.spot-1)*100)],["DTE",dte(x.exp)]].map(([k,v]) => h("div",null, h("span",null,k), h("span",null,v)))),
       h("div",{class:"insp-what"}, scenarioBox(x))); };
   const spotDist = (ins.K/c.spot-1)*100;
   return h("div",{class:"insp"}, h("h3",null, h("span",null,`${S.sym} ${fmt(ins.K)} · ${ins.exp} · ${dte(ins.exp)} DTE`), h("button",{class:"btn small", onclick:closeInspector},"Close")),
@@ -3073,7 +3074,15 @@ document.getElementById("startDone").onclick = () => { document.getElementById("
 document.getElementById("layDone").onclick = () => document.getElementById("layDlg").close();
 document.getElementById("layReset").onclick = () => { setLayout({}); applyLayout(); renderTabs(); openCustomize(); };
 document.getElementById("resetSet").onclick = () => { S.set = {...DEFAULTS}; saveSettings(); document.getElementById("setDlg").close(); S.exps = []; load(); };
-document.addEventListener("keydown", e => { if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName)){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); } });
+// Keyboard: / search · r refresh · a Ava · [ ] previous/next tab in the group · h help. Never while typing, never with a modifier held.
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable || document.querySelector("dialog[open]")) return;
+  if (e.key === "/"){ e.preventDefault(); const i = document.getElementById("symIn"); i.focus(); i.select(); return; }
+  if (e.key === "r"){ load(); return; }
+  if (e.key === "a"){ document.getElementById(document.getElementById("ediPanel")?.hidden === false ? "ediClose" : "ediBtn")?.click(); return; }
+  if (e.key === "h"){ document.getElementById("helpBtn")?.click(); return; }
+  if (e.key === "[" || e.key === "]"){ const tabs = [...document.querySelectorAll(".tabs-secondary .tab")]; const i = tabs.findIndex(t => t.getAttribute("aria-selected") === "true"); if (i < 0 || !tabs.length) return; tabs[(i + (e.key === "]" ? 1 : tabs.length - 1)) % tabs.length].click(); }
+});
 document.getElementById("themeBtn").onclick = () => { const r = document.documentElement; const order = ["blackout","dark","light"]; const next = order[(order.indexOf(r.dataset.theme)+1) % order.length]; r.dataset.theme = next; document.getElementById("themeBtn").textContent = next === "light" ? "☀" : next === "dark" ? "◐" : "☾"; try{ localStorage.setItem("kingnode:theme", next);}catch{} mountChart(); renderTabs(); };
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
