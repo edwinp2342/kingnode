@@ -124,14 +124,16 @@ test("strike binning keeps dense chains readable and sums exposures", () => {
   assert.equal(cell.gex, -1, "exposures sum inside the bin"); assert.equal(cell.rep, 7805, "the strongest real strike represents the bin"); assert.equal(cell.cOI, 30);
 });
 test("chain-volume flow is real data: size = volume, side = where the last print sat, never synthetic", () => {
-  const src4 = grab("chainFlow");
-  const rows = [["2026-12-18", "C", 100, 500, 120, 0.3, 0.01, 0.5, 1.0, 1.2, 1.2], ["2026-12-18", "P", 95, 50, 40, 0.3, 0.01, -0.3, 2.0, 2.2, 2.0], ["2026-12-18", "C", 110, 10, 0, 0.3, 0.01, 0.2, 0.5, 0.6, 0.55]];
+  const src4 = grab("printSide") + "\n" + grab("chainFlow");
+  const rows = [["2026-12-18", "C", 100, 500, 120, 0.3, 0.01, 0.5, 1.0, 1.2, 1.2], ["2026-12-18", "P", 95, 50, 40, 0.3, 0.01, -0.3, 2.0, 2.2, 2.0], ["2026-12-18", "C", 110, 10, 0, 0.3, 0.01, 0.2, 0.5, 0.6, 0.55], ["2026-12-18", "P", 90, 500, 300, 0.3, 0.01, -0.2, 98.7, 99.5, 82.9]];
   const c4 = { Math, Date, Map, Set, Array, Object, isFinite, Number, String, S: { chain: { rows, asOf: "2026-10-12 15:00:00" }, calc: {}, demo: false, allExps: ["2026-12-18"], sym: "T" } };
   vm.createContext(c4); vm.runInContext(src4 + "\nthis.chainFlow = chainFlow;", c4);
   const t = c4.chainFlow();
-  assert.equal(t.length, 2, "contracts with zero volume are not prints");
-  assert.equal(t[0].K, 100); assert.equal(t[0].side, "A", "last at the ask"); assert.equal(t[0].sz, 120); assert.equal(t[0].prem, Math.round(1.2 * 120 * 100));
-  assert.equal(t[1].side, "B", "last at the bid"); assert.equal(t[1].kind, "volume");
+  assert.equal(t.length, 3, "contracts with zero volume are not prints");
+  const by = K => t.find(x => x.K === K);
+  assert.equal(by(100).side, "A", "last at the ask"); assert.equal(by(100).sz, 120); assert.equal(by(100).prem, Math.round(1.2 * 120 * 100));
+  assert.equal(by(95).side, "B", "last at the bid"); assert.equal(by(95).kind, "volume");
+  assert.equal(by(90).side, "M", "a last print far outside the current spread (quote moved since the trade) says nothing about the side — it is not 'sold at the bid'");
   c4.S.demo = true; assert.equal(c4.chainFlow().length, 0, "demo mode never fabricates flow here");
 });
 test("Ava can log what she is told: open, close, note — and never on a bad payload", () => {
