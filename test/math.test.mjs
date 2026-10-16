@@ -190,3 +190,29 @@ test("app: the chart knows whose bars it is holding (symbol switch reloads; same
   delete globalThis.S;
   assert.equal(fm.fmtGreek(2e-4), "0.0002"); assert.equal(fm.fmtGreek(0.000123456), "0.000123"); assert.equal(fm.fmtGreek(0.0421), "0.0421"); assert.equal(fm.fmtGreek(-0.00007), "-0.00007"); assert.equal(fm.fmtGreek(0), "0"); assert.equal(fm.fmtGreek(NaN), "—");
 });
+test("Ideas: the label means the backtested rule — trend + flip alone is not a Buy; every piece present is", () => {
+  // analyzeTicker with its dependencies stubbed: computeFrom (real), marketFilters (real), the quant and halal pieces mocked
+  const names = ["erf", "dte", "etOffsetMinutes", "marketDate", "parseExchangeTime", "etNowParts", "liveExps", "dealerSide", "computeFrom", "rsi", "ema", "emaArr", "marketFilters", "fmt", "pct", "money", "analyzeTicker"];
+  const src = names.map(grab).join("\n");
+  const mk = (n, start, drift) => { const bars = []; let px = start; for (let i = 0; i < n; i++) { px = px * (1 + drift(i)); bars.push([Date.UTC(2026, 0, 5) + i * 86400000, px, px * 1.01, px * 0.99, px, 1e6]); } return bars; };
+  // an uptrend that pulled back to its 21-EMA on a red day; SPY in an uptrend too
+  const up = mk(120, 100, i => i < 117 ? (i % 2 ? 0.01 : -0.006) : i === 119 ? -0.004 : -0.004); // a choppy climb (+1%/−0.6%), then three red days back to the 21-EMA with RSI just under 55
+  const spy = mk(120, 500, i => 0.0005);
+  const ctx = { Math, Date, Number, Map, Set, Array, Object, isFinite, console, String, Intl, JSON, Infinity,
+    S: { set: { model: "standard", freshMinVol: 500, freshRatio: 1.5, range: 8 }, sym: "X", calc: null, bars: null },
+    ID: { spy }, INDEX_SYMS: new Set(["SPX"]), NAMES: new Map([["X", "Test"]]), QD: { view: "bull" },
+    withCalc: (c, b, fn) => fn(), ivAt: () => 0.3, realizedVol: () => ({ rv: 0.25 }), rankQuant: () => [], halalStatus: () => ({ s: "passes" }), earningsFor: () => null, getPb: () => ({ account: 25000, maxRiskPct: 5 }) };
+  vm.createContext(ctx); vm.runInContext(src + "\nthis.analyzeTicker = analyzeTicker;", ctx);
+  const chain = (spot) => { const rows = []; const exp = d(5); for (let K = Math.round(spot * 0.9); K <= spot * 1.1; K += 1) { const g = 0.02 * Math.exp(-Math.pow((K - spot) / 3, 2)); rows.push([exp, "C", K, K > spot ? 20000 : 500, 100, 0.3, g, 0.5, 1, 1.1, 1.05]); rows.push([exp, "P", K, K < spot ? 20000 : 500, 100, 0.3, g, -0.5, 1, 1.1, 1.05]); } return { symbol: "X", spot, rows }; };
+  const spot = up.at(-1)[4]; const r = ctx.analyzeTicker("X", chain(spot), up);
+  assert.equal(r.trendUp, true); assert.equal(r.pullback, true); assert.equal(r.redDay, true); assert.equal(r.regimeUp, true);
+  assert.equal(r.signal, "Buy", "uptrend + pullback + red day + RSI reset + regime + leading + not below the flip = Buy: " + r.reasons.join(" | "));
+  assert.ok(r.stop < r.entry && r.target > r.entry && r.shares > 0, "plan has a stop below, a target above and a size");
+  // same name on a green day: one piece missing → Accumulate, never Buy
+  const green = up.slice(0, -1).concat([[up.at(-1)[0], spot, spot * 1.012, spot * 0.995, spot * 1.01, 1e6]]);
+  const g = ctx.analyzeTicker("X", chain(spot * 1.01), green); assert.notEqual(g.signal, "Buy", "green day → not a Buy"); assert.ok(["Accumulate", "Watch"].includes(g.signal), g.signal); assert.equal(g.pullback, true); assert.equal(g.redDay, false);
+  // positioning alone (no trend) never earns a buy label even with a put wall under spot
+  const flat = mk(120, 100, i => (i % 2 ? 0.005 : -0.0056)); const f = ctx.analyzeTicker("X", chain(flat.at(-1)[4]), flat); assert.ok(!["Buy", "Accumulate"].includes(f.signal), f.signal + " " + f.reasons.join(" | "));
+  // regime off (SPY under its 50-EMA) blocks the Buy label
+  ctx.ID.spy = mk(120, 500, i => i < 100 ? 0.003 : -0.01); const off = ctx.analyzeTicker("X", chain(spot), up); assert.equal(off.regimeUp, false); assert.notEqual(off.signal, "Buy");
+});

@@ -96,12 +96,14 @@ export function withToday(daily, intraday, session) {
 }
 // One compact line per chain ticker for the desk assistant and the scanner: where the options money went today, the unusual
 // contract, ATM IV, and the levels. Computed from the full chain while it is in memory, so the app never has to pull 80 files.
+// Which side of the quote a print hit — only when the last price sits inside the current spread; outside it the quote moved since the trade and the side is unknowable.
+function printSide(last, bid, ask) { if (!last || !bid || !ask || ask < bid) return "M"; const tol = Math.max(0.05, last * 0.01); if (last > ask + tol || last < bid - tol) return "M"; if (last >= ask - tol) return "A"; if (last <= bid + tol) return "B"; return "M"; }
 function scanRow(c0) {
   const t = etNow(); const c = { ...c0, rows: c0.rows.filter(r => r[0] > t.date || (r[0] === t.date && t.min < 16 * 60)) }; // settled expiries are not positioning
   const spot = c.spot; let cVol = 0, pVol = 0, cPrem = 0, pPrem = 0; const contracts = [];
   for (const r of c.rows) { const [exp, type, K, oi, vol, iv, , delta, bid, ask, last] = r; if (!vol) continue; const mid = bid && ask ? (bid + ask) / 2 : (last || bid || ask); const px = last || mid; if (!px) continue;
     const prem = px * vol * 100; if (type === "C") { cVol += vol; cPrem += prem; } else { pVol += vol; pPrem += prem; }
-    contracts.push({ exp, type, K, vol, oi, prem, side: ask && last >= ask - 0.01 ? "A" : bid && last <= bid + 0.01 ? "B" : "M", deep: Math.abs(delta || 0) >= 0.9, volOi: oi ? vol / oi : null }); }
+    contracts.push({ exp, type, K, vol, oi, prem, side: printSide(last, bid, ask), deep: Math.abs(delta || 0) >= 0.9, volOi: oi ? vol / oi : null }); }
   const dir = contracts.filter(x => !x.deep);
   const top = dir.sort((a, b) => b.prem - a.prem).slice(0, 3).map(x => [x.exp, x.type, x.K, x.vol, x.oi, Math.round(x.prem), x.side]);
   const exps = [...new Set(c.rows.map(r => r[0]))].sort(); const dte = e => Math.round((Date.parse(e + "T16:00:00-04:00") - Date.now()) / 86400000);
@@ -110,6 +112,21 @@ function scanRow(c0) {
   const e30 = exps.find(e => dte(e) >= 20) || exps.at(-1); const near = c.rows.filter(r => r[0] === e30 && r[5] > 0); const atm = near.length ? near.reduce((a, r) => Math.abs(r[2] - spot) < Math.abs(a[2] - spot) ? r : a, near[0]) : null;
   let lv = {}; try { lv = computeLevels(c, 6, 8, "standard"); } catch {}
   return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), top, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, gex: lv.total != null ? Math.round(lv.total) : null };
+}
+// One row per ticker per day of the levels the Ideas engine leans on (walls, flip, gamma, expected move, IV, flow) — the branch is force-pushed
+// as a single commit each cycle, so this file is the only history that survives. The last chain of the day wins, so each row is the closing state.
+// After a few weeks scripts/backtest.mjs can test whether "above the flip" and "put wall within 2%" actually pay (today they are an unmeasured overlay).
+const LEVELS_FILE = "data/levels-history.json";
+function recordLevels(scan) {
+  try {
+    let h = { cols: "spot chg cw pw flip gex em iv30 cVol pVol cPrem pPrem", days: {} };
+    try { const old = JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8")); if (old && old.days) h = old; } catch {}
+    const t = etNow(); const key = t.date; const row = {};
+    for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem];
+    h.days[key] = { ...(h.days[key] || {}), ...row, _at: Date.now() };
+    const keys = Object.keys(h.days).sort(); for (const k of keys.slice(0, Math.max(0, keys.length - 420))) delete h.days[k]; // ~20 months, a few hundred KB
+    fs.writeFileSync(LEVELS_FILE, JSON.stringify(h));
+  } catch (e) { console.error("levels history", e.message); }
 }
 async function cycle(n, ph) {
   const t0 = Date.now(); const ok = [], fail = []; const plan = PLAN[ph];
@@ -146,7 +163,7 @@ async function cycle(n, ph) {
         try { scan[sym] = { ...scanRow(c), at: Date.now() }; } catch (e) { console.error("scan", sym, e.message); }
       } catch (e) { fail.push(`c:${sym}:${e.message}`); }
     }
-    if (ok.length) { chainAt = Date.now(); fs.writeFileSync("data/scan.json", JSON.stringify({ at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em gex", rows: scan })); }
+    if (ok.length) { chainAt = Date.now(); fs.writeFileSync("data/scan.json", JSON.stringify({ at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em gex", rows: scan })); recordLevels(scan); }
   }
   if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
   const loopEnd = end; const nextIn = plan.every * 1000;
