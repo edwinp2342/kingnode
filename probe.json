@@ -1,0 +1,91 @@
+{
+ "at": "2026-10-16T00:22:28.708Z",
+ "results": {
+  "cboeChain": {
+   "status": 200,
+   "ms": 495,
+   "bytes": 904654,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "max-age=0, s-maxage=5, stale-while-revalidate=5",
+    "content-type": "application/json",
+    "content-length": null
+   },
+   "rows": null,
+   "sample": "{\"keys\":[\"timestamp\",\"data\",\"symbol\"],\"n\":2008}"
+  },
+  "cboeDir": {
+   "status": 200,
+   "ms": 13328,
+   "bytes": 394748,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=5, s-maxage=30, stale-while-revalidate=30",
+    "content-type": "application/octet-stream",
+    "content-length": null
+   },
+   "rows": null,
+   "sample": "Company Name, Stock Symbol, DPM Name, Post/Station, Global Trading Hours DPM\n\"-1x Short VIX Futures ETF\",\"SVIX\",\"Citadel Securities LLC\",\"9/1\",\"-\"\n\"1 800 FLOWERS COM INC CL A\",\"FLWS\",\"Belvedere Trading LLC\",\"1/1\",\"-\"\n\"10X GENOMICS INC CL A COM\",\"TXG\",\"Susquehanna Securities, LLC\",\"2/1\",\"-\"\n\"17 ED & "
+  },
+  "nasdaqScreener": {
+   "error": "The operation was aborted due to timeout",
+   "ms": 25001
+  },
+  "nasdaqIpo": {
+   "error": "The operation was aborted due to timeout",
+   "ms": 25002
+  },
+  "secTickers": {
+   "status": 403,
+   "ms": 158,
+   "bytes": 1925,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "no-cache, no-store, must-revalidate",
+    "content-type": "text/html",
+    "content-length": "917"
+   },
+   "rows": null,
+   "sample": "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\">\n<head>\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<title>SEC.gov | Request Rate Threshold Exceeded</title>\n"
+  },
+  "yahooQuoteBatch": {
+   "status": 401,
+   "ms": 79,
+   "bytes": 157,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "max-age=0, private",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": "157"
+   },
+   "rows": null,
+   "sample": "{\"finance\":{\"result\":null,\"error\":{\"code\":\"Unauthorized\",\"description\":\"User is unable to access this feature - https://bit.ly/yahoo-finance-api-feedback\"}}}"
+  },
+  "yahooChart": {
+   "status": 200,
+   "ms": 130,
+   "bytes": 36389,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": null
+   },
+   "rows": null,
+   "sample": "{\"chart\":{\"result\":[{\"meta\":{\"currency\":\"USD\",\"symbol\":\"HOOD\",\"exchangeName\":\"NMS\",\"fullExchangeName\":\"NasdaqGS\",\"instrumentType\":\"EQUITY\",\"firstTradeDate\":1627565400,\"regularMarketTime\":1792094401,\"hasPrePostMarketData\":true,\"gmtoffset\":-14400,\"timezone\":\"EDT\",\"exchangeTimezoneName\":\"America/New_Yo"
+  },
+  "nasdaqTraded": {
+   "status": 200,
+   "ms": 534,
+   "bytes": 1001892,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": null,
+    "content-type": "text/plain",
+    "content-length": "234583"
+   },
+   "rows": 13295,
+   "sample": "Nasdaq Traded|Symbol|Security Name|Listing Exchange|Market Category|ETF|Round Lot Size|Test Issue|Financial Status|CQS Symbol|NASDAQ Symbol|NextShares\r\nY|A|Agilent Technologies, Inc. Common Stock|N| |N|100|N||A|A|N\r\nY|AA|Alcoa Corporation Common Stock |N| |N|100|N||AA|AA|N\r\nY|AAA|Alternative Access "
+  }
+ }
+}
