@@ -432,7 +432,7 @@ const HALAL_META = { verified:"2026-10-01", method:"AAOIFI-style screens as repo
 const HALAL_MAP = new Map(HALAL_UNIVERSE.map(r => [r[0], r]));
 function halalStale(){ return (Date.now() - new Date(HALAL_META.verified+"T00:00:00").getTime())/86400000 > HALAL_META.staleAfterDays; }
 function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
-const DEFAULTS = { defaultSym:"SPX", refreshSec:45, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
+const DEFAULTS = { defaultSym:"SPX", refreshSec:30, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"", proxy:"", anthropicKey:"", askKey:"", ghToken:"", ediModel:"claude-sonnet-5-5" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
@@ -534,13 +534,16 @@ async function restartFeed(){
 }
 function renderNoChain(){
   let b = document.getElementById("nochain"); if (!b){ b = h("div",{id:"nochain",class:"notice",style:{margin:"0 14px 8px",borderColor:"var(--gold)",color:"var(--gold)"}}); document.getElementById("tvChart")?.before(b); }
-  if (S.demo && S.chain?.noChain && S.bars && !S.barsDemo){ b.hidden = false; b.textContent = `No options chain for ${S.sym} on the free feed — price and chart are real, but the levels, Heatseeker and flow below are placeholders. Add ${S.sym} to SNAPSHOT_SYMBOLS in scripts/snapshot.mjs, set a data proxy in ⚙, or run the desktop server to get its chain.`; }
+  if (S.demo && S.chain?.noChain && S.bars && !S.barsDemo){ const info = symInfo(S.sym); b.hidden = false;
+    b.textContent = info && !info.optionable ? `${S.sym} (${info.name}, ${info.exchange}) has no listed options — there is no chain to read. Price and chart are real; the positioning panels below are placeholders.`
+      : `No options chain for ${S.sym} on the free feed right now — price and chart are real, the levels, Heatseeker and flow below are placeholders. The feed snapshots the core list every 3 minutes and the 150 most active optionable names every 15, so ${S.sym} appears here when it is one of them; for any name any time, set a data proxy in ⚙ (a free Cloudflare Worker, see proxy/ in the project).`; }
   else b.hidden = true;
 }
 // The most trustworthy price we hold for the current ticker: the live tape, then the feed's universe quote, then the last bar. Null when nothing real is known.
 function bestQuote(){
   const tq = tapeQuotes.get(S.sym); if (tq && !tq.demo) return tq;
   const uq = UV.q ? universeQuote(S.sym) : null; if (uq) return uq;
+  const mq = marketQuote(S.sym); if (mq) return mq;
   if (S.bars && !S.barsDemo && S.barsMeta?.sym === S.sym){ const b = S.bars.at(-1); const prev = S.chain && !S.chain.noChain && !S.demo ? (S.chain.spot - (S.chain.change||0)) : (() => { const days = [...new Set(S.bars.map(x => new Date(x[0]).toDateString()))]; const prevDay = days[days.length-2]; const pb = S.bars.filter(x => new Date(x[0]).toDateString() === prevDay && isRegular(x[0])); return pb.length ? pb.at(-1)[4] : b[4]; })(); return { symbol:S.sym, price:b[4], prev, last:b[4], t: S.barsMeta.iv === "1d" ? null : b[0], state:null, src:"bars" }; } // a daily bar's stamp is its open, not a print time
   return null;
 }
@@ -564,8 +567,8 @@ function renderTape(){
   el.className = "tape-in anim"; el.replaceChildren(...once, ...twice);
 }
 setInterval(() => { if (document.visibilityState === "visible" && (S.set.proxy||"").trim()) loadTape(); }, 10000);
-setInterval(() => { if (document.visibilityState === "visible" && !(S.set.proxy||"").trim()) loadTape(); }, 30000);
-setInterval(() => { if (document.visibilityState === "visible") loadUniverse().then(renderLiveQuote); }, 60000); // the feed's universe quote backs the header for every name, not just the tape
+setInterval(() => { if (document.visibilityState === "visible" && !(S.set.proxy||"").trim()) loadTape(); }, 15000); // the feed writes the tape every 20 s in regular hours
+setInterval(() => { if (document.visibilityState === "visible"){ loadUniverse(true).then(renderLiveQuote); if (!FEED_NAMES.has(S.sym)) loadMarket(true).then(renderLiveQuote); } }, 30000); // the feed's universe quote backs the header for every name, not just the tape; the sweep covers the rest
 
 // ---------- main chart host (built-in) ----------
 // true when the bars on screen are for the current symbol, interval, range and session setting — anything else is another ticker's chart wearing this one's label
@@ -603,7 +606,7 @@ async function loadRun(){
   S.allExps = liveExps([...new Set(data.rows.map(r => r[0]))].sort());
   if (!S.exps.length || !S.exps.every(e => S.allExps.includes(e))) S.exps = S.allExps.slice(0, isPro() ? S.set.expCount : Math.min(4, S.set.expCount));
   compute(); renderAll(); checkAlerts(); if (S.inspect) renderInspector(); // the open contract gets the fresh chain too
-  if (demo && !UV.q) loadUniverse().then(() => { if (S.sym === sym && S.demo) renderAll(); }); // no chain for this name: the header price comes from the feed's universe once it lands
+  if (demo){ Promise.all([UV.q ? null : loadUniverse(), FEED_NAMES.has(sym) ? null : loadMarket(), SD.data ? null : loadSymbols()]).then(() => { if (S.sym === sym && S.demo) renderAll(); }); } // no chain for this name: the header price comes from the feed's universe or the market sweep once they land
   if (!demo && S.flow && S.flow.sym === S.sym && (S.flow.derived === "chain" || !S.flow.trades.length) && ["flow","cflow","play","inst"].includes(S.tab)) loadFlow();
   mountChart(); // draws what we have (or the loading state) and fetches bars when they belong to another ticker, interval or range
   if (barsCurrent() && !S.barsDemo && Date.now() - (S.barsAt||0) > 55000) loadBars(); // same chart, just old: refresh it with the chain
@@ -611,7 +614,7 @@ async function loadRun(){
 // Snapshot feed: the GitHub Action writes chains/bars/quotes to the `data` branch every 5 minutes; raw.githubusercontent allows browser reads.
 const DATA_BASE = "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
 // Returns the snapshot with its age attached (_at, _age ms, _stale). Old real data beats fresh fake data, so callers show the age instead of dropping it.
-async function snapshotJson(name, maxAgeMin){ try { const r = await fetch(DATA_BASE + name + "?t=" + Math.floor(Date.now()/60000), {cache:"no-store"}); if (!r.ok) return null; const j = await r.json(); const t = j.snapshotAt || j.at || 0; if (t){ j._at = t; j._age = Date.now() - t; j._stale = maxAgeMin ? isStale(t, maxAgeMin) : false; } return j; } catch { return null; } }
+async function snapshotJson(name, maxAgeMin){ try { const bust = name === "quotes.json" ? Math.floor(Date.now()/15000) : Math.floor(Date.now()/60000); const r = await fetch(DATA_BASE + name + "?t=" + bust, {cache:"no-store"}); /* the tape file changes every 20 s on the feed; the CDN keys on the query string */ if (!r.ok) return null; const j = await r.json(); const t = j.snapshotAt || j.at || 0; if (t){ j._at = t; j._age = Date.now() - t; j._stale = maxAgeMin ? isStale(t, maxAgeMin) : false; } return j; } catch { return null; } }
 // External fetch: direct, or through the user's proxy worker when configured (static hosting + CORS-blocked feeds)
 const PUBLIC_RELAYS = [u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, u => `https://corsproxy.io/?${encodeURIComponent(u)}`];
 async function fetchExt(url, opts){
@@ -1290,6 +1293,22 @@ function viewWatch(){
     const up = [...rows].sort((a,b)=>b.pc-a.pc).slice(0,10), dn = [...rows].sort((a,b)=>a.pc-b.pc).slice(0,10);
     const col = (title, xs, cls) => h("div",null, h("div",{class:"hint",style:{margin:"0 0 4px",textTransform:"uppercase",letterSpacing:".06em",fontSize:"11px"}}, title), h("table",{class:"data"}, h("tbody",null, xs.map(x => h("tr",{style:{cursor:"pointer"}, onclick:()=>goSym(x.symbol)}, h("td",{style:{textAlign:"left"}}, x.symbol, halalStatus(x.symbol).s==="passes" ? h("span",{class:"hint",style:{marginLeft:"5px"}},"☪") : null), h("td",null,fmt(x.price,2)), h("td",{class:cls}, pct(x.pc)))))));
     mv.replaceChildren(h("h2",null,`Movers today — ${rows.length} names on the feed${UV.stale ? " · STALE " + ageLabel(UV.snapAt) : ""}`), h("div",{class:"grid2"}, col("Up", up, "c"), col("Down — buy-low watch", dn, "p")), h("p",{class:"hint",style:{margin:"8px 0 0"}},"Regular-session change vs prior close from the feed's bars (Yahoo, delayed). Click a name to load it; ☪ = passes the halal screen as of the last check.")); });
+  // the whole optionable market (the feed's 5-minute sweep) and the IPO watch (symbols that appeared in the listing directory recently)
+  const mk = h("div",{class:"card",style:{marginTop:"14px"}}, h("h2",null,"Across the market — every optionable name"), h("p",{class:"hint"},"Loading the sweep…")); box.append(mk);
+  Promise.all([loadMarket(), loadSymbols()]).then(([q, sd]) => {
+    if (!q){ mk.replaceChildren(h("h2",null,"Across the market — every optionable name"), h("p",{class:"hint",style:{margin:0}},"No market sweep on the feed yet — it lands a few minutes after the feed restarts with the market loop.")); return; }
+    const info = sym => sd?.rows ? SD.names?.get(sym) : null;
+    const rows = Object.entries(q).map(([sym, r]) => ({ sym, last:r[0], prev:r[1], pc:r[2], vol:r[3] })).filter(x => x.pc != null && x.last >= 5 && x.vol >= 300000 && Math.abs(x.pc) < 80 && !INDEX_SYMS.has(x.sym));
+    const up = [...rows].sort((a,b)=>b.pc-a.pc).slice(0,12), dn = [...rows].sort((a,b)=>a.pc-b.pc).slice(0,12), act = [...rows].sort((a,b)=>b.last*b.vol-a.last*a.vol).slice(0,12);
+    const col = (title, xs, cls, valueOf) => h("div",null, h("div",{class:"hint",style:{margin:"0 0 4px",textTransform:"uppercase",letterSpacing:".06em",fontSize:"11px"}}, title), h("table",{class:"data"}, h("tbody",null, xs.map(x => h("tr",{style:{cursor:"pointer"}, onclick:()=>goSym(x.sym)}, h("td",{style:{textAlign:"left"}}, h("b",null,x.sym), h("span",{class:"hint",style:{marginLeft:"6px"}}, (info(x.sym)?.[1] || "").slice(0,22))), h("td",null,fmt(x.last,2)), h("td",{class: cls || (x.pc>=0?"c":"p")}, valueOf ? valueOf(x) : pct(x.pc)))))));
+    const fresh = (sd?.new || []).slice(0, 12);
+    mk.replaceChildren(h("h2",null,`Across the market — ${rows.length} optionable names over $5 with volume${MKT.stale ? " · STALE " + ageLabel(MKT.snapAt) : MKT.snapAt ? " · swept " + ageLabel(MKT.snapAt) : ""}`),
+      h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))",gap:"14px"}}, col("Up", up, "c"), col("Down — buy-low watch", dn, "p"), col("Most dollar volume", act, "", x => money(x.last*x.vol))),
+      h("div",{style:{marginTop:"12px"}}, h("div",{class:"hint",style:{margin:"0 0 4px",textTransform:"uppercase",letterSpacing:".06em",fontSize:"11px"}}, `IPO watch — listings that appeared in the last 45 days${sd ? ` · directory ${ageLabel(sd._at)} · ${fmt(sd.n)} symbols, ${fmt(sd.nOptionable)} with options` : ""}`),
+        fresh.length ? h("table",{class:"data"}, h("thead",null,h("tr",null,["Symbol","Name","First seen","Exchange","Options","Last"].map(x=>h("th",null,x)))), h("tbody",null, fresh.map(n => { const mq = q[n[0]]; return h("tr",{style:{cursor:"pointer"}, onclick:()=>goSym(n[0])}, h("td",{style:{textAlign:"left",fontWeight:700}}, n[0]), h("td",{style:{textAlign:"left"}}, n[1]), h("td",null,n[2]), h("td",null,n[3]), h("td",null, n[4] ? "yes" : "—"), h("td",null, mq ? fmt(mq[0],2) : "—")); })))
+          : h("p",{class:"hint",style:{margin:0}}, sd ? "Nothing new since the directory was first recorded. New listings appear here the day Nasdaq adds them." : "The symbol directory has not been written yet.")),
+      h("p",{class:"hint",style:{margin:"8px 0 0"}},"Sweep quotes are Yahoo's regular-session last and previous close, refreshed every 5 minutes in regular hours across every name with listed options (Cboe's directory). Click a name: price and a daily chart load for any of them; the chain loads when the name is in the feed's core list or its 150 most active."));
+  }).catch(()=>{});
   list.forEach(async sym => {
     const v = await fetchLevels(sym); const tr = box.querySelector(`tr[data-sym="${sym}"]`); if (!tr) return;
     const cells = v.missing ? [h("td",{colSpan:8, class:"hint"}, `no chain on the free feed — add ${sym} to SNAPSHOT_SYMBOLS in scripts/snapshot.mjs`)]
@@ -1336,12 +1355,14 @@ async function loadBarsRun(){
   try { const r = await fetch(`/api/bars?symbol=${sym}&interval=${iv}&range=${rg}&extended=${ext?1:0}`).catch(()=>null); if (r && r.ok && !(r.headers.get("content-type")||"").includes("text/html")){ const j = await r.json(); if (j.bars?.length) got = j; } } catch {}
   if (!got){ const snap = await snapshotJson(iv === "1d" ? `${sym}-daily.json` : `${sym}-bars.json`, iv === "1d" ? 24*60 : 20); if (snap && snap.bars?.length){ let bars = snap.bars; if (iv !== "1d" && iv !== "5m"){ const mins = {"1m":5,"15m":15,"30m":30,"1h":60}[iv]||5; if (mins > 5){ const out = []; let cur = null; for (const b of bars){ const bk = Math.floor(b[0]/(mins*60000))*mins*60000; if (!cur || cur[0] !== bk){ cur = [bk,b[1],b[2],b[3],b[4],b[5]]; out.push(cur); } else { cur[2]=Math.max(cur[2],b[2]); cur[3]=Math.min(cur[3],b[3]); cur[4]=b[4]; cur[5]+=b[5]; } } bars = out; } } got = { bars, source:"snapshot", session:snap.session||null, effective: iv === "1m" ? "5m" : iv }; } }
   if (!got){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
-  if (got && got.source) S.barsSrc = got.source;
   if (!got && (S.set.proxy||"").trim()){ try { const Y = {SPX:"^GSPC",NDX:"^NDX",RUT:"^RUT",VIX:"^VIX",DJX:"^DJI",XSP:"^GSPC"}; const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), source:"yahoo-proxy" }; } } } catch {} }
   if (!got) got = await cboeBars(sym, iv, rg);
+  // last resort for any optionable name: the nightly 60-close sweep as a daily series (no range/interval choice — it is what the feed has)
+  if (!got){ const c = (CL.c || await loadCloses())?.[sym]; if (c && c.length > 10){ const lastT = CL.c[sym + ":t"] || Date.now(); const bars = []; let t = lastT; for (let i = c.length - 1; i >= 0; i--){ bars.unshift([t, c[i], c[i], c[i], c[i], 0]); do { t -= 86400000; } while ([0,6].includes(new Date(t).getUTCDay())); } got = { bars, source:"closes", effective:"1d" }; } }
+  if (got && got.source) S.barsSrc = got.source;
   if (mySeq !== barsSeq || S.sym !== sym) return; // stale: the symbol or interval changed while this was in flight
   if (got){ S.bars = got.bars; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.session = got.session || null; S.barsAt = Date.now(); S.barsMissing = false; S.barsEffective = got.effective || iv; renderLiveQuote(); renderNoChain(); }
-  else if (S.demo && NAMES.has(sym)){ S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; S.barsMissing = false; } // a known name with the feed down: placeholder bars, labelled
+  else if (S.demo && FEED_NAMES.has(sym)){ S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; S.barsMissing = false; } // a feed name with the feed down: placeholder bars, labelled
   else { S.bars = null; S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = false; S.barsMissing = true; } // an unknown ticker gets an honest empty chart, not an invented one
   // chain is demo but the price is real: rescale the placeholder chain to the real price so nothing on screen is off by 10x
   if (S.demo && got && S.chain && S.chain.symbol === sym){ const last = got.bars.at(-1)[4]; if (last && Math.abs(last/S.chain.spot - 1) > 0.02){ const f = last / S.chain.spot; S.chain.spot = last; S.chain.rows = S.chain.rows.map(r => { const rr = r.slice(); rr[2] = +(r[2]*f).toFixed(2); return rr; }); S.chain.noChain = true; compute(); renderAll(); } else S.chain.noChain = true; renderNoChain(); }
@@ -1453,7 +1474,7 @@ function viewChart(){
   // session/date separators with the date written at the top
   { let lastDay = null, lastLx = -999; bars.forEach((b,i) => { const dd = new Date(b[0]); const key = dd.toDateString(); if (key !== lastDay){ if (lastDay !== null){ svg.append(svgEl("line",{x1:X(i)-bw,y1:pad.t,x2:X(i)-bw,y2:H-24,stroke:"var(--rule2)"})); } if (st.interval !== "1d" && X(i) - lastLx > 80){ const t = svgEl("text",{x:X(i)+3,y:pad.t+10}); t.textContent = dd.toLocaleDateString([],{weekday:"short",month:"numeric",day:"numeric"}); t.style.fill = "var(--muted)"; t.setAttribute("font-size","10"); svg.append(t); lastLx = X(i); } lastDay = key; } }); }
   // crosshair
-  const ohlc = h("div",{class:"ohlc"}, `${S.sym} · ${S.barsEffective && S.barsEffective !== st.interval ? `${S.barsEffective} (${st.interval} unavailable on the feed)` : st.interval} · ${bars.length} bars${S.barsDemo ? " · demo bars" : S.barsSrc==="yahoo-proxy" ? " · live" : S.barsSrc==="snapshot" ? " · feed" : " · delayed"}`);
+  const ohlc = h("div",{class:"ohlc"}, `${S.sym} · ${S.barsEffective && S.barsEffective !== st.interval ? `${S.barsEffective} (${st.interval} unavailable on the feed)` : st.interval} · ${bars.length} bars${S.barsDemo ? " · demo bars" : S.barsSrc==="yahoo-proxy" ? " · live" : S.barsSrc==="snapshot" ? " · feed" : S.barsSrc==="closes" ? " · daily closes from the nightly sweep" : " · delayed"}`);
   const cross = svgEl("g",{style:"display:none"}); const cv = svgEl("line",{y1:pad.t,y2:H-24,stroke:"var(--muted)","stroke-dasharray":"2 3"}); const ch = svgEl("line",{x1:pad.l,x2:W-pad.r,stroke:"var(--muted)","stroke-dasharray":"2 3"}); const cpr = svgEl("rect",{x:pad.l-64,width:62,height:16,rx:3,fill:"var(--panel2)",stroke:"var(--rule2)"}); const cpt = svgEl("text",{x:pad.l-33,"text-anchor":"middle"}); cpt.style.fill = "var(--ink)"; const ctr = svgEl("rect",{y:H-22,width:92,height:16,rx:3,fill:"var(--panel2)",stroke:"var(--rule2)"}); const ctt = svgEl("text",{y:H-10,"text-anchor":"middle"}); ctt.style.fill = "var(--ink)"; cross.append(cv, ch, cpr, cpt, ctr, ctt); svg.append(cross);
   svg.addEventListener("mousemove", ev => { const r = svg.getBoundingClientRect(); const x = (ev.clientX-r.left)/r.width*W, y = (ev.clientY-r.top)/r.height*H; const i = Math.max(0, Math.min(bars.length-1, Math.floor((x-pad.l)/(W-pad.l-pad.r)*bars.length))); const b = bars[i]; if (!b) return; cross.style.display = ""; cv.setAttribute("x1",X(i)); cv.setAttribute("x2",X(i)); ch.setAttribute("y1",y); ch.setAttribute("y2",y);
     const d = new Date(b[0]); const px = yMax - (y-pad.t)/plotH*(yMax-yMin);
@@ -2026,7 +2047,33 @@ const IDEA_UNIVERSES = {
   quick: () => [...new Set(["SPX","SPY","QQQ","IWM",...QUICK.filter(s=>s!=="VIX")])],
   halal: () => HALAL_UNIVERSE.filter(r => r[3] !== "fails" && r[2] !== "Halal ETF" && !["GLD","SLV","XLE"].includes(r[0])).map(r => r[0]).slice(0, 36),
   watch: () => getWatch(),
+  market: () => Object.keys(CL.c || {}).filter(k => !k.includes(":")), // every optionable name with 60 closes on the feed — the backtested rule, no positioning
 };
+// The backtested equity rule on closes alone (the nightly sweep covers every optionable name; positioning needs a chain, so this is the rule exactly as the backtest tested it).
+function analyzeCloses(sym, c, spyC){
+  const n = c.length; if (n < 30) return null; const spot = c[n-1];
+  const e21 = ema(c,21).at(-1), e50 = n >= 50 ? ema(c,50).at(-1) : null, r14 = rsi(c,14).at(-1);
+  const chg1 = c[n-1]/c[n-2]-1, chg5 = n > 6 ? c[n-1]/c[n-6]-1 : null, chg20 = n > 21 ? c[n-1]/c[n-21]-1 : null;
+  let atr = 0, k = 0; for (let i = Math.max(1, n-14); i < n; i++){ atr += Math.abs(c[i]-c[i-1]); k++; } atr = k ? atr/k * 1.4 : null; // close-to-close move ×1.4 ≈ true range on a daily bar
+  const sE50 = spyC && spyC.length >= 50 ? ema(spyC,50).at(-1) : null; const regimeUp = sE50 ? spyC.at(-1) > sE50 : null; const spyChg20 = spyC && spyC.length > 21 ? spyC.at(-1)/spyC.at(-21)-1 : null; const rs = chg20 != null && spyChg20 != null ? chg20 - spyChg20 : null;
+  const trendUp = e21 && e50 ? (spot > e21 && e21 > e50) : null, trendDown = e21 && e50 ? (spot < e21 && e21 < e50) : null;
+  const pullback = Math.abs(spot/e21-1) < 0.025, extended = spot/e21-1 > 0.04, redDay = chg1 < 0 && chg1 > -0.04;
+  const reasons = []; let score = 0;
+  if (trendUp){ score += 25; reasons.push("uptrend (price > 21 EMA > 50 EMA)"); } if (trendDown){ score -= 25; reasons.push("downtrend"); }
+  if (pullback && trendUp){ score += 12; reasons.push("pullback to the 21 EMA"); if (redDay){ score += 10; reasons.push("red day — the entry the backtest pays"); } else { score -= 6; reasons.push("green day — wait for a red one"); } }
+  if (regimeUp === false){ score -= 15; reasons.push("market regime off (SPY under its 50-EMA)"); }
+  if (rs != null){ if (rs > 0.01){ score += 8; reasons.push(`leading SPY over 20 days (${fmt(chg20*100,1)}% vs ${fmt(spyChg20*100,1)}%)`); } else if (rs < -0.01){ score -= 8; reasons.push(`lagging SPY (${fmt(chg20*100,1)}% vs ${fmt(spyChg20*100,1)}%)`); } }
+  if (r14 != null && r14 >= 55 && trendUp && pullback){ score -= 8; reasons.push(`RSI ${fmt(r14,0)} — not reset`); }
+  if (extended){ score -= 12; reasons.push("extended above the 21 EMA"); } if (r14 != null){ if (r14 < 35){ score += 8; reasons.push(`RSI ${fmt(r14,0)} — washed out`); } else if (r14 > 72){ score -= 10; reasons.push(`RSI ${fmt(r14,0)} — overbought`); } }
+  if (chg1 > 0.04){ score -= 6; reasons.push(`+${fmt(chg1*100,1)}% today — don't chase`); } if (chg1 < -0.04 && trendUp){ score += 6; reasons.push(`${fmt(chg1*100,1)}% today inside an uptrend`); }
+  const er = earningsFor(sym, 21); if (er){ score -= 5; reasons.push(`earnings ${er.date.slice(5)} in ${er.days}d`); }
+  const okRegime = regimeUp !== false, notLagging = rs == null || rs >= -0.01, rsiReset = r14 == null || r14 < 55;
+  const full = trendUp && pullback && redDay && rsiReset && okRegime && notLagging, partial = trendUp && okRegime && pullback && !extended;
+  let signal = "Watch"; if (full && score >= 30) signal = "Buy"; else if (partial && score >= 15) signal = "Accumulate"; else if (score <= -25) signal = "Avoid / short"; else if (score <= -10 || extended) signal = "Extended";
+  const entry = signal === "Buy" || signal === "Accumulate" ? spot : null; const stop = entry && atr ? Math.max(entry*0.85, entry - 2*atr) : null; const target = entry && atr ? Math.min(entry + 3*atr, entry*1.08) : null;
+  const pb = getPb(); const riskDollars = pb.account * pb.maxRiskPct / 100; const shares = entry && stop ? Math.floor(riskDollars / (entry - stop)) : null;
+  return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, atr14:atr, regimeUp, spyLast:spyC?.at(-1), spyE50:sE50, spyChg20, rsVsSpy:rs, trendUp, trendDown, pullback, redDay, aboveFlip:null, posG:null, cw:null, pw:null, flip:null, iv30:null, rv:null, vrp:null, score, signal, view: trendUp ? "bull" : trendDown ? "bear" : "neutral", reasons, entry, entryKind:"market", stop, target, shares, riskDollars, earnings: er ? { date:er.date, days:er.days } : null, best:null, halal:halalStatus(sym), lite:true, at:Date.now() };
+}
 function withCalc(calc, bars, fn){ const sc = S.calc, sb = S.bars, ss = S.sym; S.calc = calc; S.bars = bars; S.sym = calc.symbol || ss; try { return fn(); } finally { S.calc = sc; S.bars = sb; S.sym = ss; } }
 async function fetchChainAny(sym){
   try { let r = await fetch(`/api/chain?symbol=${encodeURIComponent(sym)}`).catch(()=>null); if (!r || r.status === 404 || (r.headers.get("content-type")||"").includes("text/html")){ const snap = await snapshotJson(`${sym}.json`, 60); if (snap?.rows?.length) return snap; r = await cboeDirect(sym); } if (r && r.ok){ const j = await r.json(); if (j.rows?.length) return j; } } catch {}
@@ -2091,7 +2138,13 @@ function analyzeTicker(sym, chain, daily){
   return { sym, name:NAMES.get(sym)||"", spot, chg1, chg5, chg20, rsi:r14, e21, e50, atr14, regimeUp:mf.regimeUp, spyLast:mf.spyLast, spyE50:mf.spyE50, spyChg20:mf.spyChg20, rsVsSpy:mf.rs, trendUp, trendDown, pullback, redDay, aboveFlip, posG, cw, pw, flip:calc.flip, iv30, rv, vrp, score, signal, view, reasons, entry, entryKind, stop, target, shares, riskDollars, earnings: er ? { date: er.date, days: er.days } : null, best, halal:halalStatus(sym), at:Date.now() };
 }
 async function runIdeas(){
-  if (ID.running) return; ID.running = true; const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
+  if (ID.running) return; ID.running = true;
+  if (ID.universe === "market"){ // every optionable name with closes on the feed: the backtested rule, computed here in a blink
+    ID.progress = "loading the nightly closes"; if (S.tab === "ideas") renderTabs({soft:true});
+    const c = await loadCloses(); await loadSymbols(); const spyC = c?.SPY || (ID.spy ? ID.spy.map(b=>b[4]) : null) || (await loadSpyDaily())?.map(b=>b[4]);
+    let n = 0; if (c){ for (const sym of Object.keys(c)){ if (sym.includes(":") || INDEX_SYMS.has(sym)) continue; if (ID.halal && halalStatus(sym).s === "excluded") continue; const mq = MKT.q?.[sym]; if (mq && mq[0] < 5) continue; try { const r = analyzeCloses(sym, c[sym], spyC); if (r){ ID.results.set(sym, r); n++; } } catch {} } }
+    ID.running = false; ID.progress = ""; ID.at = Date.now(); ID.marketN = n; if (S.tab === "ideas") renderTabs(); return; }
+  const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
   let done = 0; await loadSpyDaily(); // the regime filter needs SPY before any name is scored
   const todo = syms.filter(sym => { const cached = ID.results.get(sym); if (cached && Date.now() - cached.at < 10*60e3){ done++; return false; } return true; });
   const one = async sym => {
@@ -2106,14 +2159,14 @@ async function runIdeas(){
 function viewIdeas(){
   const box = h("div",null);
   const syms = IDEA_UNIVERSES[ID.universe]().filter(s => !ID.halal || halalStatus(s).s !== "excluded");
-  const rows = syms.map(s => ID.results.get(s)).filter(Boolean).sort((a,b)=>Math.abs(b.score)-Math.abs(a.score));
-  const shown = rows.filter(r => !ID.onlySignals || r.signal !== "Watch");
+  const rows = syms.map(s => ID.results.get(s)).filter(r => r && (ID.universe === "market" ? r.lite : !r.lite)).sort((a,b)=>Math.abs(b.score)-Math.abs(a.score));
+  const shown = rows.filter(r => !ID.onlySignals || r.signal !== "Watch").slice(0, ID.universe === "market" ? 80 : 500);
   box.append(h("div",{class:"qhead"}, h("div",null, h("div",{class:"qtitle"},"Ideas — what to buy, trim, and avoid ", h("span",{class:"badge",style:{verticalAlign:"middle",marginLeft:"6px"}},"LABS · backtested rules below")), h("div",{class:"hint"},"Scans the universe, pulls every chain and six months of bars, and scores each name on trend, pullback, dealer positioning (flip, walls, gamma sign), momentum, RSI and vol pricing. Equities get an entry/stop/target off the levels; options get the best-priced structure from the Quant desk for the same view.")),
     h("div",{style:{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}},
-      h("div",{class:"grp",style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["quick","Indices + majors"],["halal","Halal universe"],["watch","My watchlist"]].map(([v,l])=>h("button",{type:"button", style:{border:0,background:ID.universe===v?"var(--panel2)":"transparent",color:ID.universe===v?"var(--ink)":"var(--muted)",padding:"7px 12px",cursor:"pointer",fontWeight:600}, onclick:()=>{ID.universe=v; renderTabs();}}, l))),
+      h("div",{class:"grp",style:{display:"flex",border:"1px solid var(--rule2)",borderRadius:"4px",overflow:"hidden"}}, [["quick","Indices + majors"],["halal","Halal universe"],["watch","My watchlist"],["market","Whole market"]].map(([v,l])=>h("button",{type:"button", title: v === "market" ? "Every optionable US name with 60 daily closes on the feed — the backtested rule exactly, no positioning (that needs a chain)" : "", style:{border:0,background:ID.universe===v?"var(--panel2)":"transparent",color:ID.universe===v?"var(--ink)":"var(--muted)",padding:"7px 12px",cursor:"pointer",fontWeight:600}, onclick:()=>{ID.universe=v; renderTabs();}}, l))),
       h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:ID.halal, onchange:e=>{ID.halal=e.target.checked; renderTabs();}}), "☪ halal only"),
       h("label",{class:"hint",style:{display:"flex",gap:"5px",alignItems:"center"}}, h("input",{type:"checkbox", checked:ID.onlySignals, onchange:e=>{ID.onlySignals=e.target.checked; renderTabs();}}), "hide Watch"),
-      h("button",{class:"btn gold", disabled:ID.running, onclick:runIdeas}, ID.running ? `Scanning ${ID.progress}` : rows.length ? "Rescan" : `Scan ${syms.length} tickers`))));
+      h("button",{class:"btn gold", disabled:ID.running, onclick:runIdeas}, ID.running ? `Scanning ${ID.progress}` : rows.length ? "Rescan" : ID.universe === "market" ? "Screen the whole market" : `Scan ${syms.length} tickers`))));
   box.append(backtestCard());
   { const spy = ID.spy; if (spy && spy.length > 60){ const sc = spy.map(b=>b[4]); const e50 = ema(sc, 50).at(-1), last = sc.at(-1), on = last > e50, chg20 = sc.length > 21 ? sc.at(-1)/sc.at(-21)-1 : null; const dist = (last/e50-1)*100;
       const n = k => rows.filter(r => r.signal === k).length;
@@ -2122,19 +2175,19 @@ function viewIdeas(){
         h("span",{class:"num"}, `SPY ${fmt(last,2)} ${on ? "above" : "below"} its 50-EMA ${fmt(e50,2)} (${dist>=0?"+":""}${fmt(dist,1)}%)${chg20 != null ? ` · 20d ${pct(chg20*100)}` : ""}`),
         h("span",{class:"hint"}, on ? "the buy rule is live — dips in leaders qualify" : "the buy rule is off: the backtest does not buy pullbacks under the 50-EMA, so nothing prints Buy until SPY reclaims it"),
         rows.length ? h("span",{class:"hint",style:{marginLeft:"auto"}}, `${n("Buy")} Buy · ${n("Accumulate")} Accumulate · ${n("Extended")} Extended · ${n("Avoid / short")} Avoid`) : null)); } }
-  if (!rows.length && !ID.running) box.append(h("div",{class:"empty"},"Press Scan. Each ticker is one chain pull and one bars pull; the indices-and-majors set takes about ten seconds on the free feed."));
+  if (!rows.length && !ID.running) box.append(h("div",{class:"empty"}, ID.universe === "market" ? "Press Screen. Every optionable US name with 60 closes on the feed (about 4,000) goes through the backtested buy rule — trend, pullback, red day, RSI, regime, relative strength — in a second. Positioning columns stay empty here: that needs a chain, which loads when you click a name that the feed snapshots." : "Press Scan. Each ticker is one chain pull and one bars pull; the indices-and-majors set takes about ten seconds on the free feed."));
   if (ID.running) box.append(h("div",{class:"notice"},`Scanning… ${ID.progress}`));
   const sigCls = s => s === "Buy" ? "c" : s === "Accumulate" ? "c" : s.startsWith("Avoid") ? "p" : s === "Extended" ? "p" : "";
   if (shown.length){
-    box.append(h("div",{class:"card"}, h("h2",null,`${shown.length} ideas · ranked by conviction · ${ID.at ? "scanned " + new Date(ID.at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`),
+    box.append(h("div",{class:"card"}, h("h2",null,`${shown.length} ideas · ranked by conviction${ID.universe === "market" ? ` · ${fmt(ID.marketN||rows.length)} names screened on closes from ${CL.snapAt ? whenLabel(CL.snapAt) : "the feed"} (trend rule only — no positioning)` : ""} · ${ID.at ? "scanned " + new Date(ID.at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : ""}`),
       h("div",{style:{overflow:"auto"}}, h("table",{class:"data qtab"}, h("thead",null,h("tr",null,["Ticker","☪","Signal","Score","Spot","Today","5d","RSI","Regime","Flip","Put wall","Call wall","IV / RV","Equity plan","Option idea",""].map(x=>h("th",null,x)))),
         h("tbody",null, shown.map(r => h("tr",{style:{cursor:"pointer"}, onclick:()=>goSym(r.sym)},
           h("td",{style:{fontWeight:700,textAlign:"left"}}, r.sym, r.demo ? h("span",{class:"badge demo",style:{marginLeft:"6px"}},"demo") : null, h("div",{class:"hint",style:{fontWeight:400}}, r.name)),
           h("td",{class: r.halal.s==="excluded"?"p":r.halal.s==="passes"?"c":"", title:r.halal.why}, r.halal.s==="excluded"?"✕":r.halal.s==="passes"?"✓":r.halal.s==="mixed"?"±":"~"),
           h("td",{class:sigCls(r.signal), style:{fontWeight:700,textAlign:"left"}}, r.signal, r.earnings ? h("span",{class:"badge warn",style:{marginLeft:"6px",fontWeight:600}, title:`Earnings ${r.earnings.date} — ${r.earnings.days} days out; the 15-day hold would cross it`}, `ER ${r.earnings.days}d`) : null), h("td",{class:r.score>=0?"c":"p"}, (r.score>0?"+":"")+r.score), h("td",null,fmt(r.spot,2)), h("td",{class:r.chg1>=0?"c":"p"},pct(r.chg1*100)), h("td",{class:(r.chg5||0)>=0?"c":"p"}, r.chg5!=null?pct(r.chg5*100):"—"), h("td",{class: r.rsi>70?"p":r.rsi<35?"c":""}, r.rsi!=null?fmt(r.rsi,0):"—"),
-          h("td",{class:r.posG?"c":"p"}, r.posG ? "+γ" : "−γ"), h("td",{class: r.aboveFlip===true?"c":r.aboveFlip===false?"p":""}, r.flip?fmt(r.flip):"—"), h("td",null,r.pw?fmt(r.pw):"—"), h("td",null,r.cw?fmt(r.cw):"—"), h("td",{class: r.vrp==null?"":r.vrp>0.04?"p":r.vrp<-0.02?"c":""}, r.vrp!=null ? `${fmt(r.iv30*100,0)} / ${fmt(r.rv*100,0)}` : fmt(r.iv30*100,0)+" / —"),
+          h("td",{class:r.lite ? "" : r.posG?"c":"p"}, r.lite ? "—" : r.posG ? "+γ" : "−γ"), h("td",{class: r.aboveFlip===true?"c":r.aboveFlip===false?"p":""}, r.flip?fmt(r.flip):"—"), h("td",null,r.pw?fmt(r.pw):"—"), h("td",null,r.cw?fmt(r.cw):"—"), h("td",{class: r.vrp==null?"":r.vrp>0.04?"p":r.vrp<-0.02?"c":""}, r.lite ? "—" : r.vrp!=null ? `${fmt(r.iv30*100,0)} / ${fmt(r.rv*100,0)}` : fmt(r.iv30*100,0)+" / —"),
           h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.entry ? `${r.entryKind === "reclaim" ? "buy on reclaim of " : r.entryKind === "limit" ? "bid " : "buy ~"}${fmt(r.entry,2)} · stop ${fmt(r.stop,2)} (${fmt((1-r.stop/r.entry)*100,1)}%) · tgt ${fmt(r.target,2)} (+${fmt((r.target/r.entry-1)*100,1)}%)${r.shares ? ` · ${fmt(r.shares)} sh at ${money(r.riskDollars)} risk` : ""}` : r.signal==="Extended" || r.signal.startsWith("Avoid") ? `sell into ${r.cw?fmt(r.cw):"strength"} · reclaim ${r.flip?fmt(r.flip):"—"}` : "—"),
-          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.best ? `${r.best.kind}: ${r.best.legs.map(l=>`${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join("/")} ${r.best.exp.slice(5)} · P(profit) ${fmt(r.best.popRV*100,0)}% · EV/risk ${(r.best.evr>=0?"+":"")+fmt(r.best.evr*100,0)}%` : "—"),
+          h("td",{style:{textAlign:"left",whiteSpace:"nowrap"}}, r.best ? `${r.best.kind}: ${r.best.legs.map(l=>`${l.side>0?"+":"−"}${fmt(l.K)}${l.type}`).join("/")} ${r.best.exp.slice(5)} · P(profit) ${fmt(r.best.popRV*100,0)}% · EV/risk ${(r.best.evr>=0?"+":"")+fmt(r.best.evr*100,0)}%` : r.lite ? h("span",{class:"hint"}, "click → chain, if on the feed") : "—"),
           h("td",null, h("button",{class:"btn small", onclick:ev=>{ ev.stopPropagation(); showIdea(r); }},"Why")))))))));
   }
   if (rows.length && !shown.length) box.append(h("div",{class:"empty"},"Everything scanned is a Watch right now — nothing extended enough to trim or set up enough to buy. Untick \"hide Watch\" to see them."));
@@ -2410,7 +2463,8 @@ async function peekTicker(sym){
   sym = String(sym||"").toUpperCase(); if (!sym) return {sym, error:"no symbol"};
   const chain = (S.chain && S.chain.symbol === sym && !S.demo) ? S.chain : await fetchChainAny(sym);
   const uq = UV.q ? universeQuote(sym) : null;
-  if (!chain){ return { sym, error: "no options chain on the free feed for this name", price: uq ? `${fmt(uq.price,2)} ${pct((uq.price/uq.prev-1)*100)}` : null }; }
+  if (!chain){ await Promise.all([loadSymbols(), FEED_NAMES.has(sym) ? null : loadMarket()]); const info = symInfo(sym); const mq = uq || marketQuote(sym);
+    return { sym, name: info?.name || NAMES.get(sym) || null, exchange: info?.exchange || null, listedOptions: info ? info.optionable : null, error: info && !info.optionable ? "no listed options for this name" : "no chain snapshot on the free feed for this name right now (the feed keeps the core list and the 150 most active optionable names; a data proxy in settings loads any chain)", price: mq ? `${fmt(mq.price,2)} ${pct((mq.price/mq.prev-1)*100)} (${mq.src === "sweep" ? "5-min sweep " + whenLabel(mq.t) : "feed"})` : null }; }
   const exps = liveExps([...new Set(chain.rows.map(r=>r[0]))].sort()).slice(0, 6); const c = computeFrom({...chain, symbol:sym}, exps, 8, S.set.model);
   const at = chain.snapAt || chain._at || 0;
   return { sym, spot:c.spot, changePct:chain.changePct, asOf: at ? whenLabel(at) : null, stale: !!chain._stale || isStale(at, 40), regime: c.total > 0 ? "positive gamma (pinned, dips bought, rallies sold)" : "negative gamma (trending, moves amplified)", gex:money(c.total), callWall:c.callWall?.K, putWall:c.putWall?.K, gexCrossover:c.flip, zeroGamma:c.zeroGamma, maxPain:c.maxPain, kingNode: c.top?.[0] ? `${c.top[0].K} ${c.top[0].exp} ${money(c.top[0].gex)}` : null, expectedMove: c.em?.[0] ? `±${fmt(c.em[0].move,2)} (${fmt(c.em[0].pct,2)}%) into ${c.em[0].exp}` : null, atmIv: c.em?.[0]?.iv ? Math.round(c.em[0].iv*100)+"%" : null, expirations: exps, topNodes: (c.top||[]).slice(0,4).map(t=>`${t.exp} ${t.K} ${money(t.gex)}`), freshPositioning: (c.fresh||[]).slice(0,6).map(f=>`${f.exp} ${f.K}${f.type} vol ${f.vol} oi ${f.oi} (${(f.vol/Math.max(1,f.oi)).toFixed(1)}×) mid ${fmt(f.mid,2)}`), scan: SCAN.rows?.[sym] ? scanLine(sym, SCAN.rows[sym], true) : null };
@@ -2494,7 +2548,7 @@ const EDI_KN_FALLBACK = `If you cannot call tools, append action lines at the ve
 const AVA_TOOLS = [
   { name:"peek_ticker", description:"Dealer positioning for any ticker on the feed: spot, call wall, put wall, GEX crossover, zero gamma, king node, max pain, expected move, regime, ATM IV, top gamma nodes, fresh positioning (contracts trading well above their open interest) and the scan line (today's premium, call share, unusual contract). Use it for any question about a specific name, including names not on screen.", input_schema:{ type:"object", properties:{ sym:{ type:"string", description:"ticker, e.g. HOOD" } }, required:["sym"] } },
   { name:"price_history", description:"Daily price read for a ticker: last close, 1d/5d/20d/60d returns, position vs the 21/50/200-day EMAs, RSI14, ATR14 (for stops), 20-day realized vol, distance from the 52-week high and low, today's volume vs its 20-day average, and whether it is in the Ideas engine's buy-the-dip setup. Use before giving a directional view, a stop, or a target.", input_schema:{ type:"object", properties:{ sym:{ type:"string" } }, required:["sym"] } },
-  { name:"scan_market", description:"Filter today's scan of ~80 chain tickers. filter = 'premium' (most options premium traded), 'calls' (highest call share of premium), 'puts' (highest put share), 'unusual' (contract volume many times its open interest), 'wall' (price sitting on its call or put wall), 'iv' (highest ATM IV), 'cheap_iv' (lowest), 'gainers', 'losers', 'all'. Returns one line per name with the numbers.", input_schema:{ type:"object", properties:{ filter:{ type:"string" }, limit:{ type:"integer", description:"default 12" } }, required:["filter"] } },
+  { name:"scan_market", description:"Filter today's scan of the chain tickers on the feed (core list + the 150 most active). filter = 'premium' (most options premium traded), 'calls' (highest call share of premium), 'puts' (highest put share), 'unusual' (contract volume many times its open interest), 'wall' (price sitting on its call or put wall), 'iv' (highest ATM IV), 'cheap_iv' (lowest), 'gainers', 'losers', 'all'. Market-wide (every optionable US name, 5-minute sweep): 'market_gainers', 'market_losers', 'market_active' (dollar volume), 'new_listings' (IPO watch: symbols listed in the last 45 days). Returns one line per name with the numbers.", input_schema:{ type:"object", properties:{ filter:{ type:"string" }, limit:{ type:"integer", description:"default 12" } }, required:["filter"] } },
   { name:"session_flow", description:"Today's options volume by contract for a ticker — size, open interest, premium, and whether the last print lifted the ask or hit the bid — excluding deep-in-the-money financing trades. Use to say where the money went in a name.", input_schema:{ type:"object", properties:{ sym:{ type:"string" }, limit:{ type:"integer", description:"default 10" } }, required:["sym"] } },
   { name:"quant_structures", description:"Run the Quant desk on a ticker: ranked option structures (long calls, long puts, debit spreads, credit spreads) priced against realized vol — cost, max loss, max gain, breakeven, P(ITM) under implied and realized vol, P(profit), EV per dollar of risk, tail (max loss per dollar of max gain). Use when they want an actual trade structure or ask which strike/expiry.", input_schema:{ type:"object", properties:{ sym:{ type:"string" }, view:{ type:"string", description:"bull | bear | neutral" }, horizonDays:{ type:"integer" }, minDte:{ type:"integer" }, maxDte:{ type:"integer" }, limit:{ type:"integer", description:"default 6" } }, required:["sym","view"] } },
   { name:"idea_score", description:"The Ideas engine's verdict on a ticker: Buy / Accumulate / Watch / Extended / Avoid, the score, the reasons (trend, pullback, RSI, flip, walls, IV vs realized), and the equity plan (entry, stop, target off the levels). Backtested rules; cite them as such.", input_schema:{ type:"object", properties:{ sym:{ type:"string" } }, required:["sym"] } },
@@ -2523,7 +2577,17 @@ async function priceHistory(sym){
   const chg1 = ret(1)/100; const pullback = e21 ? Math.abs(last/e21-1) < 0.025 : false; const trendUp = e21 && e50 ? last > e21 && e21 > e50 : null;
   return { sym, lastClose:last, date: new Date(bars[n-1][0]).toISOString().slice(0,10), returns:{ d1:ret(1), d5:ret(5), d20:ret(20), d60:ret(60) }, ema:{ e21:e21?+e21.toFixed(2):null, e50:e50?+e50.toFixed(2):null, e200:e200?+e200.toFixed(2):null, vsE21Pct: e21 ? +((last/e21-1)*100).toFixed(2) : null, trend: trendUp ? "up (price > 21 > 50)" : e21 && e50 && last < e21 && e21 < e50 ? "down (price < 21 < 50)" : "mixed" }, rsi14: r14 != null ? +r14.toFixed(1) : null, atr14: a ? +a.toFixed(2) : null, atrPct: a ? +(a/last*100).toFixed(2) : null, realizedVol20: rv ? +(rv.rv*100).toFixed(1) + "%" : null, range52w:{ high:hi52, low:lo52, fromHighPct: +((last/hi52-1)*100).toFixed(1), fromLowPct: +((last/lo52-1)*100).toFixed(1) }, volumeVsAvg: avgV ? +(v[n-1]/avgV).toFixed(2) : null, ideasSetup: trendUp && pullback && chg1 < 0 && chg1 > -0.04 && r14 != null && r14 < 55 ? "yes — uptrend, pullback to the 21-EMA on a red day, RSI < 55 (the backtested buy-the-dip entry)" : trendUp ? (pullback ? "almost — pullback in an uptrend, but today isn't a red day or RSI isn't reset" : "uptrend, not pulled back") : "no (not in an uptrend)" };
 }
+// market-wide filters (every optionable name, from the 5-minute sweep) and the IPO watch, for Ava's scan_market tool
+async function marketWide(filter, limit){
+  const f = String(filter||"").toLowerCase(); await Promise.all([loadMarket(), loadSymbols()]); limit = Math.min(40, Number(limit)||15);
+  if (f === "new_listings"){ const fresh = (SD.data?.new || []).slice(0, limit); return { filter:f, asOf: SD.data ? whenLabel(SD.data._at) : null, note:"symbols that appeared in the US listing directory in the last 45 days (first seen date = listing day); options = has a listed chain", rows: fresh.map(n => { const mq = MKT.q?.[n[0]]; return `${n[0]} · ${n[1]} · listed ${n[2]} · ${n[3]}${n[4] ? " · options" : ""}${mq ? ` · ${fmt(mq[0],2)} (${mq[2]>=0?"+":""}${mq[2]}%)` : ""}`; }) }; }
+  const q = MKT.q; if (!q) return { error:"no market sweep on the feed yet" };
+  const rows = Object.entries(q).map(([sym, r]) => ({ sym, last:r[0], pc:r[2], vol:r[3], dv:r[0]*r[3] })).filter(x => x.pc != null && x.last >= 5 && x.vol >= 300000 && Math.abs(x.pc) < 80 && !INDEX_SYMS.has(x.sym));
+  const sorted = f === "market_losers" ? rows.sort((a,b)=>a.pc-b.pc) : f === "market_active" ? rows.sort((a,b)=>b.dv-a.dv) : rows.sort((a,b)=>b.pc-a.pc);
+  return { filter:f, asOf: whenLabel(MKT.snapAt), universe:`${rows.length} optionable names over $5 with volume`, rows: sorted.slice(0, limit).map(x => `${x.sym} · ${(NAMES.get(x.sym)||"").slice(0,24)} · ${fmt(x.last,2)} · ${x.pc>=0?"+":""}${x.pc}% · $vol ${money(x.dv)}${SCAN.rows?.[x.sym] ? " · chain on feed" : ""}`) };
+}
 function scanMarket(filter, limit){
+  if (/^(market_gainers|market_losers|market_active|new_listings)$/.test(String(filter||"").toLowerCase())) return marketWide(filter, limit);
   const rows = SCAN.rows; if (!rows) return { error:"no scan yet — the feed writes it every chain cycle" }; limit = Math.min(40, Number(limit)||12);
   const syms = Object.keys(rows); const tot = s => (rows[s].cPrem||0)+(rows[s].pPrem||0); const callShare = s => tot(s) ? rows[s].cPrem/tot(s) : 0.5;
   const sorters = { premium: (a,b)=>tot(b)-tot(a), calls: (a,b)=>callShare(b)-callShare(a), puts: (a,b)=>callShare(a)-callShare(b), unusual: (a,b)=>((rows[b].unusual?.[6])||0)-((rows[a].unusual?.[6])||0), iv: (a,b)=>(rows[b].iv30||0)-(rows[a].iv30||0), cheap_iv: (a,b)=>(rows[a].iv30||9)-(rows[b].iv30||9), gainers: (a,b)=>(rows[b].chg||0)-(rows[a].chg||0), losers: (a,b)=>(rows[a].chg||0)-(rows[b].chg||0), all: (a,b)=>tot(b)-tot(a) };
@@ -2561,7 +2625,7 @@ async function avaTool(name, input){
   switch (name){
     case "peek_ticker": return peekTicker(input.sym);
     case "price_history": return priceHistory(input.sym);
-    case "scan_market": await loadScan(); return scanMarket(input.filter, input.limit);
+    case "scan_market": await loadScan(); return await scanMarket(input.filter, input.limit);
     case "session_flow": { const sym = String(input.sym||"").toUpperCase(); const chain = (S.chain && S.chain.symbol === sym && !S.demo) ? S.chain : await fetchChainAny(sym); if (!chain) return { sym, error:"no chain on the feed" }; const exps = liveExps([...new Set(chain.rows.map(r=>r[0]))].sort()); const fl = flowFromChain(chain, sym, exps).filter(t=>!t.deep); const n = Math.min(25, Number(input.limit)||10); const callP = fl.filter(t=>t.cp==="C").reduce((a,t)=>a+t.prem,0), putP = fl.filter(t=>t.cp==="P").reduce((a,t)=>a+t.prem,0); return { sym, asOf: whenLabel(chain.snapAt || chain._at || Date.now()), callPremium:money(callP), putPremium:money(putP), callShare: callP+putP ? Math.round(callP/(callP+putP)*100)+"%" : null, contracts: fl.slice(0,n).map(t => `${t.exp} ${fmt(t.K)}${t.cp} vol ${fmtK(t.sz)} oi ${fmtK(t.oi)} (${t.volOi!=null?t.volOi.toFixed(1)+"×":"new"}) ${money(t.prem)} last ${t.side==="A"?"at the ask":t.side==="B"?"at the bid":"mid"}`) }; }
     case "quant_structures": return quantFor(input.sym, input.view, input.horizonDays, input.minDte, input.maxDte, input.limit);
     case "idea_score": return ideaFor(input.sym);
@@ -2747,9 +2811,22 @@ function ediInit(){
 // ---------- Halal: screened universe, movers, purification ----------
 const HQ = { quotes:new Map(), at:0, loading:false, sector:"all", status:"passes", sort:"chg" };
 // data/universe.json — last/prev/regular price for every ticker the feed pulls bars for (one small file instead of 300).
+// Market-wide files from the feed: every listed symbol (symbols.json, hourly, with first-seen dates = the IPO watch), a price sweep across
+// every optionable name (market.json, every 5 min in regular hours), 60 daily closes per optionable name (closes.json, nightly).
+const FEED_NAMES = new Set(UNIVERSE.map(([s]) => s)); // the ~300 names the feed charts and quotes every minute (NAMES grows with the directory; this set does not)
+const SD = { at:0, data:null, pending:null, optionable:null, names:null }, MKT = { at:0, q:null, pending:null, snapAt:0, stale:false }, CL = { at:0, c:null, pending:null };
+async function loadSymbols(){ if (SD.pending) return SD.pending; if (SD.data && Date.now() - SD.at < 60*60e3) return SD.data;
+  SD.pending = (async () => { try { const j = await snapshotJson("symbols.json", 0); if (j?.rows?.length){ SD.data = j; SD.at = Date.now(); SD.optionable = new Set(j.optionable || []); SD.names = new Map(j.rows.map(r => [r[0], r])); for (const r of j.rows) if (!NAMES.has(r[0])) NAMES.set(r[0], r[1]); } } catch {} SD.pending = null; return SD.data; })(); return SD.pending; }
+async function loadMarket(force){ if (MKT.pending) return MKT.pending; if (!force && MKT.q && Date.now() - MKT.at < 60e3) return MKT.q;
+  MKT.pending = (async () => { try { const j = await snapshotJson("market.json", 12); if (j?.q){ MKT.q = j.q; MKT.at = Date.now(); MKT.snapAt = j._at; MKT.stale = !!j._stale; } } catch {} MKT.pending = null; return MKT.q; })(); return MKT.pending; }
+async function loadCloses(){ if (CL.pending) return CL.pending; if (CL.c && Date.now() - CL.at < 30*60e3) return CL.c;
+  CL.pending = (async () => { try { const j = await snapshotJson("closes.json", 0); if (j?.c){ CL.c = j.c; CL.at = Date.now(); CL.snapAt = j._at; } } catch {} CL.pending = null; return CL.c; })(); return CL.pending; }
+// a sweep quote: last, previous close, change, volume — a few minutes old in regular hours, for any optionable name
+function marketQuote(sym){ const r = MKT.q?.[sym]; if (!r || !r[0]) return null; return { symbol:sym, price:r[0], prev:r[1] ?? r[0], last:r[0], t:r[4] || MKT.snapAt, state:r[5], volume:r[3], src:"sweep", stale:MKT.stale, snapAt:MKT.snapAt }; }
+function symInfo(sym){ const r = SD.names?.get(sym); return r ? { sym:r[0], name:r[1], exchange:r[2], etf:!!r[3], optionable:!!r[4], onFeed:FEED_NAMES.has(sym) } : null; }
 const UV = { at:0, q:null, loading:false, stale:false };
 async function loadUniverse(force){
-  if (UV.pending) return UV.pending; if (!force && Date.now() - UV.at < 60e3) return UV.q;
+  if (UV.pending) return UV.pending; if (!force && Date.now() - UV.at < 30e3) return UV.q;
   UV.pending = (async () => { try { const u = await snapshotJson("universe.json", 10); if (u?.q){ UV.q = u.q; UV.at = Date.now(); UV.stale = !!u._stale; UV.snapAt = u._at; } } catch {} UV.pending = null; return UV.q; })(); return UV.pending;
 }
 function universeQuote(sym){ const r = UV.q?.[sym]; if (!r || !r[0]) return null; const reg = r[3] ?? r[0]; return { symbol:sym, price:reg, prev:(r[1] ?? reg), last:r[0], t:r[2], state:r[4], src:"feed", stale:UV.stale, snapAt:UV.snapAt }; }
@@ -3097,7 +3174,12 @@ function goSym(v){ v = v.toUpperCase().replace(/[^A-Z.]/g,""); if (!v) return; s
   S.bars = null; S.barsMeta = null; S.barsMissing = false; S.barsDemo = false; S.view = null; S.session = null; // the old ticker's chart must not wear the new name while the new bars load
   renderChips(); mountChart(); load(); }
 function showSug(items){ sugItems = items; sugIdx = -1; sugEl.replaceChildren(...items.map((it,i) => h("button",{type:"button", role:"option", onmousedown:e=>{ e.preventDefault(); goSym(it.symbol); }}, h("span",null, h("b",null,it.symbol), h("small",null,it.type||"")), h("span",null,it.name)))); sugEl.hidden = !items.length; }
-function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (halalOnly() && halalStatus(sym).s === "excluded") continue; if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:""}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:""}); if (out.length > 30) break; } return out.slice(0,8); }
+// Search: the feed's names first (chart + minute quotes), then every US-listed symbol from the directory (symbols.json) — any ticker, with what the feed has for it
+function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (halalOnly() && halalStatus(sym).s === "excluded") continue; if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:"feed"}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:"feed"}); if (out.length > 30) break; }
+  if (SD.data){ const seen = new Set(out.map(x => x.symbol)); const pre = [], mid = []; for (const r of SD.data.rows){ const [sym, name] = r; if (seen.has(sym)) continue; if (sym.startsWith(q)) pre.push(r); else if (q.length >= 3 && name.toUpperCase().includes(q)) mid.push(r); if (pre.length > 12) break; }
+    for (const r of [...pre, ...mid].slice(0, 10)){ const [sym, name, ex, etf, opt] = r; out.push({symbol:sym, name, type: (opt ? "options" : ex || "") + (SD.data.new?.some(n => n[0] === sym) ? " · new listing" : "")}); } }
+  else loadSymbols().then(() => { if (!sugEl.hidden && symIn.value.trim()) showSug(localSearch(symIn.value.trim())); }); // first keystroke loads the directory, the list refreshes when it lands
+  return out.slice(0, 10); }
 symIn.addEventListener("input", () => { const q = symIn.value.trim(); clearTimeout(sugTimer); if (!q){ sugEl.hidden = true; return; } showSug(localSearch(q));
   sugTimer = setTimeout(async () => { try { const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`); const j = await r.json(); if (j.results?.length && symIn.value.trim() === q){ const seen = new Set(); showSug([...localSearch(q), ...j.results].filter(x => !seen.has(x.symbol) && seen.add(x.symbol)).slice(0,8)); } } catch {} }, 250); });
 symIn.addEventListener("keydown", e => { if (sugEl.hidden) return; if (e.key === "ArrowDown"){ e.preventDefault(); sugIdx = Math.min(sugItems.length-1, sugIdx+1); } else if (e.key === "ArrowUp"){ e.preventDefault(); sugIdx = Math.max(0, sugIdx-1); } else if (e.key === "Enter" && sugIdx >= 0){ e.preventDefault(); goSym(sugItems[sugIdx].symbol); return; } else if (e.key === "Escape"){ sugEl.hidden = true; symIn.value = S.sym; symIn.blur(); return; } [...sugEl.children].forEach((b,i) => b.setAttribute("aria-selected", String(i===sugIdx))); });
