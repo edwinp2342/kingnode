@@ -174,7 +174,7 @@ async function cycle(n, ph) {
   console.log(`cycle ${n} · ${ph} · ${((Date.now() - t0) / 1000).toFixed(1)}s · chains ${ok.length}${fail.length ? " · fail " + fail.slice(0, 12).join(" ") + (fail.length > 12 ? ` +${fail.length - 12}` : "") : ""}`);
   if (PUSH) push();
 }
-let tierBAt = 0, tierBList = [], fastAt = 0, sweepAt = 0, symbolsAt = 0, closesFor = ""; const status = { fast: null, sweep: null, symbols: null, closes: null };
+let tierBAt = 0, tierBList = [], fastAt = 0, sweepAt = 0, symbolsAt = 0, closesFor = ""; const status = { fast: null, sweep: null, symbols: null, closes: null, push: null };
 const indexState = {}; // the last main-cycle numbers, so the fast loop can rewrite index.json without losing them
 function writeIndex(patch) { Object.assign(indexState, patch); writeJSON("data/index.json", { at: Date.now(), ...indexState, run: process.env.GITHUB_RUN_ID || null, ...status, tierB: tierBList.length }); }
 // FAST: the index tape. Eight small Yahoo requests and one push — the header, tape and index badges move every 20 seconds in regular hours.
@@ -216,14 +216,19 @@ async function watchdog(n, ok, fail, ph) {
   if (spxDown || manyFails) badStreak++; else badStreak = 0;
   if (badStreak === 2 && hook) { try { await fetch(hook, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: `⚠️ Kingnode feed: ${spxDown ? "SPX chain failed twice in a row" : fail.length + " fetch failures"} (cycle ${n}). ${fail.slice(0, 6).join(" ")}` }) }); } catch {} }
 }
-let pushing = false;
+let pushN = 0, pushMs = 0, pushSlow = 0;
+// One commit, amended and force-pushed: the branch is always a single snapshot. The catch: every amend leaves the previous commit's blobs
+// behind as loose objects in the runner's local repo (~250 changed files a minute), and git's auto-gc then repacks them in the foreground —
+// the loop stalled for 3–4 minutes at a time on the 20th. So: auto-gc off, and the local repo is thrown away and re-created every 40 pushes
+// (one full upload of ~20 MB every quarter hour, instead of an unbounded objects directory and a 14 GB runner disk filling up).
 function push() {
-  if (pushing) return; pushing = true;
+  const t0 = Date.now(); pushN++;
   try {
-    // one commit, amended every cycle and force-pushed: the branch is always a single snapshot, old blobs become garbage GitHub collects
-    execSync(`cd data && ([ -d .git ] || git init -q -b data) && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com && git add -A && (git rev-parse -q --verify HEAD >/dev/null 2>&1 && git commit -q --amend -m "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1 || git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1); git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`, { stdio: "inherit", shell: "/bin/bash", timeout: 90000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    const git = (cmd, timeout = 120000) => execSync(cmd, { stdio: "inherit", shell: "/bin/bash", timeout, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    if (!fs.existsSync("data/.git") || pushN % 40 === 1) git(`cd data && rm -rf .git && git init -q -b data && git config gc.auto 0 && git config user.name kingnode-bot && git config user.email bot@users.noreply.github.com`);
+    git(`cd data && git add -A && (git rev-parse -q --verify HEAD >/dev/null 2>&1 && git commit -q --amend -m "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1 || git commit -qm "snapshot $(date -u +%FT%TZ)" >/dev/null 2>&1); git push -q --force "https://x-access-token:${process.env.GITHUB_TOKEN}@github.com/${process.env.GITHUB_REPOSITORY}.git" data`);
   } catch (e) { console.error("push failed", e.message); }
-  finally { pushing = false; }
+  pushMs = Date.now() - t0; if (pushMs > 15000) pushSlow++; status.push = { n: pushN, lastMs: pushMs, slow: pushSlow };
 }
 // Hand the baton to the next run. workflow_dispatch is one of the two events GITHUB_TOKEN is allowed to trigger.
 async function dispatchSuccessor() {
