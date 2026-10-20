@@ -84,6 +84,7 @@ async function shortVolume() {
 }
 
 let chainAt = 0, barsAt = 0, dispatched = false; const universe = {}; const scan = {};
+try { const prev = JSON.parse(fs.readFileSync("data/scan.json", "utf8")); const cutoff = Date.now() - 26 * 3600e3; for (const [sym, r] of Object.entries(prev.rows || {})) if (r && r.at > cutoff) scan[sym] = r; console.log(`scan seeded with ${Object.keys(scan).length} rows from the branch`); } catch {} // a restart keeps yesterday's tier-B rows until they roll around again
 // The close of the session before the latest one, from the 5-minute bars: Yahoo's chartPreviousClose on a 5-day request is the close
 // before the whole window (five sessions back), which made the movers list show multi-day moves as "today".
 const ET_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -163,9 +164,13 @@ async function cycle(n, ph) {
     const rows = c.rows.filter(r => keep.has(r[0]) && Math.abs(r[2] / c.spot - 1) <= range).map(r => r.map((v, i) => typeof v === "number" && i >= 3 ? +v.toPrecision(6) : v));
     writeJSON(`data/${sym}.json`, { ...c, rows, snapshotAt: Date.now() }); try { scan[sym] = { ...scanRow(c), at: Date.now() }; } catch (e) { console.error("scan", sym, e.message); } };
   // Cboe's CDN rate-limits bursts (four in flight drew 429s on half of tier B): two in flight, a short gap between pairs, one retry after a pause on a 429
-  const chainBatch = async (list, nExp, range, tag, width = 2, gapMs = 250) => { let r429 = 0; for (let i = 0; i < list.length; i += width) { await Promise.all(list.slice(i, i + width).map(async sym => { for (let attempt = 0; attempt < 2; attempt++) { try { await snapChain(sym, nExp, range); ok.push(sym); return; } catch (e) { if (/429/.test(e.message) && attempt === 0) { r429++; await sleep(2500); continue; } fail.push(`${tag}:${sym}:${e.message}`); return; } } })); if (r429 > 25) { fail.push(`${tag}:rate-limited after ${i + width}`); break; } await sleep(gapMs); } return r429; };
-  if (n % plan.chainsEvery === 0) await chainBatch(SYMS, 8, 0.15, "c");
-  if (Date.now() - tierBAt > plan.tierB * 1000) { const market = readJSON("data/market.json", null); const tierB = mostActive(market, new Set(SYMS), Number(process.env.TIER_B || 150)); if (tierB.length) { const r429 = await chainBatch(tierB, 6, 0.12, "cb", 2, 400); tierBAt = Date.now(); tierBList = tierB; console.log(`tier B chains: ${tierB.length} most active names${r429 ? ` · ${r429} rate-limit retries` : ""}`); } }
+  const chainBatch = async (list, nExp, range, tag, width = 2, gapMs = 250) => { let r429 = 0; for (let i = 0; i < list.length; i += width) { await Promise.all(list.slice(i, i + width).map(async sym => { for (let attempt = 0; attempt < 2; attempt++) { try { await snapChain(sym, nExp, range); ok.push(sym); return; } catch (e) { if (/429/.test(e.message) && attempt === 0) { r429++; await sleep(2500); continue; } fail.push(`${tag}:${sym}:${e.message}`); return; } } })); if (r429 >= 3) { fail.push(`${tag}:rate-limited after ${i + width}`); break; } await sleep(gapMs); } return r429; };
+  if (n % plan.chainsEvery === 0) await chainBatch(SYMS, 8, 0.15, "c", 1, 300);
+  // tier B rolls: the list of the 150 most active names is re-picked from the sweep every 15 min, and every cycle takes the next dozen —
+  // a steady ~12 chains a minute instead of a 150-request burst that Cboe's limiter answered with 429s
+  if (!tierBList.length || Date.now() - tierBAt > plan.tierB * 1000) { const market = readJSON("data/market.json", null); const tierB = mostActive(market, new Set(SYMS), Number(process.env.TIER_B || 150)); if (tierB.length) { tierBList = tierB; tierBAt = Date.now(); tierBPos = tierBPos % tierB.length; } }
+  if (tierBList.length) { const per = Number(process.env.TIER_B_PER_CYCLE || 12); const slice = []; for (let i = 0; i < Math.min(per, tierBList.length); i++) slice.push(tierBList[(tierBPos + i) % tierBList.length]);
+    const r429 = await chainBatch(slice, 6, 0.12, "cb", 1, 350); if (r429 < 3) tierBPos = (tierBPos + slice.length) % tierBList.length; /* rate-limited: the same dozen go again next cycle */ }
   if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan); }
   if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
   const loopEnd = end; const nextIn = plan.every * 1000;
@@ -174,7 +179,7 @@ async function cycle(n, ph) {
   console.log(`cycle ${n} · ${ph} · ${((Date.now() - t0) / 1000).toFixed(1)}s · chains ${ok.length}${fail.length ? " · fail " + fail.slice(0, 12).join(" ") + (fail.length > 12 ? ` +${fail.length - 12}` : "") : ""}`);
   if (PUSH) push();
 }
-let tierBAt = 0, tierBList = [], fastAt = 0, sweepAt = 0, symbolsAt = 0, closesFor = ""; const status = { fast: null, sweep: null, symbols: null, closes: null, push: null };
+let tierBAt = 0, tierBList = [], tierBPos = 0, fastAt = 0, sweepAt = 0, symbolsAt = 0, closesFor = ""; const status = { fast: null, sweep: null, symbols: null, closes: null, push: null };
 // GitHub's raw CDN caches every path for five minutes and ignores the query string (x-cache: HIT on a unique ?t= — measured 2026-10-20), so a
 // file rewritten every 20 s reaches a browser every 5 min. A path that changes with time is a cache miss every time: the tape is also written
 // as live/q-<20-second bucket>.json and the universe as live/u-<minute bucket>.json; the app asks for the bucket a little behind "now" and
