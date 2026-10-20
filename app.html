@@ -500,7 +500,7 @@ async function loadTape(){
     const res = await Promise.all(TAPE.filter(s=>s!=="XSP").map(async sym => { try { const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=1m&range=1d&includePrePost=true`); if (!r || !r.ok) return null; const j = await r.json(); const res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) return null; const cl = res0.indicators?.quote?.[0]?.close||[], ts = res0.timestamp||[]; let last = +m.regularMarketPrice||0, lastT = (m.regularMarketTime||0)*1000; for (let i = cl.length-1; i >= 0; i--) if (cl[i] != null){ last = cl[i]; lastT = ts[i]*1000; break; } return {symbol:sym, price:+m.regularMarketPrice||last, prev:+(m.chartPreviousClose ?? m.previousClose ?? last), last, state:m.marketState||null, t:lastT, src:"proxy"}; } catch { return null; } }));
     got = res.filter(Boolean); const spx = got.find(q=>q.symbol==="SPX"); if (spx) got.push({...spx, symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10});
   }
-  if (!got.length){ const snap = await snapshotJson("quotes.json", 8); if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot", stale: !!snap._stale, snapAt: snap._at})); }
+  if (!got.length){ const snap = await liveJson("q", 20, 30000, "quotes.json", 8); if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot", stale: !!snap._stale, snapAt: snap._at})); }
   if (!got.length){
     const syms = TAPE.filter(s => s !== "XSP");
     const res = await Promise.all(syms.map(tapeFromCboe)); got = res.filter(Boolean);
@@ -516,7 +516,7 @@ function extState(q){ // "PRE" | "POST" | false — from the feed's marketState,
 // Feed health: data/index.json is written every cycle by the GitHub Actions loop. Stale during market hours = the loop died or GitHub never started it.
 let feedTimer = null;
 async function loadFeedStatus(){ const j = await snapshotJson("index.json", 6); if (j) S.feed = j; renderFeedBanner(); renderStatus(); clearTimeout(feedTimer); feedTimer = setTimeout(loadFeedStatus, 60000); }
-function feedStale(){ const f = S.feed; if (!f) return false; return isStale(f.at, 6); }
+function feedStale(){ const f = S.feed; if (!f) return false; return isStale(f.at, 9); } // index.json rides the 5-minute CDN cache; nine minutes is a real stall, not a cache
 function renderFeedBanner(){
   let b = document.getElementById("feedBanner"); if (!b){ b = h("div",{id:"feedBanner",class:"notice",style:{margin:"0 14px 8px",borderColor:"var(--gold)",color:"var(--gold)",display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}); document.getElementById("tvChart")?.before(b); }
   const f = S.feed;
@@ -601,6 +601,9 @@ async function loadRun(){
     data = synthChain(sym); demo = true;
   }
   if (mySeq !== loadSeq || S.sym !== sym) return; // a newer request superseded this one (symbol switched mid-flight)
+  // the feed writes a chain every three minutes and the app asks every thirty seconds: an identical snapshot is not worth re-rendering every panel for
+  if (!demo && S.chain && !S.demo && S.chain.symbol === data.symbol && (data.snapAt || data.asOf) === (S.chain.snapAt || S.chain.asOf) && S.chain.rows.length === data.rows.length){
+    renderLiveQuote(); renderAsOf(); renderStatus(); renderFeedBanner(); mountChart(); if (barsCurrent() && !S.barsDemo && Date.now() - (S.barsAt||0) > 55000) loadBars(); return; }
   if (S.chain && S.chain.symbol !== data.symbol){ closeInspector(); S.inst = null; }
   if (!demo && S.chain && !S.demo) recordDerived(S.chain, data);
   S.chain = data; S.demo = demo; S.err = "";
@@ -615,6 +618,16 @@ async function loadRun(){
 // Snapshot feed: the GitHub Action writes chains/bars/quotes to the `data` branch every 5 minutes; raw.githubusercontent allows browser reads.
 const DATA_BASE = "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
 // Returns the snapshot with its age attached (_at, _age ms, _stale). Old real data beats fresh fake data, so callers show the age instead of dropping it.
+// The raw CDN caches each path for five minutes whatever the query string, so the feed also writes the tape every 20 s and the universe every
+// minute under time-bucketed names (live/q-<bucket>.json, live/u-<bucket>.json). A path nobody has asked for yet is a cache miss: asking for
+// the bucket from ~30 s ago (long enough for the push to land) gives a fresh file; a miss falls back to the plain file.
+const LIVE_MISS = new Set();
+async function liveJson(kind, secs, behindMs, plain, maxAgeMin){
+  const b = Math.floor((Date.now() - behindMs) / (secs * 1000));
+  for (const bucket of [b, b - 1]){ const name = `live/${kind}-${bucket}.json`; if (LIVE_MISS.has(name)) continue;
+    try { const r = await fetch(DATA_BASE + name, {cache:"no-store"}); if (r.ok){ const j = await r.json(); const t = j.at || 0; if (t){ j._at = t; j._age = Date.now() - t; j._stale = maxAgeMin ? isStale(t, maxAgeMin) : false; } return j; } LIVE_MISS.add(name); } catch { LIVE_MISS.add(name); } }
+  return snapshotJson(plain, maxAgeMin);
+}
 async function snapshotJson(name, maxAgeMin){ try { const bust = name === "quotes.json" ? Math.floor(Date.now()/15000) : Math.floor(Date.now()/60000); const r = await fetch(DATA_BASE + name + "?t=" + bust, {cache:"no-store"}); /* the tape file changes every 20 s on the feed; the CDN keys on the query string */ if (!r.ok) return null; const j = await r.json(); const t = j.snapshotAt || j.at || 0; if (t){ j._at = t; j._age = Date.now() - t; j._stale = maxAgeMin ? isStale(t, maxAgeMin) : false; } return j; } catch { return null; } }
 // External fetch: direct, or through the user's proxy worker when configured (static hosting + CORS-blocked feeds)
 const PUBLIC_RELAYS = [u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, u => `https://corsproxy.io/?${encodeURIComponent(u)}`];
@@ -959,6 +972,12 @@ function notice(msg, err){ let host = document.getElementById("toasts"); if (!ho
 function renderChips(){
   document.getElementById("chips").replaceChildren(...QUICK.filter(s => !halalOnly() || halalStatus(s).s !== "excluded").map(s => h("button",{class:"chip", "aria-pressed":String(s===S.sym), title:NAMES.get(s)||"", onclick:()=>goSym(s)}, s)));
 }
+// the "live / stale / no chain · chain 3:12 PM · 15-min delayed" line under the price; also refreshed when a refresh brings back the same snapshot
+function renderAsOf(bq){ const d = S.chain; if (!d) return; if (bq === undefined) bq = S.demo ? bestQuote() : null;
+  const chainT = d.snapAt || (d.asOf ? Date.parse(String(d.asOf).replace(" ","T")) : 0); const chainStale = !S.demo && (d.stale || isStale(chainT, 40));
+  const noChain = S.demo && !!bq; // real price, placeholder chain
+  document.getElementById("asof").replaceChildren(h("span",{class:"live" + (S.demo ? " demo" : chainStale ? " stale" : "")}, h("i",null), noChain ? "no chain" : S.demo ? "demo" : chainStale ? "stale" : "live"), h("span",{id:"cd"},""), noChain ? h("span",{title:"the price is the feed's; there is no options chain for this name on it"}, "price " + (bq.t ? whenLabel(bq.t) : "from the feed")) : h("span",{title: chainT ? "last chain snapshot " + ageLabel(chainT) : ""}, "chain " + (chainT ? whenLabel(chainT) : new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}))), h("span",{class:"badge"+(S.demo?" demo":chainStale?" warn":"")}, noChain ? "No options chain" : S.demo ? "Demo data" : chainStale ? "Feed stale · " + ageLabel(chainT) : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
+}
 function renderAll(){
   const d = S.chain, c = S.calc;
   document.getElementById("symName").textContent = `${S.sym}${NAMES.get(S.sym) ? " · " + NAMES.get(S.sym) : ""}`;
@@ -968,9 +987,7 @@ function renderAll(){
   const chg = document.getElementById("chg");
   if (S.demo){ if (bq && bq.prev){ const px = bq.last || bq.price, ch = px - bq.prev; chg.textContent = `${ch>=0?"+":""}${fmt(ch,2)} (${pct(ch/bq.prev*100)})`; chg.className = "chg num " + (ch>=0?"up":"dn"); } else { chg.textContent = NAMES.has(S.sym) ? "no quote yet" : "unknown ticker"; chg.className = "chg hint"; } }
   else { const pc = d.changePct != null ? d.changePct : (d.spot && d.change != null && d.spot !== d.change ? d.change/(d.spot - d.change)*100 : 0); chg.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(pc)})`; chg.className = "chg num " + (d.change>=0?"up":"dn"); } // Cboe's own percent: after hours its spot is the AH print while its change is the session's, so recomputing from the two would be wrong
-  const chainT = d.snapAt || (d.asOf ? Date.parse(String(d.asOf).replace(" ","T")) : 0); const chainStale = !S.demo && (d.stale || isStale(chainT, 40));
-  const noChain = S.demo && !!bq; // real price, placeholder chain
-  document.getElementById("asof").replaceChildren(h("span",{class:"live" + (S.demo ? " demo" : chainStale ? " stale" : "")}, h("i",null), noChain ? "no chain" : S.demo ? "demo" : chainStale ? "stale" : "live"), h("span",{id:"cd"},""), noChain ? h("span",{title:"the price is the feed's; there is no options chain for this name on it"}, "price " + (bq.t ? whenLabel(bq.t) : "from the feed")) : h("span",{title: chainT ? "last chain snapshot " + ageLabel(chainT) : ""}, "chain " + (chainT ? whenLabel(chainT) : new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"}))), h("span",{class:"badge"+(S.demo?" demo":chainStale?" warn":"")}, noChain ? "No options chain" : S.demo ? "Demo data" : chainStale ? "Feed stale · " + ageLabel(chainT) : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
+  renderAsOf(bq);
   renderFeedBanner();
   updateAh();
   // levels
@@ -2839,7 +2856,7 @@ function symInfo(sym){ const r = SD.names?.get(sym); return r ? { sym:r[0], name
 const UV = { at:0, q:null, loading:false, stale:false };
 async function loadUniverse(force){
   if (UV.pending) return UV.pending; if (!force && Date.now() - UV.at < 30e3) return UV.q;
-  UV.pending = (async () => { try { const u = await snapshotJson("universe.json", 10); if (u?.q){ UV.q = u.q; UV.at = Date.now(); UV.stale = !!u._stale; UV.snapAt = u._at; } } catch {} UV.pending = null; return UV.q; })(); return UV.pending;
+  UV.pending = (async () => { try { const u = await liveJson("u", 60, 90000, "universe.json", 10); if (u?.q){ UV.q = u.q; UV.at = Date.now(); UV.stale = !!u._stale; UV.snapAt = u._at; } } catch {} UV.pending = null; return UV.q; })(); return UV.pending;
 }
 function universeQuote(sym){ const r = UV.q?.[sym]; if (!r || !r[0]) return null; const reg = r[3] ?? r[0]; return { symbol:sym, price:reg, prev:(r[1] ?? reg), last:r[0], t:r[2], state:r[4], src:"feed", stale:UV.stale, snapAt:UV.snapAt }; }
 async function loadHalalQuotes(){

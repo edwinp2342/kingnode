@@ -156,7 +156,7 @@ async function cycle(n, ph) {
     }
     barsAt = Date.now();
     // one small file with last/prev/regular price for every ticker: watchlist, halal screen, movers and the scanner read this instead of 300 files
-    fs.writeFileSync("data/universe.json", JSON.stringify({ at: barsAt, phase: ph, cols: ["last", "prevClose", "lastT", "regularPrice", "state"], q: universe }));
+    { const doc = { at: barsAt, phase: ph, cols: ["last", "prevClose", "lastT", "regularPrice", "state"], q: universe }; writeJSON("data/universe.json", doc); liveWrite("u", 60, doc); }
   }
   // chains: the core list every Nth cycle, four in flight; the most active optionable names (tier B, from the market sweep) on their own clock
   const snapChain = async (sym, nExp, range) => { const c = await fetchChain(sym); const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, nExp), keep = new Set(exps);
@@ -175,6 +175,14 @@ async function cycle(n, ph) {
   if (PUSH) push();
 }
 let tierBAt = 0, tierBList = [], fastAt = 0, sweepAt = 0, symbolsAt = 0, closesFor = ""; const status = { fast: null, sweep: null, symbols: null, closes: null, push: null };
+// GitHub's raw CDN caches every path for five minutes and ignores the query string (x-cache: HIT on a unique ?t= — measured 2026-10-20), so a
+// file rewritten every 20 s reaches a browser every 5 min. A path that changes with time is a cache miss every time: the tape is also written
+// as live/q-<20-second bucket>.json and the universe as live/u-<minute bucket>.json; the app asks for the bucket a little behind "now" and
+// falls back to the plain file. Old buckets are deleted so the branch stays small.
+function liveWrite(kind, secs, doc) {
+  try { fs.mkdirSync("data/live", { recursive: true }); const b = Math.floor(Date.now() / (secs * 1000)); writeJSON(`data/live/${kind}-${b}.json`, doc);
+    for (const f of fs.readdirSync("data/live")) { const m = f.match(/^([qu])-(\d+)\.json$/); if (m && m[1] === kind && b - Number(m[2]) > (kind === "q" ? 9 : 4)) fs.unlinkSync(`data/live/${f}`); } } catch (e) { console.error("live write", e.message); }
+}
 const indexState = {}; // the last main-cycle numbers, so the fast loop can rewrite index.json without losing them
 function writeIndex(patch) { Object.assign(indexState, patch); writeJSON("data/index.json", { at: Date.now(), ...indexState, run: process.env.GITHUB_RUN_ID || null, ...status, tierB: tierBList.length }); }
 // FAST: the index tape. Eight small Yahoo requests and one push — the header, tape and index badges move every 20 seconds in regular hours.
@@ -182,7 +190,7 @@ async function fastTick(ph) {
   const t0 = Date.now(); const quotes = []; const fail = [];
   await Promise.all(TAPE.map(async sym => { try { quotes.push(await quote(sym)); } catch (e) { fail.push(`q:${sym}:${e.message}`); } }));
   const spx = quotes.find(q => q.symbol === "SPX"); if (spx) quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 });
-  if (quotes.length) writeJSON("data/quotes.json", { at: Date.now(), phase: ph, quotes });
+  if (quotes.length) { const doc = { at: Date.now(), phase: ph, quotes }; writeJSON("data/quotes.json", doc); liveWrite("q", 20, doc); }
   fastAt = Date.now(); status.fast = { at: fastAt, ms: Date.now() - t0, n: quotes.length, fail };
   return quotes.length;
 }
