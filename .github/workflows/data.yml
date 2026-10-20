@@ -1,7 +1,7 @@
 name: market data feed
-# Each run is a 5.5-hour snapshot loop that dispatches its own successor a few minutes before it ends, so the feed
-# keeps itself alive (24/5, slow heartbeat when the market is closed). The hourly cron is only a restarter: GitHub
-# skips scheduled runs freely (it fired once on Fri 10/9 and once on Mon 10/12), so nothing here depends on it.
+# Each dispatched run is a 5.5-hour snapshot loop that dispatches its own successor a few minutes before it ends, so the feed
+# keeps itself alive (24/5, slow heartbeat when the market is closed). The hourly cron is only a watchdog: it checks the feed
+# and dispatches a loop when nothing has been written for ten minutes. GitHub skips scheduled runs freely, so nothing depends on it.
 on:
   schedule:
     - cron: "0 8-23 * * 1-5"
@@ -14,7 +14,11 @@ on:
 permissions:
   contents: write
   actions: write        # lets the loop dispatch the next run with GITHUB_TOKEN
-concurrency: { group: data-feed, cancel-in-progress: true }
+# Scheduled runs are a watchdog in their own group: they check the feed and only dispatch a loop when it has gone quiet, so a healthy
+# loop is never cancelled by the clock. Dispatched runs (the loop and its self-dispatched successors) share one group, cancel-in-progress.
+concurrency:
+  group: data-feed-${{ github.event_name }}
+  cancel-in-progress: true
 jobs:
   feed:
     runs-on: ubuntu-latest
@@ -23,7 +27,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
+      - name: watchdog (scheduled runs only — dispatch a loop if the feed is stale, then stop)
+        if: github.event_name == 'schedule'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          FEED_REF: ${{ github.ref_name }}
+        run: node scripts/watchdog.mjs
       - name: snapshot loop (~1 min cadence while the market is open, hands off to the next run)
+        if: github.event_name != 'schedule'
         env:
           LOOP_MINUTES: ${{ github.event.inputs.loop_minutes || '330' }}
           EVERY_SEC: "60"
