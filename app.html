@@ -500,7 +500,7 @@ async function loadTape(){
     const res = await Promise.all(TAPE.filter(s=>s!=="XSP").map(async sym => { try { const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=1m&range=1d&includePrePost=true`); if (!r || !r.ok) return null; const j = await r.json(); const res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) return null; const cl = res0.indicators?.quote?.[0]?.close||[], ts = res0.timestamp||[]; let last = +m.regularMarketPrice||0, lastT = (m.regularMarketTime||0)*1000; for (let i = cl.length-1; i >= 0; i--) if (cl[i] != null){ last = cl[i]; lastT = ts[i]*1000; break; } return {symbol:sym, price:+m.regularMarketPrice||last, prev:+(m.chartPreviousClose ?? m.previousClose ?? last), last, state:m.marketState||null, t:lastT, src:"proxy"}; } catch { return null; } }));
     got = res.filter(Boolean); const spx = got.find(q=>q.symbol==="SPX"); if (spx) got.push({...spx, symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10});
   }
-  if (!got.length){ const snap = await liveJson("q", 20, 30000, "quotes.json", 8); if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot", stale: !!snap._stale, snapAt: snap._at})); }
+  if (!got.length){ const snap = await liveJson("q", 20, 30000, "quotes.json", 8); if (snap?._at) S.feedBeat = Math.max(S.feedBeat || 0, snap._at); /* the live bucket is the freshest proof the loop is alive (index.json rides the 5-minute cache) */ if (snap?.quotes?.length) got = snap.quotes.map(q => ({...q, src:"snapshot", stale: !!snap._stale, snapAt: snap._at})); }
   if (!got.length){
     const syms = TAPE.filter(s => s !== "XSP");
     const res = await Promise.all(syms.map(tapeFromCboe)); got = res.filter(Boolean);
@@ -516,12 +516,13 @@ function extState(q){ // "PRE" | "POST" | false — from the feed's marketState,
 // Feed health: data/index.json is written every cycle by the GitHub Actions loop. Stale during market hours = the loop died or GitHub never started it.
 let feedTimer = null;
 async function loadFeedStatus(){ const j = await snapshotJson("index.json", 6); if (j) S.feed = j; renderFeedBanner(); renderStatus(); clearTimeout(feedTimer); feedTimer = setTimeout(loadFeedStatus, 60000); }
-function feedStale(){ const f = S.feed; if (!f) return false; return isStale(f.at, 9); } // index.json rides the 5-minute CDN cache; nine minutes is a real stall, not a cache
+function feedLastWrite(){ return Math.max(S.feed?.at || 0, S.feedBeat || 0); }
+function feedStale(){ const f = S.feed; if (!f) return false; return isStale(feedLastWrite(), 6); } // the live tape bucket is the heartbeat; index.json alone rides the 5-minute CDN cache
 function renderFeedBanner(){
   let b = document.getElementById("feedBanner"); if (!b){ b = h("div",{id:"feedBanner",class:"notice",style:{margin:"0 14px 8px",borderColor:"var(--gold)",color:"var(--gold)",display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}); document.getElementById("tvChart")?.before(b); }
   const f = S.feed;
   if (!f || !feedStale()){ b.hidden = true; return; }
-  b.replaceChildren(h("span",{style:{flex:1,minWidth:"240px"}}, `Feed stale — the data loop last wrote ${ageLabel(f.at)} (${whenLabel(f.at)}, ${f.phase||"?"} phase, cycle ${f.cycle}). Everything below is from that moment, not now.`),
+  b.replaceChildren(h("span",{style:{flex:1,minWidth:"240px"}}, `Feed stale — the data loop last wrote ${ageLabel(feedLastWrite())} (${whenLabel(feedLastWrite())}, ${f.phase||"?"} phase, cycle ${f.cycle}). Everything below is from that moment, not now.`),
     h("button",{class:"btn small gold", onclick:restartFeed}, "Restart feed"), h("a",{class:"btn small", href:"https://github.com/edwinp2342/kingnode/actions/workflows/data.yml", target:"_blank", rel:"noopener"}, "Open Actions"));
   b.hidden = false;
 }
@@ -957,7 +958,7 @@ function renderStatus(){
     row("Chain time", d?.asOf ? new Date(d.asOf).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}) : "—", null),
     row("Bars", S.barsDemo ? "DEMO — feed failed" : S.bars ? `${S.bars.length} bars` : "loading", S.bars ? !S.barsDemo : null),
     row("Flow", S.flow ? (S.flowDemo ? "demo" : S.flow.derived === "chain" ? `session volume · ${S.flow.trades.length} contracts` : S.flow.derived ? `derived · ${S.flow.trades.length} prints` : "live") : "—", S.flow ? !S.flowDemo : null),
-    row("Feed loop", S.feed ? `${S.feed.phase||"?"} · wrote ${ageLabel(S.feed.at)}` : "no index yet", S.feed ? !feedStale() : null),
+    row("Feed loop", S.feed ? `${S.feed.phase||"?"} · wrote ${ageLabel(feedLastWrite())}${S.feed.push ? ` · push ${(S.feed.push.lastMs/1000).toFixed(1)}s` : ""}` : "no index yet", S.feed ? !feedStale() : null),
     row("Tape", tapeQuotes.size ? `${tapeQuotes.size} tickers · ${[...tapeQuotes.values()][0]?.demo ? "demo" : ([...tapeQuotes.values()][0]?.src || "server")}` : "loading", tapeQuotes.size ? ![...tapeQuotes.values()][0]?.demo : null),
     row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
     row("Host", location.hostname.includes("github.io") ? "static (no server)" : location.hostname, null),
