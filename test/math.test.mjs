@@ -216,3 +216,38 @@ test("Ideas: the label means the backtested rule — trend + flip alone is not a
   // regime off (SPY under its 50-EMA) blocks the Buy label
   ctx.ID.spy = mk(120, 500, i => i < 100 ? 0.003 : -0.01); const off = ctx.analyzeTicker("X", chain(spot), up); assert.equal(off.regimeUp, false); assert.notEqual(off.signal, "Buy");
 });
+
+// ---------- price series: aggregation, live patches, the forming bar ----------
+test("series: 1-minute bars aggregate on the 09:30 grid, live minutes rebuild the forming 5-minute bar, a print stretches it", () => {
+  const sctx = { Math, Date, Number, Map, Set, Array, Object, isFinite, Intl, String, console };
+  vm.createContext(sctx);
+  const grabConst = name => { const i = js.indexOf(`const ${name} = `); const j = js.indexOf("\n", i); return js.slice(i, j); };
+  vm.runInContext([grabConst("IV_MIN"), grabConst("ET_CACHE"), grab("etInfo"), grab("isRegularBar"), grab("bucketStart"), grab("aggregateBars"), grab("mergeBars"), grab("foldMinutes"), grab("barDay"), grab("foldQuote"), grab("foldQuoteBar"), grab("barsForInterval")].join("\n") + "\nthis.f = { etInfo, isRegularBar, bucketStart, aggregateBars, mergeBars, foldMinutes, foldQuote, barsForInterval };", sctx);
+  const f = sctx.f;
+  const open = Date.parse("2026-10-22T09:30:00-04:00"); const m = k => open + k * 60000;
+  // a session of 1-minute bars 09:30 → 16:00
+  const mins = []; for (let k = 0; k <= 390; k++) mins.push([m(k), 100 + k * 0.01, 100 + k * 0.01 + 0.05, 100 + k * 0.01 - 0.05, 100 + (k + 1) * 0.01, 100]);
+  const b5 = f.aggregateBars(mins, 1, 5); assert.equal(b5.length, 79, "78 five-minute bars + the 16:00 closing bar"); assert.equal(b5[0][0], m(0)); assert.equal(b5[0][5], 500, "volume sums"); assert.equal(b5[0][4], mins[4][4], "close of the fifth minute");
+  const b60 = f.aggregateBars(mins, 1, 60); assert.equal(b60[0][0], m(0), "hourly bars start at 09:30, not 09:00"); assert.equal(b60[1][0], m(60));
+  assert.equal(f.bucketStart(m(7), 5), m(5)); assert.equal(f.bucketStart(m(61), 60), m(60)); assert.equal(f.bucketStart(m(61), 30), m(60)); assert.equal(f.bucketStart(m(89), 30), m(60));
+  assert.ok(f.isRegularBar(m(390)) && !f.isRegularBar(m(391)) && !f.isRegularBar(open - 60000), "16:00 is the closing print; 16:01 and 09:29 are not regular");
+  // a 5-minute base patched by 1-minute live bars: the forming bar is rebuilt from the minutes it has in full
+  const base = { kind: "5m", bars: b5.slice(0, 10).map(b => b.slice()), at: Date.now() };
+  const live = [45, 46, 47, 48, 49, 50, 51, 52].map(k => [m(k), 200, 210, 190, 205, 1000]);
+  assert.ok(f.foldMinutes(base, live)); assert.equal(base.bars.length, 11, "09:45 bucket rebuilt in place, 09:50 bucket appended");
+  const b45 = base.bars[9]; assert.equal(b45[2], 210); assert.equal(b45[5], 5000, "five minutes of volume"); const b50 = base.bars[10]; assert.equal(b50[0], m(50)); assert.equal(b50[5], 3000, "three minutes so far");
+  assert.ok(!f.foldMinutes(base, live), "the same patch again changes nothing");
+  // a print inside the forming bar moves its close and stretches high/low; a print in the next bucket opens a bar
+  assert.ok(f.foldQuote(base, 215, m(52) + 30000)); assert.equal(base.bars[10][4], 215); assert.equal(base.bars[10][2], 215);
+  assert.ok(f.foldQuote(base, 216, m(55) + 5000)); assert.equal(base.bars.length, 12); assert.equal(base.bars[11][0], m(55)); assert.equal(base.bars[11][1], 216);
+  assert.ok(!f.foldQuote(base, 216, m(40)), "an old print is ignored");
+  // the interval on screen is built from the base; the extended filter drops pre/post bars; 1m from a 5m base stays 5m
+  const withPost = { kind: "1m", bars: [...mins, [m(395), 1, 1, 1, 1, 1]], at: 0 };
+  assert.equal(f.barsForInterval(withPost, "1m", false).length, 391); assert.equal(f.barsForInterval(withPost, "1m", true).length, 392);
+  assert.equal(f.barsForInterval(withPost, "15m", true).length, 27, "26 quarter-hours + 16:00 closing bar... plus the 16:05 post bar folds into the 16:00 bucket");
+  assert.equal(f.barsForInterval({ kind: "5m", bars: b5, at: 0 }, "1m", true).length, b5.length, "cannot invent minutes from five-minute bars");
+  // a daily base: a print on the same ET day updates the day's bar, the next day opens one
+  const daily = { kind: "1d", bars: [[Date.parse("2026-10-21T00:00:00Z"), 10, 11, 9, 10.5, 5], [Date.parse("2026-10-22T00:00:00Z"), 10.5, 10.8, 10.2, 10.6, 3]], at: 0 };
+  assert.ok(f.foldQuote(daily, 11.2, Date.parse("2026-10-22T15:00:00-04:00"))); assert.equal(daily.bars[1][4], 11.2); assert.equal(daily.bars[1][2], 11.2); assert.equal(daily.bars.length, 2);
+  assert.ok(f.foldQuote(daily, 11.3, Date.parse("2026-10-23T10:00:00-04:00"))); assert.equal(daily.bars.length, 3); assert.equal(f.etInfo(daily.bars[2][0]).min, 570, "the new session's bar is stamped at its open");
+});

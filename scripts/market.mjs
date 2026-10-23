@@ -75,15 +75,15 @@ async function chartMeta(sym, range = "1d", interval = "1m", timeoutMs = 9000) {
 async function pool(items, size, fn) { let i = 0; const errors = []; const next = async () => { while (i < items.length) { const it = items[i++]; try { await fn(it); } catch (e) { errors.push([it, e.message]); } } }; await Promise.all(Array.from({ length: Math.min(size, items.length) }, next)); return errors; }
 // last / previous close / change% / volume for every optionable name. Adaptive: a sweep that trips Yahoo's limiter (429s or many timeouts)
 // reports it so the caller spaces the next one out. ~4,000 names at 12 in flight takes about a minute.
-export async function sweepMarket(symbols, { concurrency = 12, path = "data/market.json" } = {}) {
-  const prev = readJSON(path, null); const q = { ...(prev?.q || {}) }; const t0 = Date.now(); let ok = 0, r429 = 0;
+export async function sweepMarket(symbols, { concurrency = 12, path = "data/market.json", closes = null } = {}) {
+  const prev = readJSON(path, null); const q = { ...(prev?.q || {}) }; const t0 = Date.now(); let ok = 0, r429 = 0; const avg = closes?.c || {};
   const errors = await pool(symbols, concurrency, async sym => {
     const res0 = await chartMeta(sym); const m = res0.meta; const last = +m.regularMarketPrice || 0; if (!last) throw new Error("no price");
     const prevC = +(m.chartPreviousClose ?? m.previousClose ?? 0) || null;
-    q[sym] = [+last.toFixed(4), prevC ? +prevC.toFixed(4) : null, prevC ? +((last / prevC - 1) * 100).toFixed(2) : null, +(m.regularMarketVolume || 0), (m.regularMarketTime || 0) * 1000, m.marketState || null]; ok++;
+    q[sym] = [+last.toFixed(4), prevC ? +prevC.toFixed(4) : null, prevC ? +((last / prevC - 1) * 100).toFixed(2) : null, +(m.regularMarketVolume || 0), (m.regularMarketTime || 0) * 1000, m.marketState || null, avg[sym + ":v"] || null]; ok++; // the 20-day average volume rides along so relative volume needs no second file
   });
   r429 = errors.filter(e => e[1] === "429").length;
-  const out = { at: Date.now(), ms: Date.now() - t0, n: symbols.length, ok, fail: errors.length, r429, cols: "last prevClose chgPct volume lastT state", q };
+  const out = { at: Date.now(), ms: Date.now() - t0, n: symbols.length, ok, fail: errors.length, r429, cols: "last prevClose chgPct volume lastT state avgVol20", q };
   writeJSON(path, out); return out;
 }
 // 60 daily closes per optionable name — enough for the 21/50-EMA, RSI and relative-strength rules on any name. Once per session.
