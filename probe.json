@@ -1,0 +1,90 @@
+{
+ "at": "2026-10-23T03:30:59.858Z",
+ "et": "10/22, 23:30:59",
+ "results": {
+  "yahooNVDA": {
+   "status": 200,
+   "ms": 100,
+   "bytes": 60331,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": "14544"
+   },
+   "sample": "{\"metaKeys\":[\"currency\",\"symbol\",\"exchangeName\",\"fullExchangeName\",\"instrumentType\",\"firstTradeDate\",\"regularMarketTime\",\"hasPrePostMarketData\",\"gmtoffset\",\"timezone\",\"exchangeTimezoneName\",\"regularMarketPrice\",\"regularMarketChangePercent\",\"fulldayPrice\",\"fulldayChange\",\"fulldayChangePercent\",\"fiftyTwoWeekHigh\",\"fiftyTwoWeekLow\",\"regularMarketDayHigh\",\"regularMarketDayLow\",\"regularMarketVolume\",\"longName\",\"shortName\",\"chartPreviousClose\",\"previousClose\",\"scale\",\"priceHint\",\"currentTradingPeriod\",\"tradingPeriods\",\"dataGranularity\",\"range\",\"validRanges\"],\"ctp\":{\"pre\":{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400},\"regular\":{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400},\"post\":{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}},\"tradingPeriodsKeys\":[\"pre\",\"post\",\"regular\"],\"nBars\":944,\"firstET\":\"10/22, 04:00:00\",\"lastET\":\"10/22, 19:59:58\",\"lastClose\":212.3831,\"regularMarketPrice\":212.21,\"fulldayPrice\":213.87,\"fulldayChange\":-8.1,\"fulldayChangePercent\":-3.649,\"chartPreviousClose\":221.97,\"previousClose\":221.97,\"tradingPeriods\":{\"pre\":[[{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400}]],\"post\":[[{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}]],\"regular\":[[{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400}]]},\"regularMarketTime\":\"10/22, 16:00:00\",\"hasPrePost\":true}"
+  },
+  "yahooAAPL": {
+   "status": 200,
+   "ms": 61,
+   "bytes": 55583,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": null
+   },
+   "sample": "{\"metaKeys\":[\"currency\",\"symbol\",\"exchangeName\",\"fullExchangeName\",\"instrumentType\",\"firstTradeDate\",\"regularMarketTime\",\"hasPrePostMarketData\",\"gmtoffset\",\"timezone\",\"exchangeTimezoneName\",\"regularMarketPrice\",\"regularMarketChangePercent\",\"fulldayPrice\",\"fulldayChange\",\"fulldayChangePercent\",\"fiftyTwoWeekHigh\",\"fiftyTwoWeekLow\",\"regularMarketDayHigh\",\"regularMarketDayLow\",\"regularMarketVolume\",\"longName\",\"shortName\",\"chartPreviousClose\",\"previousClose\",\"scale\",\"priceHint\",\"currentTradingPeriod\",\"tradingPeriods\",\"dataGranularity\",\"range\",\"validRanges\"],\"ctp\":{\"pre\":{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400},\"regular\":{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400},\"post\":{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}},\"tradingPeriodsKeys\":[\"pre\",\"post\",\"regular\"],\"nBars\":867,\"firstET\":\"10/22, 04:00:00\",\"lastET\":\"10/22, 19:59:21\",\"lastClose\":348.6,\"regularMarketPrice\":348.22,\"fulldayPrice\":347.35,\"fulldayChange\":3.36,\"fulldayChangePercent\":0.977,\"chartPreviousClose\":343.99,\"previousClose\":343.99,\"tradingPeriods\":{\"pre\":[[{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400}]],\"post\":[[{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}]],\"regular\":[[{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400}]]},\"regularMarketTime\":\"10/22, 16:00:01\",\"hasPrePost\":true}"
+  },
+  "yahooSPY": {
+   "status": 200,
+   "ms": 73,
+   "bytes": 57234,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": null
+   },
+   "sample": "{\"metaKeys\":[\"currency\",\"symbol\",\"exchangeName\",\"fullExchangeName\",\"instrumentType\",\"firstTradeDate\",\"regularMarketTime\",\"hasPrePostMarketData\",\"gmtoffset\",\"timezone\",\"exchangeTimezoneName\",\"regularMarketPrice\",\"regularMarketChangePercent\",\"fulldayPrice\",\"fulldayChange\",\"fulldayChangePercent\",\"fiftyTwoWeekHigh\",\"fiftyTwoWeekLow\",\"regularMarketDayHigh\",\"regularMarketDayLow\",\"regularMarketVolume\",\"longName\",\"shortName\",\"chartPreviousClose\",\"previousClose\",\"scale\",\"priceHint\",\"currentTradingPeriod\",\"tradingPeriods\",\"dataGranularity\",\"range\",\"validRanges\"],\"ctp\":{\"pre\":{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400},\"regular\":{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400},\"post\":{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}},\"tradingPeriodsKeys\":[\"pre\",\"post\",\"regular\"],\"nBars\":927,\"firstET\":\"10/22, 04:00:00\",\"lastET\":\"10/22, 19:59:37\",\"lastClose\":764.1,\"regularMarketPrice\":763.96,\"fulldayPrice\":763.87,\"fulldayChange\":-9.124,\"fulldayChangePercent\":-1.18,\"chartPreviousClose\":773.09,\"previousClose\":773.09,\"tradingPeriods\":{\"pre\":[[{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400}]],\"post\":[[{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}]],\"regular\":[[{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400}]]},\"regularMarketTime\":\"10/22, 16:00:00\",\"hasPrePost\":true}"
+  },
+  "yahooSPX": {
+   "status": 200,
+   "ms": 56,
+   "bytes": 33431,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": null
+   },
+   "sample": "{\"metaKeys\":[\"currency\",\"symbol\",\"exchangeName\",\"fullExchangeName\",\"instrumentType\",\"firstTradeDate\",\"regularMarketTime\",\"hasPrePostMarketData\",\"gmtoffset\",\"timezone\",\"exchangeTimezoneName\",\"regularMarketPrice\",\"regularMarketChangePercent\",\"fulldayPrice\",\"fulldayChange\",\"fulldayChangePercent\",\"fiftyTwoWeekHigh\",\"fiftyTwoWeekLow\",\"regularMarketDayHigh\",\"regularMarketDayLow\",\"regularMarketVolume\",\"longName\",\"shortName\",\"chartPreviousClose\",\"previousClose\",\"scale\",\"priceHint\",\"currentTradingPeriod\",\"tradingPeriods\",\"dataGranularity\",\"range\",\"validRanges\"],\"ctp\":{\"pre\":{\"timezone\":\"EDT\",\"end\":1792675800,\"start\":1792656000,\"gmtoffset\":-14400},\"regular\":{\"timezone\":\"EDT\",\"end\":1792699200,\"start\":1792675800,\"gmtoffset\":-14400},\"post\":{\"timezone\":\"EDT\",\"end\":1792713600,\"start\":1792699200,\"gmtoffset\":-14400}},\"tradingPeriodsKeys\":[\"0\"],\"nBars\":391,\"firstET\":\"10/22, 09:30:00\",\"lastET\":\"10/22, 16:00:00\",\"lastClose\":7663.43017578125,\"regularMarketPrice\":7663.43,\"fulldayPrice\":7663.43,\"fulldayChange\":-93.74,\"fulldayChangePercent\":-1.208,\"chartPreviousClose\":7757.17,\"previousClose\":7757.17,\"tradingPeriods\":[[{\"timezone\":\"EDT\",\"end\":1792699200,\"start\":1792675800,\"gmtoffset\":-14400}]],\"regularMarketTime\":\"10/22, 16:31:48\",\"hasPrePost\":false}"
+  },
+  "yahooSOFI": {
+   "status": 200,
+   "ms": 53,
+   "bytes": 50133,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": null
+   },
+   "sample": "{\"metaKeys\":[\"currency\",\"symbol\",\"exchangeName\",\"fullExchangeName\",\"instrumentType\",\"firstTradeDate\",\"regularMarketTime\",\"hasPrePostMarketData\",\"gmtoffset\",\"timezone\",\"exchangeTimezoneName\",\"regularMarketPrice\",\"regularMarketChangePercent\",\"fulldayPrice\",\"fulldayChange\",\"fulldayChangePercent\",\"fiftyTwoWeekHigh\",\"fiftyTwoWeekLow\",\"regularMarketDayHigh\",\"regularMarketDayLow\",\"regularMarketVolume\",\"longName\",\"shortName\",\"chartPreviousClose\",\"previousClose\",\"scale\",\"priceHint\",\"currentTradingPeriod\",\"tradingPeriods\",\"dataGranularity\",\"range\",\"validRanges\"],\"ctp\":{\"pre\":{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400},\"regular\":{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400},\"post\":{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}},\"tradingPeriodsKeys\":[\"pre\",\"post\",\"regular\"],\"nBars\":728,\"firstET\":\"10/22, 04:00:00\",\"lastET\":\"10/22, 19:59:59\",\"lastClose\":14.7285,\"regularMarketPrice\":14.77,\"fulldayPrice\":14.74,\"fulldayChange\":-0.16,\"fulldayChangePercent\":-1.074,\"chartPreviousClose\":14.9,\"previousClose\":14.9,\"tradingPeriods\":{\"pre\":[[{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400}]],\"post\":[[{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}]],\"regular\":[[{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400}]]},\"regularMarketTime\":\"10/22, 16:00:01\",\"hasPrePost\":true}"
+  },
+  "yahooNVDA5d": {
+   "status": 200,
+   "ms": 86,
+   "bytes": 62027,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": null
+   },
+   "sample": "{\"metaKeys\":[\"currency\",\"symbol\",\"exchangeName\",\"fullExchangeName\",\"instrumentType\",\"firstTradeDate\",\"regularMarketTime\",\"hasPrePostMarketData\",\"gmtoffset\",\"timezone\",\"exchangeTimezoneName\",\"regularMarketPrice\",\"regularMarketChangePercent\",\"fulldayPrice\",\"fulldayChange\",\"fulldayChangePercent\",\"fiftyTwoWeekHigh\",\"fiftyTwoWeekLow\",\"regularMarketDayHigh\",\"regularMarketDayLow\",\"regularMarketVolume\",\"longName\",\"shortName\",\"chartPreviousClose\",\"previousClose\",\"scale\",\"priceHint\",\"currentTradingPeriod\",\"tradingPeriods\",\"dataGranularity\",\"range\",\"validRanges\"],\"ctp\":{\"pre\":{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400},\"regular\":{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400},\"post\":{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}},\"tradingPeriodsKeys\":[\"pre\",\"post\",\"regular\"],\"nBars\":961,\"firstET\":\"10/16, 04:00:00\",\"lastET\":\"10/22, 19:59:58\",\"lastClose\":212.3831,\"regularMarketPrice\":212.21,\"fulldayPrice\":213.86,\"fulldayChange\":-8.11,\"fulldayChangePercent\":-3.654,\"chartPreviousClose\":217.23,\"previousClose\":221.97,\"tradingPeriods\":{\"pre\":[[{\"timezone\":\"EDT\",\"start\":1792137600,\"end\":1792157400,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792396800,\"end\":1792416600,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792483200,\"end\":1792503000,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792569600,\"end\":1792589400,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792656000,\"end\":1792675800,\"gmtoffset\":-14400}]],\"post\":[[{\"timezone\":\"EDT\",\"start\":1792180800,\"end\":1792195200,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792440000,\"end\":1792454400,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792526400,\"end\":1792540800,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792612800,\"end\":1792627200,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792699200,\"end\":1792713600,\"gmtoffset\":-14400}]],\"regular\":[[{\"timezone\":\"EDT\",\"start\":1792157400,\"end\":1792180800,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792416600,\"end\":1792440000,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792503000,\"end\":1792526400,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792589400,\"end\":1792612800,\"gmtoffset\":-14400}],[{\"timezone\":\"EDT\",\"start\":1792675800,\"end\":1792699200,\"gmtoffset\":-14400}]]},\"regularMarketTime\":\"10/22, 16:00:00\",\"hasPrePost\":true}"
+  },
+  "webullBatch": {
+   "status": 200,
+   "ms": 215,
+   "bytes": 3071,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": null,
+    "content-type": "application/json;charset=UTF-8",
+    "content-length": null
+   },
+   "sample": "[{\"tickerId\":913257561,\"exchangeId\":96,\"type\":2,\"secType\":[61],\"regionId\":6,\"regionCode\":\"US\",\"currencyId\":247,\"name\":\"Nvidia Corporation\",\"symbol\":\"NVDA\",\"disSymbol\":\"NVDA\",\"disExchangeCode\":\"NASDAQ\",\"exchangeCode\":\"NSQ\",\"listStatus\":1,\"template\":\"stock\",\"derivativeSupport\":1,\"isPTP\":0,\"isAdr\":0,\"filingsSupport\":0,\"shariahFlag\":1,\"issuerRegionId\":6,\"securitySubType\":401,\"bondSupport\":1,\"greyTradeFlag\":0,\"listDate\":\"1999-01-22\",\"nightTradeSession\":0,\"mkTradeTime\":\"2026-10-22T20:00:00.987+0000\",\"tradeTime\":\"2026-10-22T23:59:59.788+0000\",\"status\":\"A\",\"close\":\"212.21\",\"change\":\"-9.76\",\"changeRatio\":\"-0.0440\",\"pPrice\":\"212.40\",\"pChange\":\"0.19\",\"pChRatio\":\"0.0009\",\"pHigh\":\"213.82\",\"pLow\":\"211.80\",\"pVolume\":\"6826679\",\"marketValue\":\"5114261000000.00\",\"volume\":\"125407615\",\"turnoverRate\":\"0.0042\",\"overnight\":0,\"timeZone\":\"America/New_York\",\"tzName\":\"EDT\",\"preClose\":\"221.97\",\"open\":\"217.13\",\"high\":\"218.88\",\"low\":\"211.26\",\"vibrateRatio\":\"0.0343\",\"avgVol10D\":\"108265372\",\"avgVol3M\":\"118490538\",\"mkVolume\":\"117313060\",\"negMarketValue\":\"4908794465289.41\",\"pe\":\"43.33\",\"forwardPe\":\"21.22\",\"indicatedPe\":\"50.73\",\"peTtm\":\"26.83\",\"eps\":\"4.898\",\"epsTtm\":\"7.91\",\"pb\":\"22.38\",\"totalShares\":\"24100000000\",\"outstandingShares\":\"23131777321\",\"fiftyTwoWkHigh\":\"243.37\",\"fiftyTwoWkLow\":\"163.90\",\"dividend\":\"1.000\",\"yield\":\"0.0047\",\"currencyCode\":\"USD\",\"lotSize\":\"1\",\"latestDividendDate\":\"2026-09-10\",\"latestSplitDate\":\"2021-07-20\",\"latestEarningsDate\":\"\",\"ps\":\"16.91\",\"bps\":\"9.48\",\"estimateEarningsDate\":\"11/17-11/23\",\"tradeStatus\":\"D\"},{\"tickerId\":913256135,\"exchangeId\":96,\"type\":2,\"secType\":[61],\"regionId\":6,\"regionCode\":\"US\",\"currencyId\":247,\"name\":\"Apple Inc\",\"symbol\":\"AAPL\",\"disSymbol\":\"AAPL\",\"disExchangeCode\":\"NASDAQ\",\"exchangeCode\":\"NSQ\",\"listStatus\":1,\"template\":\"stock\",\"derivativeSupport\":1,\"isPTP\":0,\"isAdr\":0,\"filingsSupport\":0,\"shariahFlag\":1,\"issuerRegionId\":6,\"securitySubType\":401,\"bondSupport\":1,\"greyTradeFlag\":0,\"listDate\":\"1980-12-12\",\"nightTradeSession\":0,\"mkTradeTime\":\"2026-10-22T20:00:01.304+0000\",\"tradeTime\":\"2026-10-22T23:59:51.452+0000\",\"status\":\"A\",\"close\":\"348.22\",\"change\":\"4.23\",\"changeRatio\":\"0.0123\",\"pPrice\":\"348.68\",\"pChange\":\"0.46\",\"pChRatio\":\"0.0013\",\"pHigh\":\"348.79\",\"pLow\":\"347.70\",\"pVolume\":\"5999950\",\"marketValue\":\"5081985359600.00\",\"volume\":\"46898875\",\"turnoverRate\":\"0.0022\",\"overnight\":0,\"timeZone\":\"America/New_York\",\"tzName\":\"EDT\",\"preClose\":\"343.99\",\"open\":\"344.94\",\"high\":\"348.36\",\"low\":\"342.28\",\"vibrateRatio\":\"0.0177\",\"avgVol10D\":\"43244606\",\"avgVol3M\":\"44128876\",\"mkVolume\":\"40562880\",\"negMarketValue\":\"4997777829755.52\",\"pe\":\"46.65\",\"forwardPe\":\"39.48\",\"indicatedPe\":\"25.90\",\"peTtm\":\"39.92\",\"eps\":\"7.47\",\"epsTtm\":\"8.72\",\"pb\":\"47.31\",\"totalShares\":\"14594180000\",\"outstandingShares\":\"14352357216\",\"fiftyTwoWkHigh\":\"348.36\",\"fiftyTwoWkLow\":\"242.76\",\"dividend\":\"1.080\",\"yield\":\"0.0031\",\"currencyCode\":\"USD\",\"lotSize\":\"1\",\"latestDividendDate\":\"2026-08-10\",\"latestSplitDate\":\"2020-08-31\",\"latestEarningsDate\":\"2026-11-02\",\"ps\":\"10.90\",\"bps\":\"7.36\",\"estimateEarnin"
+  }
+ }
+}
