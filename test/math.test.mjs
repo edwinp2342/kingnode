@@ -92,7 +92,10 @@ test("feed market clock: phases, weekends, holidays, half days (ET)", () => {
   assert.equal(marketPhase(new Date("2026-10-12T14:00:00Z")), "regular", "Columbus Day: stocks trade");
   assert.equal(marketPhase(new Date("2026-10-12T10:30:00Z")), "pre");
   assert.equal(marketPhase(new Date("2026-10-12T22:00:00Z")), "post");
-  assert.equal(marketPhase(new Date("2026-10-13T01:00:00Z")), "closed");
+  assert.equal(marketPhase(new Date("2026-10-13T01:00:00Z")), "overnight", "Monday 9 PM: the 24-hour session");
+  assert.equal(marketPhase(new Date("2026-10-17T01:00:00Z")), "closed", "Friday 9 PM: no overnight session into the weekend");
+  assert.equal(marketPhase(new Date("2026-10-19T01:00:00Z")), "overnight", "Sunday 9 PM: the week opens overnight");
+  assert.equal(marketPhase(new Date("2026-10-19T07:30:00Z")), "overnight", "Monday 3:30 AM");
   assert.equal(marketPhase(new Date("2026-10-17T15:00:00Z")), "closed", "Saturday");
   assert.equal(marketPhase(new Date("2026-11-26T15:00:00Z")), "closed", "Thanksgiving");
   assert.equal(marketPhase(new Date("2026-11-27T17:30:00Z")), "regular", "Black Friday before 1pm");
@@ -253,4 +256,19 @@ test("series: 1-minute bars aggregate on the 09:30 grid, live minutes rebuild th
   const daily = { kind: "1d", bars: [[Date.parse("2026-10-21T00:00:00Z"), 10, 11, 9, 10.5, 5], [Date.parse("2026-10-22T00:00:00Z"), 10.5, 10.8, 10.2, 10.6, 3]], at: 0 };
   assert.ok(f.foldQuote(daily, 11.2, Date.parse("2026-10-22T15:00:00-04:00"))); assert.equal(daily.bars[1][4], 11.2); assert.equal(daily.bars[1][2], 11.2); assert.equal(daily.bars.length, 2);
   assert.ok(f.foldQuote(daily, 11.3, Date.parse("2026-10-23T10:00:00-04:00"))); assert.equal(daily.bars.length, 3); assert.equal(f.etInfo(daily.bars[2][0]).min, 570, "the new session's bar is stamped at its open");
+});
+
+// ---------- the latest print: which number the header, tape and chart follow in each session ----------
+test("latest print: regular price in regular hours, the extended bar after hours, the 24-hour price overnight, indices unchanged", () => {
+  const mk = phase => { const c = { Math, Date, Number, Set, isFinite, INDEX_SYMS: new Set(["SPX"]), marketPhase: () => phase }; vm.createContext(c); vm.runInContext([grab("extState"), grab("latestPrint")].join("\n") + "\nthis.latestPrint = latestPrint;", c); return c.latestPrint; };
+  const t4 = Date.parse("2026-10-22T16:00:00-04:00"), t8 = Date.parse("2026-10-22T19:59:00-04:00"), now = Date.parse("2026-10-22T23:30:00-04:00");
+  const q = { symbol: "NVDA", price: 212.21, prev: 221.97, last: 212.38, t: t8, state: null, full: 213.87, fullT: now };
+  const eq = (a, b, m) => assert.deepEqual(JSON.parse(JSON.stringify(a)), b, m); // objects cross a vm boundary: compare by value
+  eq(mk("overnight")(q), { price: 213.87, t: now, session: "OVN" });
+  assert.equal(mk("regular")({ ...q, last: 211.7, t: t4 }).price, 212.21, "regular hours: the regular price, never the 24-hour sample");
+  eq(mk("post")({ ...q, full: null, fullT: null }), { price: 212.38, t: t8, session: "AH" }, "after hours without a 24-hour sample: the last extended bar");
+  assert.equal(mk("post")({ ...q, fullT: t8 + 300e3, full: 212.5 }).price, 212.5, "after hours: a fresher 24-hour sample beats a stale bar");
+  eq(mk("overnight")({ symbol: "SPX", price: 7663.43, prev: 7757, last: 7663.43, t: t4, full: 7663.43, fullT: now }), { price: 7663.43, t: t4, session: "CLOSE" }, "an index has one session");
+  assert.equal(mk("closed")({ ...q, full: 212.21, fullT: now }).session, "AH", "a weekend still shows Friday's last after-hours print");
+  assert.equal(mk("closed")({ ...q, last: 212.21, full: null, fullT: null }).session, "CLOSE");
 });

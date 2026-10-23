@@ -80,10 +80,10 @@ export async function sweepMarket(symbols, { concurrency = 12, path = "data/mark
   const errors = await pool(symbols, concurrency, async sym => {
     const res0 = await chartMeta(sym); const m = res0.meta; const last = +m.regularMarketPrice || 0; if (!last) throw new Error("no price");
     const prevC = +(m.chartPreviousClose ?? m.previousClose ?? 0) || null;
-    q[sym] = [+last.toFixed(4), prevC ? +prevC.toFixed(4) : null, prevC ? +((last / prevC - 1) * 100).toFixed(2) : null, +(m.regularMarketVolume || 0), (m.regularMarketTime || 0) * 1000, m.marketState || null, avg[sym + ":v"] || null]; ok++; // the 20-day average volume rides along so relative volume needs no second file
+    q[sym] = [+last.toFixed(4), prevC ? +prevC.toFixed(4) : null, prevC ? +((last / prevC - 1) * 100).toFixed(2) : null, +(m.regularMarketVolume || 0), (m.regularMarketTime || 0) * 1000, m.marketState || null, avg[sym + ":v"] || null, m.fulldayPrice != null ? +(+m.fulldayPrice).toFixed(4) : null]; ok++; // the 20-day average volume rides along so relative volume needs no second file; fulldayPrice is the latest print in any session (overnight included)
   });
   r429 = errors.filter(e => e[1] === "429").length;
-  const out = { at: Date.now(), ms: Date.now() - t0, n: symbols.length, ok, fail: errors.length, r429, cols: "last prevClose chgPct volume lastT state avgVol20", q };
+  const out = { at: Date.now(), ms: Date.now() - t0, n: symbols.length, ok, fail: errors.length, r429, cols: "last prevClose chgPct volume lastT state avgVol20 fullPrice", q };
   writeJSON(path, out); return out;
 }
 // 60 daily closes per optionable name — enough for the 21/50-EMA, RSI and relative-strength rules on any name. Once per session.

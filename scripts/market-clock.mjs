@@ -8,13 +8,16 @@ export function etNow(now = new Date()) {
   const g = t => p.find(x => x.type === t)?.value;
   return { date: `${g("year")}-${g("month")}-${g("day")}`, min: (Number(g("hour")) % 24) * 60 + Number(g("minute")), dow: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(g("weekday")) };
 }
+// pre 04:00–09:30 · regular 09:30–16:00 · post 16:00–20:00 · overnight 20:00–04:00 (Sunday 20:00 through Friday 04:00: the 24-hour session
+// Yahoo reports as fulldayPrice — no bars, a price) · closed otherwise (Friday 20:00 to Sunday 20:00, holidays)
 export function marketPhase(now = new Date()) {
   const t = etNow(now);
-  if (t.dow === 0 || t.dow === 6 || NYSE_HOLIDAYS.has(t.date)) return "closed";
+  if (t.dow === 6 || NYSE_HOLIDAYS.has(t.date)) return "closed";
+  if (t.dow === 0) return t.min >= 20 * 60 ? "overnight" : "closed";
   const close = NYSE_HALF_DAYS.has(t.date) ? 13 * 60 : 16 * 60;
-  if (t.min < 4 * 60) return "closed";
+  if (t.min < 4 * 60) return "overnight";
   if (t.min < 9 * 60 + 30) return "pre";
   if (t.min < close) return "regular";
   if (t.min < 20 * 60) return "post";
-  return "closed";
+  return t.dow === 5 ? "closed" : "overnight";
 }

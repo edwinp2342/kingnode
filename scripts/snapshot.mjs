@@ -44,10 +44,11 @@ seed();
 import { marketPhase, etNow } from "./market-clock.mjs";
 // what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all
 const PLAN = {
-  regular: { every: EVERY, chainsEvery: 3, bars: true, fast: Number(process.env.FAST_SEC || 20), sweep: 5 * 60, tierB: 15 * 60 },
-  pre:     { every: EVERY, chainsEvery: 5, bars: true, fast: 45, sweep: 15 * 60, tierB: 30 * 60 },
-  post:    { every: EVERY, chainsEvery: 5, bars: true, fast: 45, sweep: 15 * 60, tierB: 30 * 60 },
-  closed:  { every: 600, chainsEvery: 6, bars: false, fast: 600, sweep: 6 * 3600, tierB: 6 * 3600 },
+  regular:   { every: EVERY, chainsEvery: 3, bars: true, fast: Number(process.env.FAST_SEC || 20), sweep: 5 * 60, tierB: 15 * 60 },
+  pre:       { every: EVERY, chainsEvery: 5, bars: true, fast: Number(process.env.FAST_SEC || 20), sweep: 10 * 60, tierB: 30 * 60 },
+  post:      { every: EVERY, chainsEvery: 5, bars: true, fast: Number(process.env.FAST_SEC || 20), sweep: 10 * 60, tierB: 30 * 60 },
+  overnight: { every: 60, chainsEvery: 10, bars: true, fast: 60, sweep: 30 * 60, tierB: 6 * 3600 },   // no bars print overnight; the quote (fulldayPrice) moves every minute
+  closed:    { every: 600, chainsEvery: 6, bars: false, fast: 600, sweep: 6 * 3600, tierB: 6 * 3600 },
 };
 
 // One Yahoo request gives the quote and the whole session of 1-minute bars (pre, regular and post). The fast loop pulls this for every
@@ -65,7 +66,8 @@ async function liveFetch(sym) {
   const bars = []; for (let i = 0; i < ts.length; i++) if (q.close?.[i] != null && q.open?.[i] != null) bars.push([ts[i] * 1000, +(q.open[i] / div).toFixed(4), +(q.high[i] / div).toFixed(4), +(q.low[i] / div).toFixed(4), +(q.close[i] / div).toFixed(4), q.volume?.[i] || 0]);
   const tp = m.currentTradingPeriod || {};
   const session = { regularStart: tp.regular?.start ? tp.regular.start * 1000 : null, regularEnd: tp.regular?.end ? tp.regular.end * 1000 : null, regularPrice: m.regularMarketPrice != null ? m.regularMarketPrice / div : null, regularTime: m.regularMarketTime ? m.regularMarketTime * 1000 : null, prevClose: prev / div, marketState: m.marketState || null, name: m.shortName || m.longName || null };
-  return { quote: { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000 }, bars, session };
+  const full = +m.fulldayPrice || 0; // Yahoo's 24-hour price: the latest print in whichever session is on, overnight included
+  return { quote: { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000, full: full ? full / div : null, fullT: full ? Date.now() : null }, bars, session };
 }
 async function quote(sym) { return (await liveFetch(sym)).quote; }
 // the names the fast loop keeps live: the tape indices plus the whole core chain list (one request each, a dozen in flight)
@@ -162,7 +164,7 @@ async function cycle(n, ph) {
           b = await fetchBars(ysym, "5m", "5d", true);
           fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, symbol: sym, bars: b.bars.slice(-800), snapshotAt: Date.now() }));
           const lastBar = b.bars.at(-1); const s = b.session || {};
-          if (lastBar) { universe[sym] = [+lastBar[4].toFixed(4), prevSessionClose(b.bars, s), lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null]; lastBars[sym] = b.bars.slice(-3).map(r => [r[0], +r[1].toFixed(4), +r[2].toFixed(4), +r[3].toFixed(4), +r[4].toFixed(4), r[5] || 0]); }
+          if (lastBar) { universe[sym] = [+lastBar[4].toFixed(4), prevSessionClose(b.bars, s), lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null, s.fullPrice != null ? +(+s.fullPrice).toFixed(4) : null, s.fullPrice != null ? Date.now() : null]; lastBars[sym] = b.bars.slice(-3).map(r => [r[0], +r[1].toFixed(4), +r[2].toFixed(4), +r[3].toFixed(4), +r[4].toFixed(4), r[5] || 0]); }
         } catch (e) { fail.push(`b:${sym}`); }
         if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: withToday(d.bars.slice(-300), b?.bars, b?.session), snapshotAt: Date.now() })); } catch (e) { fail.push(`d:${sym}`); } }
       }));
@@ -170,7 +172,7 @@ async function cycle(n, ph) {
     barsAt = Date.now();
     // one file with last/prev/regular price for every ticker — watchlist, halal screen, movers and the scanner read this instead of 300 files —
     // plus the last three 5-minute bars per name, so any chart in the app can patch its last candles from the minute bucket while SYM-bars.json sits in the CDN cache
-    { const doc = { at: barsAt, phase: ph, cols: ["last", "prevClose", "lastT", "regularPrice", "state"], q: universe, bars: lastBars, barsCols: "t open high low close volume (5-minute, last three)" }; writeJSON("data/universe.json", doc); liveWrite("u", 60, doc); }
+    { const doc = { at: barsAt, phase: ph, cols: ["last", "prevClose", "lastT", "regularPrice", "state", "fullPrice", "fullT"], q: universe, bars: lastBars, barsCols: "t open high low close volume (5-minute, last three)" }; writeJSON("data/universe.json", doc); liveWrite("u", 60, doc); }
   }
   // chains: the core list every Nth cycle, four in flight; the most active optionable names (tier B, from the market sweep) on their own clock
   const snapChain = async (sym, nExp, range) => { const c = await fetchChain(sym); const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, nExp), keep = new Set(exps);
@@ -211,7 +213,7 @@ async function fastTick(ph) {
   const t0 = Date.now(); const quotes = []; const bars = {}; const fail = []; const full = {}; let r429 = 0;
   let i = 0; const worker = async () => { while (i < LIVE_SYMS.length) { const sym = LIVE_SYMS[i++]; try { const d = await liveFetch(sym); quotes.push(d.quote); if (d.bars.length) { bars[sym] = d.bars.slice(-LIVE_BARS_KEEP); full[sym] = d; } } catch (e) { if (e.message === "429") r429++; fail.push(`q:${sym}:${e.message}`); } } };
   await Promise.all(Array.from({ length: Math.min(12, LIVE_SYMS.length) }, worker));
-  const spx = quotes.find(q => q.symbol === "SPX"); if (spx) { quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 }); if (bars.SPX) bars.XSP = bars.SPX.map(b => [b[0], +(b[1] / 10).toFixed(4), +(b[2] / 10).toFixed(4), +(b[3] / 10).toFixed(4), +(b[4] / 10).toFixed(4), b[5]]); }
+  const spx = quotes.find(q => q.symbol === "SPX"); if (spx) { quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10, full: spx.full ? spx.full / 10 : null }); if (bars.SPX) bars.XSP = bars.SPX.map(b => [b[0], +(b[1] / 10).toFixed(4), +(b[2] / 10).toFixed(4), +(b[3] / 10).toFixed(4), +(b[4] / 10).toFixed(4), b[5]]); }
   if (quotes.length) { const doc = { at: Date.now(), phase: ph, quotes, bars, barsCols: "t open high low close volume (1-minute, last few)" }; writeJSON("data/quotes.json", doc); liveWrite("q", 20, doc); }
   if (Object.keys(full).length && Date.now() - oneMinAt >= 55000) { // the full-session 1-minute series, once a minute
     for (const [sym, d] of Object.entries(full)) writeJSON(`data/${sym}-1m.json`, { symbol: sym, interval: "1m", range: "1d", extended: true, source: "yahoo", delayed: true, bars: d.bars.slice(-1000), session: d.session, snapshotAt: Date.now() });
@@ -242,7 +244,7 @@ async function marketLoop() {
         writeIndex({}); if (PUSH) push(); }
       // 60 closes per optionable name, once per session after the close (or at start when the file is older than the last session)
       const closes = readJSON("data/closes.json", null); const lastSession = closes ? new Date(closes.at).toISOString().slice(0, 10) : ""; const upgrade = !!closes && !/:v/.test(closes.cols || ""); // a closes file from before the average-volume column: redo it once
-      if (list.length && (ph === "post" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && (lastSession !== t.date || upgrade)) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
+      if (list.length && (ph === "post" || ph === "overnight" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && (lastSession !== t.date || upgrade)) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
     } catch (e) { console.error("market loop", e.message); }
     await sleep(Math.min(60e3, Math.max(1000, end - Date.now())));
   }
