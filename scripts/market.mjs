@@ -103,3 +103,20 @@ export function mostActive(market, exclude, limit = 150) {
   if (!market?.q) return [];
   return Object.entries(market.q).filter(([s, v]) => !exclude.has(s) && v[0] >= 5 && v[3] > 0).map(([s, v]) => [s, v[0] * v[3]]).sort((a, b) => b[1] - a[1]).slice(0, limit).map(x => x[0]);
 }
+// Market internals from the sweep: advancers / decliners, up- vs down-dollar volume, share of names above their 20- and 50-day EMAs,
+// 60-day highs and lows — common stocks only (ETFs would count the same holdings twice), $5 and up. Appends today's point to an intraday
+// series so the app can draw breadth through the session. Cheap: one pass over ~4,000 rows.
+function emaLast(v, n) { const k = 2 / (n + 1); let e = v[0]; for (let i = 1; i < v.length; i++) e = v[i] * k + e * (1 - k); return e; }
+export function computeBreadth(market, closes, symbols, { path = "data/breadth.json", now = Date.now() } = {}) {
+  if (!market?.q) return null; const stock = new Set((symbols?.rows || []).filter(r => !r[3] && r[4]).map(r => r[0]));
+  let adv = 0, dec = 0, unch = 0, upD = 0, dnD = 0, a20 = 0, a50 = 0, n50 = 0, hi = 0, lo = 0, n = 0;
+  for (const [sym, v] of Object.entries(market.q)) {
+    if (!stock.has(sym) || !(v[0] >= 5) || v[2] == null) continue; n++;
+    if (v[2] > 0) { adv++; upD += v[0] * (v[3] || 0); } else if (v[2] < 0) { dec++; dnD += v[0] * (v[3] || 0); } else unch++;
+    const c = closes?.c?.[sym]; if (c && c.length >= 50) { n50++; const hist = c.slice(0, -1); if (v[0] > emaLast(hist, 20)) a20++; if (v[0] > emaLast(hist, 50)) a50++; if (v[0] > Math.max(...hist)) hi++; if (v[0] < Math.min(...hist)) lo++; }
+  }
+  const prev = readJSON(path, null); const day = new Date(now).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const series = (prev && prev.day === day ? prev.series || [] : []).filter(p => now - p[0] < 20 * 3600e3); series.push([now, adv, dec, n50 ? +(a50 / n50 * 100).toFixed(1) : null, upD + dnD ? +(upD / (upD + dnD) * 100).toFixed(1) : null]);
+  const out = { at: now, day, n, adv, dec, unch, upDollar: Math.round(upD), dnDollar: Math.round(dnD), above20: n50 ? +(a20 / n50 * 100).toFixed(1) : null, above50: n50 ? +(a50 / n50 * 100).toFixed(1) : null, n50, hi60: hi, lo60: lo, seriesCols: "t adv dec above50pct upDollarPct", series: series.slice(-240) };
+  writeJSON(path, out); return out;
+}

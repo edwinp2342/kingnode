@@ -12,7 +12,7 @@
 // GitHub firing the hourly cron — which it skips freely. The cron stays as the restarter if a run ever dies.
 import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import { computeLevels } from "../api/_lib/levels.js";
-import { updateSymbols, sweepMarket, sweepCloses, mostActive, readJSON, writeJSON } from "./market.mjs";
+import { updateSymbols, sweepMarket, sweepCloses, mostActive, computeBreadth, readJSON, writeJSON } from "./market.mjs";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 
@@ -133,7 +133,7 @@ function scanRow(c0) {
   const un = byUn.find(x => dte(x.exp) >= 4) || byUn[0]; // a brand-new weekly always trades many times its day-old OI; prefer something with a few days on it
   const e30 = exps.find(e => dte(e) >= 20) || exps.at(-1); const near = c.rows.filter(r => r[0] === e30 && r[5] > 0); const atm = near.length ? near.reduce((a, r) => Math.abs(r[2] - spot) < Math.abs(a[2] - spot) ? r : a, near[0]) : null;
   let lv = {}; try { lv = computeLevels(c, 6, 8, "standard"); } catch {}
-  return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), top, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, gex: lv.total != null ? Math.round(lv.total) : null };
+  return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), top, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, emExp: lv.nearest || null, gex: lv.total != null ? Math.round(lv.total) : null };
 }
 // One row per ticker per day of the levels the Ideas engine leans on (walls, flip, gamma, expected move, IV, flow) — the branch is force-pushed
 // as a single commit each cycle, so this file is the only history that survives. The last chain of the day wins, so each row is the closing state.
@@ -141,10 +141,10 @@ function scanRow(c0) {
 const LEVELS_FILE = "data/levels-history.json";
 function recordLevels(scan) {
   try {
-    let h = { cols: "spot chg cw pw flip gex em iv30 cVol pVol cPrem pPrem", days: {} };
+    let h = { cols: "spot chg cw pw flip gex em iv30 cVol pVol cPrem pPrem emExp", days: {} };
     try { const old = JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8")); if (old && old.days) h = old; } catch {}
     const t = etNow(); const key = t.date; const row = {};
-    for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem];
+    for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem, r.emExp || null]; // emExp: which expiry the expected move was for, so the app can score it against the next close
     h.days[key] = { ...(h.days[key] || {}), ...row, _at: Date.now() };
     const keys = Object.keys(h.days).sort(); for (const k of keys.slice(0, Math.max(0, keys.length - 420))) delete h.days[k]; // ~20 months, a few hundred KB
     fs.writeFileSync(LEVELS_FILE, JSON.stringify(h));
@@ -184,7 +184,7 @@ async function cycle(n, ph) {
   if (!tierBList.length || Date.now() - tierBAt > plan.tierB * 1000) { const market = readJSON("data/market.json", null); const tierB = mostActive(market, new Set(SYMS), Number(process.env.TIER_B || 150)); if (tierB.length) { tierBList = tierB; tierBAt = Date.now(); tierBPos = tierBPos % tierB.length; } }
   if (tierBList.length) { const per = Number(process.env.TIER_B_PER_CYCLE || 12); const slice = []; for (let i = 0; i < Math.min(per, tierBList.length); i++) slice.push(tierBList[(tierBPos + i) % tierBList.length]);
     const r429 = await chainBatch(slice, 6, 0.12, "cb", 1, 350); if (r429 < 3) tierBPos = (tierBPos + slice.length) % tierBList.length; /* rate-limited: the same dozen go again next cycle */ }
-  if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan); }
+  if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em emExp gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan); }
   if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
   const loopEnd = end; const nextIn = plan.every * 1000;
   writeIndex({ cycle: n, phase: ph, chainAt, barsAt, next: nextIn, loopEnd, ok, fail });
@@ -192,7 +192,7 @@ async function cycle(n, ph) {
   console.log(`cycle ${n} · ${ph} · ${((Date.now() - t0) / 1000).toFixed(1)}s · chains ${ok.length}${fail.length ? " · fail " + fail.slice(0, 12).join(" ") + (fail.length > 12 ? ` +${fail.length - 12}` : "") : ""}`);
   if (PUSH) push();
 }
-let tierBAt = 0, tierBList = [], tierBPos = 0, fastAt = 0, sweepAt = 0, symbolsAt = 0, closesFor = ""; const status = { fast: null, sweep: null, symbols: null, closes: null, push: null };
+let tierBAt = 0, tierBList = [], tierBPos = 0, fastAt = 0, sweepAt = 0, symbolsAt = 0, closesFor = ""; const status = { fast: null, sweep: null, symbols: null, closes: null, breadth: null, push: null };
 // GitHub's raw CDN caches every path for five minutes and ignores the query string (x-cache: HIT on a unique ?t= — measured 2026-10-20), so a
 // file rewritten every 20 s reaches a browser every 5 min. A path that changes with time is a cache miss every time: the tape is also written
 // as live/q-<20-second bucket>.json and the universe as live/u-<minute bucket>.json; the app asks for the bucket a little behind "now" and
@@ -237,7 +237,9 @@ async function marketLoop() {
     try {
       if (!symbols || Date.now() - symbolsAt > 3600e3) { symbols = await updateSymbols(symbolsPath); symbolsAt = Date.now(); status.symbols = { at: symbolsAt, n: symbols.n, optionable: symbols.nOptionable, new: symbols.new.length }; console.log(`symbols: ${symbols.n} listed · ${symbols.nOptionable} optionable · ${symbols.new.length} new listings`); if (PUSH) push(); }
       const list = symbols?.optionable || [];
-      if (list.length && Date.now() - sweepAt > PLAN[ph].sweep * 1000) { const m = await sweepMarket(list, { concurrency: ph === "regular" ? 12 : 8 }); sweepAt = Date.now(); status.sweep = { at: sweepAt, ms: m.ms, n: m.n, ok: m.ok, fail: m.fail, r429: m.r429 }; console.log(`market sweep: ${m.ok}/${m.n} in ${(m.ms / 1000).toFixed(0)}s${m.r429 ? ` · ${m.r429}×429` : ""}`); if (m.r429 > 20) sweepAt = Date.now() + PLAN[ph].sweep * 1000; writeIndex({}); if (PUSH) push(); }
+      if (list.length && Date.now() - sweepAt > PLAN[ph].sweep * 1000) { const m = await sweepMarket(list, { concurrency: ph === "regular" ? 12 : 8 }); sweepAt = Date.now(); status.sweep = { at: sweepAt, ms: m.ms, n: m.n, ok: m.ok, fail: m.fail, r429: m.r429 }; console.log(`market sweep: ${m.ok}/${m.n} in ${(m.ms / 1000).toFixed(0)}s${m.r429 ? ` · ${m.r429}×429` : ""}`); if (m.r429 > 20) sweepAt = Date.now() + PLAN[ph].sweep * 1000;
+        try { const b = computeBreadth(m, readJSON("data/closes.json", null), symbols); if (b) { status.breadth = { at: b.at, adv: b.adv, dec: b.dec, above50: b.above50 }; console.log(`breadth: ${b.adv} up / ${b.dec} down · ${b.above50}% above the 50-EMA`); } } catch (e) { console.error("breadth", e.message); }
+        writeIndex({}); if (PUSH) push(); }
       // 60 closes per optionable name, once per session after the close (or at start when the file is older than the last session)
       const closes = readJSON("data/closes.json", null); const lastSession = closes ? new Date(closes.at).toISOString().slice(0, 10) : "";
       if (list.length && (ph === "post" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && lastSession !== t.date) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
