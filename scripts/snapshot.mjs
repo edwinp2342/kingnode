@@ -1,11 +1,13 @@
 // Snapshots the chains, bars and quotes the terminal needs and writes them to ./data as compact JSON, then pushes.
 // Runs as a loop inside one GitHub Actions job (LOOP_MINUTES). Cadence follows the market clock (ET):
 //   pre 04:00–09:30 · regular 09:30–16:00 · post 16:00–20:00 · closed otherwise (weekends, NYSE holidays)
-//   three loops share the process: FAST (index tape quotes, every 20 s in regular hours) · MAIN (bars for ~300 tickers every
-//   cycle while the market is open; Cboe chains, 15-min delayed, for the core list every 3rd cycle and for the 150 most active
-//   optionable names every 15 min; daily bars every 9th; FINRA short volume hourly) · MARKET (every US-listed symbol hourly with
-//   first-seen dates so new listings surface; a price sweep across the ~4,000 optionable names every 5 min; 60 daily closes per
-//   optionable name once per session). Each loop pushes after it writes; git serializes the pushes.
+//   three loops share the process: FAST (quote + the last 1-minute bars for every core name every 20 s in regular hours, written as
+//   time-bucketed live files; the full-session 1-minute series per core name once a minute) · MAIN (5-minute bars for ~300 tickers
+//   every cycle while the market is open, with their last three bars in the minute bucket; Cboe chains, 15-min delayed, for the core
+//   list every 3rd cycle and for the 150 most active optionable names rolling a dozen per cycle; daily bars every 9th; FINRA short
+//   volume hourly) · MARKET (every US-listed symbol hourly with first-seen dates so new listings surface; a price sweep across the
+//   ~5,000 optionable names every 5 min; 60 daily closes + 20-day average volume per optionable name once per session).
+//   Each loop pushes after it writes; git serializes the pushes.
 // A few minutes before the loop ends it dispatches its own successor (workflow_dispatch), so the feed does not depend on
 // GitHub firing the hourly cron — which it skips freely. The cron stays as the restarter if a run ever dies.
 import { fetchChain, fetchBars } from "../api/_lib/data.js";
@@ -48,17 +50,27 @@ const PLAN = {
   closed:  { every: 600, chainsEvery: 6, bars: false, fast: 600, sweep: 6 * 3600, tierB: 6 * 3600 },
 };
 
-async function quote(sym) {
-  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[sym] || sym)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" }, signal: AbortSignal.timeout(15000) });
+// One Yahoo request gives the quote and the whole session of 1-minute bars (pre, regular and post). The fast loop pulls this for every
+// core name each tick, so the header quote and the last candles move together every 20 seconds in regular hours.
+async function liveFetch(sym) {
+  const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(YAHOO[sym] || YAHOO_ALIAS[sym] || sym)}?interval=1m&range=1d&includePrePost=true`, { headers: { "user-agent": "Mozilla/5.0 (Kingnode)" }, signal: AbortSignal.timeout(15000) });
+  if (r.status === 429) throw new Error("429");
   if (!r.ok) throw new Error("http " + r.status);
   const j = await r.json(), res0 = j.chart?.result?.[0], m = res0?.meta; if (!m) throw new Error("no meta");
-  const q = res0.indicators?.quote?.[0], closes = (q?.close || []), ts = res0.timestamp || [];
+  const q = res0.indicators?.quote?.[0] || {}, closes = (q.close || []), ts = res0.timestamp || [];
   let last = +m.regularMarketPrice || 0, lastT = (m.regularMarketTime || 0) * 1000;
   for (let i = closes.length - 1; i >= 0; i--) if (closes[i] != null) { last = closes[i]; lastT = ts[i] * 1000; break; }
   const price = (YAHOO[sym] && last) ? last : (+m.regularMarketPrice || last), prev = +(m.chartPreviousClose ?? m.previousClose ?? price); // indices: Yahoo's meta price can lag the bars by an hour after the close
   const div = sym === "XSP" ? 10 : 1;
-  return { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000 };
+  const bars = []; for (let i = 0; i < ts.length; i++) if (q.close?.[i] != null && q.open?.[i] != null) bars.push([ts[i] * 1000, +(q.open[i] / div).toFixed(4), +(q.high[i] / div).toFixed(4), +(q.low[i] / div).toFixed(4), +(q.close[i] / div).toFixed(4), q.volume?.[i] || 0]);
+  const tp = m.currentTradingPeriod || {};
+  const session = { regularStart: tp.regular?.start ? tp.regular.start * 1000 : null, regularEnd: tp.regular?.end ? tp.regular.end * 1000 : null, regularPrice: m.regularMarketPrice != null ? m.regularMarketPrice / div : null, regularTime: m.regularMarketTime ? m.regularMarketTime * 1000 : null, prevClose: prev / div, marketState: m.marketState || null, name: m.shortName || m.longName || null };
+  return { quote: { symbol: sym, price: price / div, prev: prev / div, last: last / div, state: m.marketState || null, t: lastT, regT: (m.regularMarketTime || 0) * 1000 }, bars, session };
 }
+async function quote(sym) { return (await liveFetch(sym)).quote; }
+// the names the fast loop keeps live: the tape indices plus the whole core chain list (one request each, a dozen in flight)
+const LIVE_SYMS = [...new Set([...TAPE, ...SYMS])].filter(s => s !== "XSP");
+const LIVE_BARS_KEEP = Number(process.env.LIVE_BARS || 8);   // minutes of 1-minute bars carried in each live bucket — enough to bridge the CDN's five-minute cache on SYM-1m.json
 
 // ---------- FINRA off-exchange (dark pool / ATS) short volume: real, daily, free ----------
 let svAt = 0;
@@ -83,7 +95,7 @@ async function shortVolume() {
   svAt = Date.now(); return got;
 }
 
-let chainAt = 0, barsAt = 0, dispatched = false; const universe = {}; const scan = {};
+let chainAt = 0, barsAt = 0, dispatched = false; const universe = {}; const lastBars = {}; const scan = {};
 try { const prev = JSON.parse(fs.readFileSync("data/scan.json", "utf8")); const cutoff = Date.now() - 26 * 3600e3; for (const [sym, r] of Object.entries(prev.rows || {})) if (r && r.at > cutoff) scan[sym] = r; console.log(`scan seeded with ${Object.keys(scan).length} rows from the branch`); } catch {} // a restart keeps yesterday's tier-B rows until they roll around again
 // The close of the session before the latest one, from the 5-minute bars: Yahoo's chartPreviousClose on a 5-day request is the close
 // before the whole window (five sessions back), which made the movers list show multi-day moves as "today".
@@ -150,14 +162,15 @@ async function cycle(n, ph) {
           b = await fetchBars(ysym, "5m", "5d", true);
           fs.writeFileSync(`data/${sym}-bars.json`, JSON.stringify({ ...b, symbol: sym, bars: b.bars.slice(-800), snapshotAt: Date.now() }));
           const lastBar = b.bars.at(-1); const s = b.session || {};
-          if (lastBar) universe[sym] = [+lastBar[4].toFixed(4), prevSessionClose(b.bars, s), lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null];
+          if (lastBar) { universe[sym] = [+lastBar[4].toFixed(4), prevSessionClose(b.bars, s), lastBar[0], s.regularPrice != null ? +(+s.regularPrice).toFixed(4) : null, s.marketState || null]; lastBars[sym] = b.bars.slice(-3).map(r => [r[0], +r[1].toFixed(4), +r[2].toFixed(4), +r[3].toFixed(4), +r[4].toFixed(4), r[5] || 0]); }
         } catch (e) { fail.push(`b:${sym}`); }
         if (n % 9 === 0) { try { const d = await fetchBars(ysym, "1d", "1y", false); fs.writeFileSync(`data/${sym}-daily.json`, JSON.stringify({ ...d, symbol: sym, bars: withToday(d.bars.slice(-300), b?.bars, b?.session), snapshotAt: Date.now() })); } catch (e) { fail.push(`d:${sym}`); } }
       }));
     }
     barsAt = Date.now();
-    // one small file with last/prev/regular price for every ticker: watchlist, halal screen, movers and the scanner read this instead of 300 files
-    { const doc = { at: barsAt, phase: ph, cols: ["last", "prevClose", "lastT", "regularPrice", "state"], q: universe }; writeJSON("data/universe.json", doc); liveWrite("u", 60, doc); }
+    // one file with last/prev/regular price for every ticker — watchlist, halal screen, movers and the scanner read this instead of 300 files —
+    // plus the last three 5-minute bars per name, so any chart in the app can patch its last candles from the minute bucket while SYM-bars.json sits in the CDN cache
+    { const doc = { at: barsAt, phase: ph, cols: ["last", "prevClose", "lastT", "regularPrice", "state"], q: universe, bars: lastBars, barsCols: "t open high low close volume (5-minute, last three)" }; writeJSON("data/universe.json", doc); liveWrite("u", 60, doc); }
   }
   // chains: the core list every Nth cycle, four in flight; the most active optionable names (tier B, from the market sweep) on their own clock
   const snapChain = async (sym, nExp, range) => { const c = await fetchChain(sym); const exps = [...new Set(c.rows.map(r => r[0]))].sort().slice(0, nExp), keep = new Set(exps);
@@ -190,13 +203,23 @@ function liveWrite(kind, secs, doc) {
 }
 const indexState = {}; // the last main-cycle numbers, so the fast loop can rewrite index.json without losing them
 function writeIndex(patch) { Object.assign(indexState, patch); writeJSON("data/index.json", { at: Date.now(), ...indexState, run: process.env.GITHUB_RUN_ID || null, ...status, tierB: tierBList.length }); }
-// FAST: the index tape. Eight small Yahoo requests and one push — the header, tape and index badges move every 20 seconds in regular hours.
+// FAST: the live tape. One Yahoo request per core name (a dozen in flight) and one push — the header quote for every core name and the
+// last candles of its chart move every 20 seconds in regular hours. The bucket carries the quotes plus the last few 1-minute bars per name;
+// the whole session of 1-minute bars goes to SYM-1m.json once a minute (that file rides the CDN's five-minute cache, the bucket bridges it).
+let oneMinAt = 0;
 async function fastTick(ph) {
-  const t0 = Date.now(); const quotes = []; const fail = [];
-  await Promise.all(TAPE.map(async sym => { try { quotes.push(await quote(sym)); } catch (e) { fail.push(`q:${sym}:${e.message}`); } }));
-  const spx = quotes.find(q => q.symbol === "SPX"); if (spx) quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 });
-  if (quotes.length) { const doc = { at: Date.now(), phase: ph, quotes }; writeJSON("data/quotes.json", doc); liveWrite("q", 20, doc); }
-  fastAt = Date.now(); status.fast = { at: fastAt, ms: Date.now() - t0, n: quotes.length, fail };
+  const t0 = Date.now(); const quotes = []; const bars = {}; const fail = []; const full = {}; let r429 = 0;
+  let i = 0; const worker = async () => { while (i < LIVE_SYMS.length) { const sym = LIVE_SYMS[i++]; try { const d = await liveFetch(sym); quotes.push(d.quote); if (d.bars.length) { bars[sym] = d.bars.slice(-LIVE_BARS_KEEP); full[sym] = d; } } catch (e) { if (e.message === "429") r429++; fail.push(`q:${sym}:${e.message}`); } } };
+  await Promise.all(Array.from({ length: Math.min(12, LIVE_SYMS.length) }, worker));
+  const spx = quotes.find(q => q.symbol === "SPX"); if (spx) { quotes.push({ ...spx, symbol: "XSP", price: spx.price / 10, prev: spx.prev / 10, last: spx.last / 10 }); if (bars.SPX) bars.XSP = bars.SPX.map(b => [b[0], +(b[1] / 10).toFixed(4), +(b[2] / 10).toFixed(4), +(b[3] / 10).toFixed(4), +(b[4] / 10).toFixed(4), b[5]]); }
+  if (quotes.length) { const doc = { at: Date.now(), phase: ph, quotes, bars, barsCols: "t open high low close volume (1-minute, last few)" }; writeJSON("data/quotes.json", doc); liveWrite("q", 20, doc); }
+  if (Object.keys(full).length && Date.now() - oneMinAt >= 55000) { // the full-session 1-minute series, once a minute
+    for (const [sym, d] of Object.entries(full)) writeJSON(`data/${sym}-1m.json`, { symbol: sym, interval: "1m", range: "1d", extended: true, source: "yahoo", delayed: true, bars: d.bars.slice(-1000), session: d.session, snapshotAt: Date.now() });
+    if (full.SPX) writeJSON("data/XSP-1m.json", { symbol: "XSP", interval: "1m", range: "1d", extended: true, source: "yahoo", delayed: true, bars: bars.XSP ? full.SPX.bars.slice(-1000).map(b => [b[0], +(b[1] / 10).toFixed(4), +(b[2] / 10).toFixed(4), +(b[3] / 10).toFixed(4), +(b[4] / 10).toFixed(4), b[5]]) : [], session: full.SPX.session, snapshotAt: Date.now() });
+    oneMinAt = Date.now();
+  }
+  fastAt = Date.now(); status.fast = { at: fastAt, ms: Date.now() - t0, n: quotes.length, bars: Object.keys(bars).length, fail: fail.slice(0, 12), nFail: fail.length, r429 };
+  if (r429 >= 10) fastAt = Date.now() + 40000; // Yahoo pushed back: skip two ticks
   return quotes.length;
 }
 async function fastLoop() {

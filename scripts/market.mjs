@@ -90,11 +90,12 @@ export async function sweepMarket(symbols, { concurrency = 12, path = "data/mark
 export async function sweepCloses(symbols, { concurrency = 10, path = "data/closes.json" } = {}) {
   const prev = readJSON(path, null); const c = { ...(prev?.c || {}) }; const t0 = Date.now(); let ok = 0;
   const errors = await pool(symbols, concurrency, async sym => {
-    const res0 = await chartMeta(sym, "4mo", "1d", 12000); const cl = res0.indicators?.quote?.[0]?.close || [], ts = res0.timestamp || [];
-    const pts = []; for (let i = 0; i < cl.length; i++) if (cl[i] != null) pts.push(+cl[i].toFixed(3));
+    const res0 = await chartMeta(sym, "4mo", "1d", 12000); const q0 = res0.indicators?.quote?.[0] || {}; const cl = q0.close || [], vol = q0.volume || [], ts = res0.timestamp || [];
+    const pts = [], vols = []; for (let i = 0; i < cl.length; i++) if (cl[i] != null) { pts.push(+cl[i].toFixed(3)); vols.push(vol[i] || 0); }
     if (pts.length < 20) throw new Error("short"); c[sym] = pts.slice(-60); ok++; if (ts.length) c[sym + ":t"] = ts[ts.length - 1] * 1000;
+    const v20 = vols.slice(-21, -1).filter(v => v > 0); if (v20.length >= 10) c[sym + ":v"] = Math.round(v20.reduce((a, b) => a + b, 0) / v20.length); // 20-day average volume, the session in progress excluded — relative volume for any name
   });
-  const out = { at: Date.now(), ms: Date.now() - t0, n: symbols.length, ok, fail: errors.length, cols: "60 daily closes, oldest first; sym:t = stamp of the last bar", c };
+  const out = { at: Date.now(), ms: Date.now() - t0, n: symbols.length, ok, fail: errors.length, cols: "60 daily closes, oldest first; sym:t = stamp of the last bar; sym:v = 20-day average volume", c };
   writeJSON(path, out); return out;
 }
 // Which optionable names deserve a chain snapshot beyond the fixed list: the most active by dollar volume in the latest sweep.
