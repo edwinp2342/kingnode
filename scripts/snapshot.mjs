@@ -241,8 +241,8 @@ async function marketLoop() {
         try { const b = computeBreadth(m, readJSON("data/closes.json", null), symbols); if (b) { status.breadth = { at: b.at, adv: b.adv, dec: b.dec, above50: b.above50 }; console.log(`breadth: ${b.adv} up / ${b.dec} down · ${b.above50}% above the 50-EMA`); } } catch (e) { console.error("breadth", e.message); }
         writeIndex({}); if (PUSH) push(); }
       // 60 closes per optionable name, once per session after the close (or at start when the file is older than the last session)
-      const closes = readJSON("data/closes.json", null); const lastSession = closes ? new Date(closes.at).toISOString().slice(0, 10) : "";
-      if (list.length && (ph === "post" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && lastSession !== t.date) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
+      const closes = readJSON("data/closes.json", null); const lastSession = closes ? new Date(closes.at).toISOString().slice(0, 10) : ""; const upgrade = !!closes && !/:v/.test(closes.cols || ""); // a closes file from before the average-volume column: redo it once
+      if (list.length && (ph === "post" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && (lastSession !== t.date || upgrade)) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
     } catch (e) { console.error("market loop", e.message); }
     await sleep(Math.min(60e3, Math.max(1000, end - Date.now())));
   }

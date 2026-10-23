@@ -246,6 +246,9 @@ test("series: 1-minute bars aggregate on the 09:30 grid, live minutes rebuild th
   assert.equal(f.barsForInterval(withPost, "1m", false).length, 391); assert.equal(f.barsForInterval(withPost, "1m", true).length, 392);
   assert.equal(f.barsForInterval(withPost, "15m", true).length, 27, "26 quarter-hours + 16:00 closing bar... plus the 16:05 post bar folds into the 16:00 bucket");
   assert.equal(f.barsForInterval({ kind: "5m", bars: b5, at: 0 }, "1m", true).length, b5.length, "cannot invent minutes from five-minute bars");
+  // Yahoo's trailing marker (stamped at the last trade time, o=h=l=c) folds into its bucket's close and adds no volume
+  const withMarker = [...b5.slice(0, 3), [m(14) + 58000, 123, 123, 123, 123, 999]]; const norm = f.aggregateBars(withMarker, 5, 5);
+  assert.equal(norm.length, 3); assert.equal(norm[2][4], 123); assert.equal(norm[2][2], 123); assert.equal(norm[2][5], b5[2][5], "marker volume is not added");
   // a daily base: a print on the same ET day updates the day's bar, the next day opens one
   const daily = { kind: "1d", bars: [[Date.parse("2026-10-21T00:00:00Z"), 10, 11, 9, 10.5, 5], [Date.parse("2026-10-22T00:00:00Z"), 10.5, 10.8, 10.2, 10.6, 3]], at: 0 };
   assert.ok(f.foldQuote(daily, 11.2, Date.parse("2026-10-22T15:00:00-04:00"))); assert.equal(daily.bars[1][4], 11.2); assert.equal(daily.bars[1][2], 11.2); assert.equal(daily.bars.length, 2);

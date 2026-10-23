@@ -1415,10 +1415,13 @@ function isRegularBar(t){ const m = etInfo(t).min; return m >= 570 && m <= 960; 
 // bucket start for an intraday interval: minutes from the ET session grid (09:30 is a boundary for every interval, so 1h bars run 9:30–10:30)
 function bucketStart(t, mins){ if (mins >= 1440) return t; const e = etInfo(t); const anchor = 570; const rel = e.min - anchor; const k = Math.floor(rel / mins) * mins; return t - (rel - k) * 60000 - (t % 60000); }
 // aggregate finer bars into coarser ones; same interval passes through
+// Always runs the intraday grid, even at the same interval: Yahoo appends a bar stamped at the last trade time (o=h=l=c, the latest print)
+// after the on-grid bars, and that marker folds into its bucket's close instead of standing as a bar of its own.
 function aggregateBars(bars, fromMins, toMins){
-  if (!bars || toMins <= fromMins) return bars || [];
+  if (!bars?.length) return bars || []; const step = Math.max(fromMins, toMins); if (step >= 1440) return bars; // daily series are left as they are
   const out = []; let cur = null;
-  for (const b of bars){ const bk = bucketStart(b[0], toMins); if (!cur || cur[0] !== bk){ cur = [bk, b[1], b[2], b[3], b[4], b[5] || 0]; out.push(cur); } else { if (b[2] > cur[2]) cur[2] = b[2]; if (b[3] < cur[3]) cur[3] = b[3]; cur[4] = b[4]; cur[5] += b[5] || 0; } }
+  for (const b of bars){ const bk = bucketStart(b[0], step); const marker = b[0] % 60000 !== 0 && b[1] === b[2] && b[2] === b[3] && b[3] === b[4];
+    if (!cur || cur[0] !== bk){ cur = [bk, b[1], b[2], b[3], b[4], marker ? 0 : (b[5] || 0)]; out.push(cur); } else { if (b[2] > cur[2]) cur[2] = b[2]; if (b[3] < cur[3]) cur[3] = b[3]; cur[4] = b[4]; if (!marker) cur[5] += b[5] || 0; } }
   return out;
 }
 // merge a patch of bars (same kind) into a base series by timestamp: replace what exists, append what is new, keep order
@@ -1611,7 +1614,7 @@ async function loadBarsRun(){
   if (mySeq !== barsSeq || S.sym !== sym) return; // stale: the symbol or interval changed while this was in flight
   if (got){
     const cur = S.base; const older = cur && cur.sym === sym && cur.kind === got.kind && cur.at > got.at + 1000 && cur.bars.length >= got.bars.length; // the CDN handed back an older copy than the one on screen (it caches for five minutes): keep ours, the live patches already moved it on
-    if (!older) S.base = { sym, kind: got.kind, bars: got.bars.map(b => b.slice()), session: got.session, at: got.at, src: got.src };
+    if (!older) S.base = { sym, kind: got.kind, bars: aggregateBars(got.bars.map(b => b.slice()), IV_MIN[got.kind] || 5, IV_MIN[got.kind] || 5), session: got.session, at: got.at, src: got.src };
     S.barsSrc = S.base.src; S.barsDemo = false; S.barsMissing = false; S.session = S.base.session; S.baseLoadedAt = Date.now();
     applyLivePatches(true); rebuildBars(); renderLiveQuote(); renderNoChain(); }
   else if (S.demo && FEED_NAMES.has(sym)){ S.base = null; S.bars = synthBars(S.chain?.spot || 100, iv); S.barsMeta = {sym, iv, rg, ext}; S.barsDemo = true; S.barsMissing = false; S.barsEffective = iv; S.barsAt = Date.now(); } // a feed name with the feed down: placeholder bars, labelled
@@ -1637,7 +1640,7 @@ function applyLivePatches(quiet){
   const b = S.base; if (!b || b.sym !== S.sym || S.barsDemo) return false; let changed = false;
   const q = LIVEB.q?.bars?.[S.sym]; const u = LIVEB.u?.bars?.[S.sym];
   if (q?.length && LIVEB.q.at >= b.at - 60e3) changed = foldMinutes(b, q) || changed;
-  else if (u?.length && LIVEB.u.at >= b.at - 60e3 && b.kind !== "1m") changed = (b.kind === "5m" ? mergeBars(b, u) : foldQuoteBar(b, u.at(-1))) || changed;
+  else if (u?.length && LIVEB.u.at >= b.at - 60e3 && b.kind !== "1m") changed = (b.kind === "5m" ? mergeBars(b, aggregateBars(u, 5, 5)) : foldQuoteBar(b, u.at(-1))) || changed;
   const bq = bestQuote(); if (bq && !bq.demo && bq.t && bq.src !== "bars"){ const px = INDEX_SYMS.has(S.sym) && bq.last ? bq.last : (extState(bq) && bq.last ? bq.last : bq.price); if (S.set.extended || !extState(bq) || b.kind === "1d") changed = foldQuote(b, px, bq.t) || changed; }
   if (changed && !quiet){ rebuildBars(); updateChart(); updateAh(); }
   return changed;
