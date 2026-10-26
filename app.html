@@ -416,6 +416,7 @@ body:not(.showhelp) .helptext{display:none !important}
     <label style="grid-column:1/-1">Anthropic API key — this is Ava's brain. Without it she is a rule engine with canned lines; with it she is Claude, reading your screen, book and journal. Stored only in this browser. Get one at console.anthropic.com → API keys (cents per conversation).<input name="anthropicKey" type="password" placeholder="sk-ant-…"></label>
     <label>Ava's model<select name="ediModel"><option value="claude-sonnet-5-5">Sonnet 5.5 — default</option><option value="claude-opus-5-5">Opus 5.5 — deeper, pricier</option><option value="claude-haiku-5-5">Haiku 5.5 — fastest</option><option value="claude-sonnet-4-5">Sonnet 4.5 — older</option></select></label>
     <label style="grid-column:1/-1">Data proxy URL (Cloudflare Worker — makes the static site live; see proxy/ in the project)<input name="proxy" placeholder="https://kingnode-proxy.yourname.workers.dev"></label>
+    <label style="grid-column:1/-1">Stream URL — a Kingnode server running with MARKET_STREAM keys (its /ws). Leave empty when this page is served by that server; the GitHub Pages site needs it to stream.<input name="streamUrl" placeholder="wss://your-kingnode-server/ws (optional)"></label>
     <label style="grid-column:1/-1">Discord webhook URL (for ⚑ Flag and alerts — works without a server)<input name="webhook" placeholder="https://discord.com/api/webhooks/…"></label>
     <label style="grid-column:1/-1">GitHub token with Actions: write on edwinp2342/kingnode (lets “Restart feed” kick the data loop from here — stored only in this browser)<input name="ghToken" type="password" placeholder="github_pat_… (optional)"></label>
 
@@ -452,7 +453,7 @@ const HALAL_META = { verified:"2026-10-01", method:"AAOIFI-style screens as repo
 const HALAL_MAP = new Map(HALAL_UNIVERSE.map(r => [r[0], r]));
 function halalStale(){ return (Date.now() - new Date(HALAL_META.verified+"T00:00:00").getTime())/86400000 > HALAL_META.staleAfterDays; }
 function halalOnly(){ try { return localStorage.getItem("kingnode:halal") === "1"; } catch { return false; } }
-const DEFAULTS = { defaultSym:"SPX", refreshSec:30, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
+const DEFAULTS = { streamUrl:"", defaultSym:"SPX", refreshSec:30, expCount:6, range:6, model:"standard", alertPct:0.2, freshRatio:1.5, freshMinVol:200,
   interval:"5m", chartRange:"5d", bars:160, ema:[21,50,200], showEma:true, showVwap:true, showVolume:true, showLevels:true, showEm:true, showPain:false, showRsi:false, showBb:false, extended:true, showPdl:true, showOr:true, webhook:"", proxy:"", anthropicKey:"", askKey:"", ghToken:"", ediModel:"claude-sonnet-5-5" };
 function loadSettings(){ try { return {...DEFAULTS, ...JSON.parse(localStorage.getItem("kingnode:settings")||"{}")}; } catch { return {...DEFAULTS}; } }
 function saveSettings(){ try { localStorage.setItem("kingnode:settings", JSON.stringify(S.set)); } catch {} }
@@ -501,6 +502,41 @@ async function notify(text){
   try { await navigator.clipboard.writeText(text); return "clipboard"; } catch {}
   return null;
 }
+// ---------- Streaming client: a Kingnode server's hub (server/hub.mjs) over WebSocket ----------
+// One socket, subscribed to the symbol on screen and the tape ETFs. Ticks become quotes (src "stream", with the provider's feed type: IEX
+// is one exchange's prints, SIP the consolidated tape, delayed is delayed) and the forming minute candle; closed minutes arrive as bars.
+// Reconnects with exponential backoff and re-subscribes; while it is down or absent, the polling feed carries on underneath.
+const STR = { ws:null, state:"off", status:null, subs:new Set(), backoff:1000, timer:null, lastMsgAt:0, want:[], failures:0, everHello:false };
+const STRB = {}; // sym → { bars:[closed 1-minute bars], cur:[forming bar] }
+function streamUrl(){ const custom = (S.set.streamUrl||"").trim(); if (custom) return custom.replace(/^http/, "ws").replace(/\/$/, "") + (/\/ws$/.test(custom) ? "" : "/ws"); if (/^https?:$/.test(location.protocol) && location.host && !/github\.io$/.test(location.hostname) && !/vercel\.app$/.test(location.hostname)) return (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws"; return null; }
+function streamWant(){ const w = [S.sym, "SPY", "QQQ", "IWM", "DIA"].filter(s => s && !INDEX_SYMS.has(s)); return [...new Set(w)].slice(0, 25); }
+function streamConnect(force){
+  const url = streamUrl(); if (force){ try { STR.ws?.close(); } catch {} STR.ws = null; clearTimeout(STR.timer); STR.backoff = 1000; }
+  if (!url){ STR.state = "off"; renderStreamBadge(); return; } if (STR.ws && (STR.ws.readyState === 0 || STR.ws.readyState === 1)) return;
+  let ws; try { ws = new WebSocket(url); } catch { STR.state = "error"; renderStreamBadge(); return; } STR.ws = ws; STR.state = "connecting"; renderStreamBadge();
+  ws.onopen = () => { STR.backoff = 1000; STR.subs.clear(); streamSync(); };
+  // a server with no hub (a serverless deployment, say) refuses the upgrade: three refusals and the client stops asking
+
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } STR.lastMsgAt = Date.now(); streamMessage(m); };
+  ws.onclose = () => { if (STR.ws !== ws) return; STR.ws = null; if (STR.state === "off") return; if (!STR.everHello && ++STR.failures >= 3){ STR.state = "off"; renderStreamBadge(); return; } STR.state = "reconnecting"; renderStreamBadge(); const wait = STR.backoff; STR.backoff = Math.min(60e3, STR.backoff * 2); clearTimeout(STR.timer); STR.timer = setTimeout(() => streamConnect(), wait); };
+  ws.onerror = () => {};
+}
+function streamSync(){ const ws = STR.ws; if (!ws || ws.readyState !== 1) return; const want = streamWant(); const add = want.filter(s => !STR.subs.has(s)), drop = [...STR.subs].filter(s => !want.includes(s)); if (drop.length){ ws.send(JSON.stringify({ op:"unsub", syms:drop })); drop.forEach(s => { STR.subs.delete(s); delete STRB[s]; }); } if (add.length){ ws.send(JSON.stringify({ op:"sub", syms:add })); add.forEach(s => STR.subs.add(s)); } }
+function streamQuote(sym, price, t, extra){ const cur = tapeQuotes.get(sym); const prev = extra?.prev ?? cur?.prev ?? null; const q = { symbol:sym, price, prev, last:price, t, state:null, full:null, fullT:null, src:"stream", feedType:STR.status?.feedType || "stream", realtime: !!STR.status?.realtime, snapAt:t, bid:extra?.bid ?? cur?.bid ?? null, ask:extra?.ask ?? cur?.ask ?? null }; tapeQuotes.set(sym, q); return q; }
+function streamMessage(m){
+  if (m.type === "hello" || m.type === "status"){ STR.everHello = true; STR.failures = 0; STR.status = m.type === "hello" ? m.status : m; if (STR.status.state === "disabled"){ STR.state = "off"; renderStreamBadge(); renderStatus(); try { STR.ws?.close(); } catch {} STR.ws = null; return; } /* a server without a provider: nothing to stream, no badge, no retries */ STR.state = STR.status.state === "live" ? "live" : STR.status.state === "stale" ? "stale" : STR.status.state === "error" ? "unavailable" : "connecting"; renderStreamBadge(); renderStatus(); return; }
+  if (m.type === "hb"){ if (m.state && STR.status) { STR.status.state = m.state; const st = m.state === "live" ? "live" : m.state === "stale" ? "stale" : STR.state; if (st !== STR.state){ STR.state = st; renderStreamBadge(); } } return; }
+  if (m.type === "snap"){ if (m.unavailable){ STRB[m.sym] = { bars:[], cur:null, unavailable:true }; return; } const b = STRB[m.sym] = STRB[m.sym] || { bars:[], cur:null }; if (m.bars?.length) b.bars = m.bars.slice(-60); if (m.bar) b.cur = m.bar; if (m.price && m.t) streamQuote(m.sym, m.price, m.t, { prev:m.prev, bid:m.bid, ask:m.ask }); else if (m.prev != null){ const cur = tapeQuotes.get(m.sym); if (cur) cur.prev = m.prev; } if (m.sym === S.sym || TAPE.includes(m.sym)){ renderTape(); renderLiveQuote(); applyLivePatches(); } return; }
+  if (m.type === "tick"){ const b = STRB[m.sym] = STRB[m.sym] || { bars:[], cur:null }; if (m.bar) b.cur = m.bar; if (STR.status && m.feedType) STR.status.feedType = m.feedType; streamQuote(m.sym, m.price, m.t); if (m.sym === S.sym){ renderLiveQuote(); applyLivePatches(); } if (TAPE.includes(m.sym)) renderTape(); return; }
+  if (m.type === "bar"){ const b = STRB[m.sym] = STRB[m.sym] || { bars:[], cur:null }; if (m.final){ const last = b.bars[b.bars.length-1]; if (last && last[0] === m.bar[0]) b.bars[b.bars.length-1] = m.bar; else if (!last || m.bar[0] > last[0]) b.bars.push(m.bar); if (b.bars.length > 120) b.bars.splice(0, b.bars.length - 120); if (b.cur && b.cur[0] === m.bar[0]) b.cur = null; } else b.cur = m.bar; if (m.sym === S.sym) applyLivePatches(); return; }
+  if (m.type === "bbo"){ const cur = tapeQuotes.get(m.sym); if (cur && cur.src === "stream"){ cur.bid = m.bid; cur.ask = m.ask; } return; }
+}
+function streamLabel(){ const st = STR.status; if (!st) return ""; const ft = st.feedType; return ft === "sip" ? "SIP real-time" : ft === "iex" ? "IEX real-time" : ft === "delayed" ? "delayed stream" : st.provider || "stream"; }
+function renderStreamBadge(){ let el = document.getElementById("streamBadge"); if (!el){ const asof = document.getElementById("asof"); if (!asof) return; el = h("span",{id:"streamBadge",class:"badge"}); asof.append(el); }
+  if (STR.state === "off"){ el.hidden = true; return; } el.hidden = false; el.style.textTransform = "none";
+  const live = STR.state === "live"; el.textContent = live ? `STREAM · ${streamLabel()}` : STR.state === "stale" ? "stream stale" : STR.state === "unavailable" ? `stream off — ${STR.status?.errors?.at(-1)?.msg || STR.status?.provider === "none" ? "no provider on the server" : "provider error"}` : STR.state === "reconnecting" ? "stream reconnecting…" : "stream connecting…";
+  el.className = "badge " + (live ? "up" : STR.state === "stale" || STR.state === "reconnecting" ? "warn" : ""); el.title = live ? (STR.status?.feedType === "iex" ? "Alpaca's IEX feed: real-time prints from one exchange, not the consolidated tape (SIP). Prices can differ from your broker by a tick." : STR.status?.feedType === "sip" ? "Consolidated real-time tape." : "The provider's stream is delayed.") : (STR.status?.errors?.at(-1)?.msg || ""); }
+setInterval(() => { if (STR.state === "live" && STR.lastMsgAt && Date.now() - STR.lastMsgAt > 45000 && STR.ws){ try { STR.ws.send(JSON.stringify({ op:"ping" })); } catch {} } }, 15000); // a quiet socket gets a ping; the hub answers with a heartbeat or the socket closes and reconnects
 // ---------- Index tape: our own, from the server quotes API or straight from Cboe on the static site ----------
 const TAPE = ["SPX","NDX","RUT","VIX","SPY","QQQ","IWM","DIA","XSP"];
 const TAPE_NAMES = {SPX:"S&P 500", NDX:"Nasdaq 100", RUT:"Russell 2000", VIX:"VIX", SPY:"SPY", QQQ:"QQQ", IWM:"IWM", DIA:"Dow ETF", XSP:"Mini-SPX"};
@@ -527,7 +563,7 @@ async function loadTape(){
     const spx = got.find(q => q.symbol === "SPX"); if (spx) got.push({symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10, t:spx.t, src:"derived"});
   }
   if (!got.length && S.chain && S.demo){ got = TAPE.map(sym => { const sp = {SPX:7743.41, NDX:28510, RUT:2846, VIX:16.8, SPY:772.4, QQQ:642, IWM:282, DIA:471, XSP:774.3}[sym]; return {symbol:sym, price:sp, prev:sp*(1-0.0051), last:sp, t:Date.now(), demo:true}; }); }
-  got.forEach(q => tapeQuotes.set(q.symbol, q)); renderTape(); renderLiveQuote(); applyLivePatches(); // the chart's last candles move with the tape
+  got.forEach(q => { const cur = tapeQuotes.get(q.symbol); if (cur && cur.src === "stream" && STR.state === "live" && (cur.t || 0) >= (q.t || 0)) return; tapeQuotes.set(q.symbol, q); }); renderTape(); renderLiveQuote(); applyLivePatches(); // the chart's last candles move with the tape; a streamed print is never replaced by an older polled one
 }
 function extState(q){ // "PRE" | "POST" | false — from the feed's marketState, else from the print's ET clock
   const st = (q.state||"").toUpperCase(); if (st.startsWith("PRE")) return "PRE"; if (st.startsWith("POST") || st === "CLOSED") return "POST";
@@ -592,8 +628,8 @@ function renderHeaderPrice(){
   const pxEl = document.getElementById("px"), chgEl = document.getElementById("chg"), el = document.getElementById("liveq"); if (!pxEl || !chgEl || !el) return;
   const d = S.chain; const q = bestQuote();
   const useQ = q && !q.demo && (!q.stale || S.demo || !d);
-  if (useQ){ const lp = latestPrint(q); const px = lp.price; const chg = px - q.prev, pc = q.prev ? chg/q.prev*100 : 0; // the big number is the latest print in whatever session is on; the change is against the previous close
-    pxEl.textContent = fmt(px, px < 2 ? 4 : 2); chgEl.textContent = q.prev ? `${chg>=0?"+":""}${fmt(chg,2)} (${pct(pc)})` : ""; chgEl.className = "chg num " + (chg>=0?"up":"dn");
+  if (useQ){ const lp = latestPrint(q); const px = lp.price; const chg = q.prev > 0 ? px - q.prev : 0, pc = q.prev > 0 ? chg/q.prev*100 : 0; // the big number is the latest print in whatever session is on; the change is against the previous close
+    pxEl.textContent = fmt(px, px < 2 ? 4 : 2); chgEl.textContent = q.prev > 0 ? `${chg>=0?"+":""}${fmt(chg,2)} (${pct(pc)})` : ""; chgEl.className = "chg num " + (chg>=0?"up":"dn");
     const extSess = lp.session !== "LIVE" && lp.session !== "CLOSE"; const ec = extSess ? px - q.price : 0; // extended sessions: the move since the regular close, as well
     el.textContent = q.stale ? `STALE${lp.t ? " · " + whenLabel(lp.t) : ""}` : extSess ? `${lp.session} ${ec>=0?"+":""}${fmt(ec,2)} (${q.price ? pct(ec/q.price*100) : ""}) vs close ${fmt(q.price,2)}${lp.t ? " · " + whenLabel(lp.t) : ""}` : `${lp.session === "LIVE" ? "LIVE" : "CLOSE"}${lp.t ? " · " + whenLabel(lp.t) : ""}`;
     el.title = q.stale ? `Feed stopped ${ageLabel(q.snapAt)} — this is the last print it saw, not a live price.` : `${SESSION_WORD[lp.session] || ""} · source: ${q.src || "feed"}${lp.session === "OVN" ? " · the 24-hour session (20:00–04:00 ET) prints a price but no bars; sampled every minute" : ""}${d && !S.demo && Math.abs(d.spot / px - 1) > 0.0005 ? ` · the chain was priced at ${fmt(d.spot, 2)}` : ""}`;
@@ -606,8 +642,8 @@ function renderTape(){
   const el = document.getElementById("tapeIn"); if (!el) return;
   const items = TAPE.map(sym => tapeQuotes.get(sym)).filter(Boolean);
   if (!items.length){ el.className = "tape-in"; el.replaceChildren(h("span",{class:"tq"}, h("small",null,"loading tape…"))); return; }
-  const chip = q => { const lp = latestPrint(q); const px = lp.price; const chg = px - q.prev, pc = q.prev ? chg/q.prev*100 : 0, up = chg >= 0; const extSess = lp.session !== "LIVE" && lp.session !== "CLOSE"; // the latest print in any session, change against the previous close
-    return h("span",{class:"tq" + (q.stale ? " stale" : ""), title:TAPE_NAMES[q.symbol] + (q.demo ? " · demo" : q.stale ? ` · STALE — feed stopped ${ageLabel(q.snapAt)}, last print ${whenLabel(q.t)}` : ` · ${SESSION_WORD[lp.session] || ""}${lp.t ? " " + whenLabel(lp.t) : ""}${extSess ? ` · close ${fmt(q.price,2)}` : ""}${q.src ? " · " + q.src : ""}`), onclick:()=>goSym(q.symbol)}, h("b",null,q.symbol), h("span",{class:"p"}, fmt(px, 2)), h("span",{class:up?"c":"d"}, `${up?"+":""}${fmt(chg,2)} (${up?"+":""}${fmt(pc,2)}%)`), extSess ? h("span",{class:"ext"}, lp.session.toLowerCase()) : null, q.demo ? h("small",null,"demo") : q.stale ? h("small",{class:"warn"},"stale") : null); };
+  const chip = q => { const lp = latestPrint(q); const px = lp.price; const hasPrev = q.prev > 0; const chg = hasPrev ? px - q.prev : 0, pc = hasPrev ? chg/q.prev*100 : 0, up = chg >= 0; const extSess = lp.session !== "LIVE" && lp.session !== "CLOSE"; // the latest print in any session, change against the previous close (none until the previous close is known)
+    return h("span",{class:"tq" + (q.stale ? " stale" : ""), title:TAPE_NAMES[q.symbol] + (q.demo ? " · demo" : q.stale ? ` · STALE — feed stopped ${ageLabel(q.snapAt)}, last print ${whenLabel(q.t)}` : ` · ${SESSION_WORD[lp.session] || ""}${lp.t ? " " + whenLabel(lp.t) : ""}${extSess ? ` · close ${fmt(q.price,2)}` : ""}${q.src ? " · " + q.src : ""}`), onclick:()=>goSym(q.symbol)}, h("b",null,q.symbol), h("span",{class:"p"}, fmt(px, 2)), hasPrev ? h("span",{class:up?"c":"d"}, `${up?"+":""}${fmt(chg,2)} (${up?"+":""}${fmt(pc,2)}%)`) : null, extSess ? h("span",{class:"ext"}, lp.session.toLowerCase()) : null, q.demo ? h("small",null,"demo") : q.stale ? h("small",{class:"warn"},"stale") : null); };
   const once = items.map(chip), twice = items.map(chip);
   el.className = "tape-in anim"; el.replaceChildren(...once, ...twice);
 }
@@ -1002,6 +1038,7 @@ function renderStatus(){
     row("Flow", S.flow ? (S.flowDemo ? "demo" : S.flow.derived === "chain" ? `session volume · ${S.flow.trades.length} contracts` : S.flow.derived ? `derived · ${S.flow.trades.length} prints` : "live") : "—", S.flow ? !S.flowDemo : null),
     row("Feed loop", S.feed ? `${S.feed.phase||"?"} · wrote ${ageLabel(feedLastWrite())}${S.feed.push ? ` · push ${(S.feed.push.lastMs/1000).toFixed(1)}s` : ""}` : "no index yet", S.feed ? !feedStale() : null),
     row("Tape", tapeQuotes.size ? `${tapeQuotes.size} tickers · ${[...tapeQuotes.values()][0]?.demo ? "demo" : ([...tapeQuotes.values()][0]?.src || "server")}` : "loading", tapeQuotes.size ? ![...tapeQuotes.values()][0]?.demo : null),
+    row("Stream", STR.state === "off" ? "none — polling the feed" : STR.state === "live" ? `${streamLabel()} · ${STR.status?.provider} · ${STR.subs.size} symbols` : `${STR.state}${STR.status?.errors?.length ? " · " + STR.status.errors.at(-1).msg : ""}`, STR.state === "off" ? null : STR.state === "live"),
     row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
     row("Host", location.hostname.includes("github.io") ? "static (no server)" : location.hostname, null),
     row("Proxy", (S.set.proxy||"").trim() ? "set" : "none — direct browser fetch", (S.set.proxy||"").trim() ? true : null),
@@ -1021,6 +1058,7 @@ function renderAsOf(bq){ const d = S.chain; if (!d) return; if (bq === undefined
   const noChain = S.demo && !!bq; // real price, placeholder chain
   const lq = !S.demo ? bestQuote() : null; const chainOff = !!(lq && !lq.demo && !lq.stale && d.spot && Math.abs(d.spot / latestPrint(lq).price - 1) > 0.0005); // the header shows a fresher price than the chain was priced at
   document.getElementById("asof").replaceChildren(h("span",{class:"live" + (S.demo ? " demo" : chainStale ? " stale" : "")}, h("i",null), noChain ? "no chain" : S.demo ? "demo" : chainStale ? "stale" : "live"), h("span",{id:"cd"},""), h("span",{id:"tapeAge",class:"hint"},""), noChain ? h("span",{title:"the price is the feed's; there is no options chain for this name on it"}, "price " + (bq.t ? whenLabel(bq.t) : "from the feed")) : h("span",{title: chainT ? "last chain snapshot " + ageLabel(chainT) + (chainOff ? " — the walls, flip and expected move were computed at this spot" : "") : ""}, "chain " + (chainT ? whenLabel(chainT) : new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})) + (chainOff ? ` @ ${fmt(d.spot, d.spot < 200 ? 2 : 0)}` : "")), h("span",{class:"badge"+(S.demo?" demo":chainStale?" warn":"")}, noChain ? "No options chain" : S.demo ? "Demo data" : chainStale ? "Feed stale · " + ageLabel(chainT) : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
+  renderStreamBadge(); // the as-of line was rebuilt; the stream badge lives at its end
 }
 function renderAll(){
   const d = S.chain, c = S.calc;
@@ -1657,8 +1695,9 @@ function rebuildBars(){
 // fold what the live files carry for this ticker into the base: 1-minute bars (core names, 20 s), else 5-minute bars (every charted name, 1 min), else the latest print
 function applyLivePatches(quiet){
   const b = S.base; if (!b || b.sym !== S.sym || S.barsDemo) return false; let changed = false;
-  const q = LIVEB.q?.bars?.[S.sym]; const u = LIVEB.u?.bars?.[S.sym];
-  if (q?.length && LIVEB.q.at >= b.at - 60e3) changed = foldMinutes(b, q) || changed;
+  const q = LIVEB.q?.bars?.[S.sym]; const u = LIVEB.u?.bars?.[S.sym]; const sb = STR.state === "live" ? STRB[S.sym] : null;
+  if (sb && (sb.bars.length || sb.cur)) changed = foldMinutes(b, [...sb.bars.slice(-12), ...(sb.cur ? [sb.cur] : [])]) || changed; // the stream's own candles: the forming minute from trades, closed minutes from the provider
+  else if (q?.length && LIVEB.q.at >= b.at - 60e3) changed = foldMinutes(b, q) || changed;
   else if (u?.length && LIVEB.u.at >= b.at - 60e3 && b.kind !== "1m") changed = (b.kind === "5m" ? mergeBars(b, aggregateBars(u, 5, 5)) : foldQuoteBar(b, u.at(-1))) || changed;
   const bq = bestQuote(); if (bq && !bq.demo && bq.src !== "bars"){ const lp = latestPrint(bq); if (lp && lp.t && lp.price > 0 && (S.set.extended || lp.session === "LIVE" || lp.session === "CLOSE" || b.kind === "1d")) changed = foldQuote(b, lp.price, lp.t) || changed; }
   if (changed && !quiet){ rebuildBars(); updateChart(); updateAh(); }
@@ -1681,7 +1720,7 @@ function tvFallback(){ mountChart(); }
 function applyChartHeight(){ const host = chartHost(); if (!host) return; const hgt = S.set.chartH; host.style.height = hgt ? Math.max(260, Math.min(window.innerHeight * 0.9, hgt)) + "px" : ""; }
 function gripStart(ev){ const host = chartHost(); if (!host) return; ev.preventDefault(); const y0 = ev.clientY, h0 = host.getBoundingClientRect().height; const move = e => { S.set.chartH = Math.round(Math.max(260, Math.min(window.innerHeight * 0.9, h0 + e.clientY - y0))); applyChartHeight(); }; const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); saveSettings(); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }
 function chartFull(on){ const host = chartHost(); if (!host) return; document.body.classList.toggle("chart-full", on); if (on) host.style.height = ""; else applyChartHeight(); renderChartControls(); KC?.resize(); }
-function chartSourceLabel(){ const s = S.barsSrc; return S.barsDemo ? "demo bars" : s === "yahoo-proxy" ? "live" : s === "snapshot" ? "feed" : s === "closes" ? "daily closes from the nightly sweep" : s === "server" ? "server" : s ? "delayed" : ""; }
+function chartSourceLabel(){ const s = S.barsSrc; if (STR.state === "live" && STRB[S.sym] && !STRB[S.sym].unavailable && !S.barsDemo) return `stream (${streamLabel()}) on ${s === "snapshot" ? "feed" : s || "feed"} history`; return S.barsDemo ? "demo bars" : s === "yahoo-proxy" ? "live" : s === "snapshot" ? "feed" : s === "closes" ? "daily closes from the nightly sweep" : s === "server" ? "server" : s ? "delayed" : ""; }
 function chartFreshLabel(){ const b = S.base; if (!b || S.barsDemo) return ""; const last = S.bars?.at(-1); if (!last) return ""; if (!marketOpenNow()) return "";
   const lq = LIVEB.q?.bars?.[S.sym] ? LIVEB.q.at : 0, lu = LIVEB.u?.bars?.[S.sym] ? LIVEB.u.at : 0; const bq = bestQuote(); const pt = bq && !bq.demo ? (latestPrint(bq)?.t || 0) : 0; // the newest thing folded into the forming bar, not the age of the file behind it
   const t = Math.max(b.at || 0, last[0] || 0, lq, lu, pt); const s = Math.round((Date.now() - t) / 1000); return s < 90 ? ` · ${s}s` : ` · ${Math.round(s/60)}m`; }
@@ -3475,7 +3514,7 @@ let sugItems = [], sugIdx = -1, sugTimer = null;
 function goSym(v){ v = v.toUpperCase().replace(/[^A-Z.]/g,""); if (!v) return; sugEl.hidden = true; if (v === S.sym){ load(); return; }
   S.sym = v; symIn.value = v; S.exps = []; S.inspect = null; closeInspector();
   S.bars = null; S.base = null; S.barsMeta = null; S.barsMissing = false; S.barsDemo = false; S.session = null; // the old ticker's chart must not wear the new name while the new bars load
-  renderChips(); mountChart(); load(); }
+  renderChips(); mountChart(); load(); streamSync(); }
 function showSug(items){ sugItems = items; sugIdx = -1; sugEl.replaceChildren(...items.map((it,i) => h("button",{type:"button", role:"option", onmousedown:e=>{ e.preventDefault(); goSym(it.symbol); }}, h("span",null, h("b",null,it.symbol), h("small",null,it.type||"")), h("span",null,it.name)))); sugEl.hidden = !items.length; }
 // Search: the feed's names first (chart + minute quotes), then every US-listed symbol from the directory (symbols.json) — any ticker, with what the feed has for it
 function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (halalOnly() && halalStatus(sym).s === "excluded") continue; if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:"feed"}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:"feed"}); if (out.length > 30) break; }
@@ -3497,7 +3536,7 @@ document.getElementById("flagBtn").onclick = async () => { const r = await askFo
   const log = (() => { try { return JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch { return []; } })(); log.unshift({t:Date.now(), note, ctx}); try { localStorage.setItem("kingnode:flags", JSON.stringify(log.slice(0,200))); } catch {}
   notice(how === "server" || how === "discord" ? "Flagged. Sent to your Discord with the screen context." : how === "clipboard" ? "No Discord webhook set — flag copied to your clipboard and saved locally. Add a webhook URL in ⚙ Settings to send automatically." : "Saved locally. Add a Discord webhook URL in ⚙ Settings to send flags.", how !== "server" && how !== "discord"); };
 document.getElementById("settingsBtn").onclick = () => { const f = document.getElementById("setForm"); for (const el of f.elements) if (el.name && S.set[el.name] != null) el.value = S.set[el.name]; document.getElementById("setDlg").showModal(); };
-document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } saveSettings(); startTimer(); S.exps = []; load(); });
+document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } if (!f.elements.streamUrl?.value.trim()) S.set.streamUrl = ""; saveSettings(); startTimer(); S.exps = []; load(); streamConnect(true); });
 // Everything lives in this browser's storage. A cleared cache or a new phone loses it — so one file holds it all, and loads back anywhere.
 function backupAll(){ const out = {app:"kingnode", version:1, at:new Date().toISOString(), keys:{}}; for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith("kingnode:") && !/^kingnode:(dflow|seeker|hist|prevchain):/.test(k)) out.keys[k] = localStorage.getItem(k); }
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], {type:"application/json"})); a.download = `kingnode-backup-${marketDate()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 5000); notice(`Backed up ${Object.keys(out.keys).length} items. Keep the file somewhere that survives this browser.`); }
@@ -3527,7 +3566,7 @@ document.getElementById("themeBtn").onclick = () => { const r = document.documen
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
 try { if (localStorage.getItem("kingnode:help") === "1" || !localStorage.getItem("kingnode:seen")) document.body.classList.add("showhelp"); } catch {}
-window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyLivePatches, loadTape, loadUniverse, get chart(){ return KC; } }; applyLayout(); renderChips(); ediInit(); renderPlan(); loadTape(); loadUniverse().then(renderLiveQuote); loadMarket().then(renderLiveQuote); loadBreadth();
+window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyLivePatches, loadTape, loadUniverse, get chart(){ return KC; } }; applyLayout(); renderChips(); ediInit(); renderPlan(); loadTape(); loadUniverse().then(renderLiveQuote); loadMarket().then(renderLiveQuote); loadBreadth(); streamConnect();
 { try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }

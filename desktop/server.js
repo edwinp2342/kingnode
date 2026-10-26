@@ -4,11 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { config } from "dotenv";
+import { engineFromEnv, restFromEnv } from "../server/market.mjs";
+import { attachHub } from "../server/hub.mjs";
 
 const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json", ".md": "text/markdown", ".png": "image/png" };
 
 export function startServer(root, port = 4810) {
   config({ path: path.join(root, ".env.local") }); config({ path: path.join(root, ".env") });
+  // the streaming tier: one upstream connection (Alpaca / Polygon) shared by every tab, exposed at /ws and to the api/* handlers
+  const engine = engineFromEnv(process.env), rest = restFromEnv(process.env); globalThis.__kingnode = { engine, rest, startedAt: Date.now() };
+  engine.on("status", st => { if (st.state !== "live") console.log(`[market] ${st.provider} ${st.state}${st.reason ? " — " + st.reason : ""}`); });
+  engine.start();
   const handlers = new Map();
   async function handler(name) {
     if (!handlers.has(name)) { const f = path.join(root, "api", ...name.split("/")) + ".js"; if (!fs.existsSync(f)) return null; handlers.set(name, (await import(pathToFileURL(f).href)).default); }
@@ -35,7 +41,9 @@ export function startServer(root, port = 4810) {
     } catch (e) { console.error(e); if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: e.message })); }
   });
   function mkRes(res) { return { statusCode: 200, _h: {}, setHeader(k, v) { this._h[k.toLowerCase()] = v; }, status(c) { this.statusCode = c; return this; }, json(o) { res.writeHead(this.statusCode, { ...this._h, "content-type": "application/json" }); res.end(JSON.stringify(o)); }, send(b) { res.writeHead(this.statusCode, this._h); res.end(b); } }; }
-  return new Promise(resolve => { const tryListen = p => srv.once("error", () => tryListen(p + 1)).listen(p, "127.0.0.1", () => { console.log(`Kingnode local server http://127.0.0.1:${p}`); resolve(p); }); tryListen(port); });
+  attachHub(srv, engine, { rest });
+  const host = process.env.HOST || "127.0.0.1";
+  return new Promise(resolve => { const tryListen = p => srv.once("error", () => tryListen(p + 1)).listen(p, host, () => { console.log(`Kingnode local server http://${host}:${p} · market stream: ${engine.provider === "none" ? "off (set MARKET_STREAM=alpaca or polygon with keys)" : engine.provider + " (" + engine.feedType + ")"}`); resolve(p); }); tryListen(port); });
 }
 
 // `node server.js` runs it headless for any browser (no Electron needed)
