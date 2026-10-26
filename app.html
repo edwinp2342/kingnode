@@ -576,7 +576,7 @@ function latestPrint(q){
   if (!q) return null; const ph = marketPhase(); const idx = INDEX_SYMS.has(q.symbol);
   const reg = { price: idx && q.last ? q.last : q.price, t: q.t || null, session: ph === "regular" ? "LIVE" : "CLOSE" };
   if (idx) return reg;
-  const ext = extState(q); const barPrint = ext && q.last && Math.abs(q.last - q.price) > 1e-6 ? { price: q.last, t: q.t, session: ext === "PRE" ? "PRE" : "AH" } : null;
+  const ext = extState(q); const inExt = ph === "pre" || ph === "post"; const barPrint = ext && q.last && (inExt || Math.abs(q.last - q.price) > 1e-6) ? { price: q.last, t: q.t, session: ext === "PRE" ? "PRE" : "AH" } : null; // in the extended session the last bar is the print even when it sits exactly on the close
   const full = q.full > 0 && q.fullT ? { price: q.full, t: q.fullT, session: ph === "overnight" ? "OVN" : ph === "pre" ? "PRE" : ph === "post" ? "AH" : ph === "regular" ? "LIVE" : "CLOSE" } : null;
   if (ph === "regular") return reg;
   if (ph === "overnight" && full) return full;

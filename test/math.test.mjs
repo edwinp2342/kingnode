@@ -271,4 +271,5 @@ test("latest print: regular price in regular hours, the extended bar after hours
   eq(mk("overnight")({ symbol: "SPX", price: 7663.43, prev: 7757, last: 7663.43, t: t4, full: 7663.43, fullT: now }), { price: 7663.43, t: t4, session: "CLOSE" }, "an index has one session");
   assert.equal(mk("closed")({ ...q, full: 212.21, fullT: now }).session, "AH", "a weekend still shows Friday's last after-hours print");
   assert.equal(mk("closed")({ ...q, last: 212.21, full: null, fullT: null }).session, "CLOSE");
+  assert.equal(mk("post")({ ...q, last: 212.21, full: null, fullT: null }).session, "AH", "after hours, a print that sits on the close is still an after-hours print");
 });
