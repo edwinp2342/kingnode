@@ -14,6 +14,11 @@
 //   positioning overlay (once levels-history.json has covered 40 entries) are written alongside.
 //   Run: node scripts/backtest.mjs            (writes data-static/backtest.json with chosen, baseline and every variant)
 import fs from "node:fs";
+import { createHash } from "node:crypto";
+// Costs: every fill pays the spread and a slip. 5 bps a side (≈ a cent on a $20 stock, a dime on $200) plus a flat commission per round trip, both
+// configurable: COST_BPS=5 COST_COMMISSION=0. Net figures are reported beside gross; the app shows net.
+const COSTS = { slipBps: Number(process.env.COST_BPS ?? 5), commission: Number(process.env.COST_COMMISSION ?? 0), notional: Number(process.env.COST_NOTIONAL ?? 5000) };
+const netRet = gross => gross - 2 * COSTS.slipBps / 1e4 - (COSTS.notional ? COSTS.commission / COSTS.notional : 0);
 const BASE = process.env.DATA_BASE || "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
 const syms = (process.env.BT_SYMBOLS || "SPY,QQQ,IWM,NVDA,AMD,TSM,AVGO,AMAT,LRCX,KLAC,MU,ARM,AAPL,MSFT,GOOGL,META,AMZN,TSLA,LLY,ISRG,XOM,CVX,FCX,CAT,GE,VRT,CEG,VST,CRWD,PANW,NET,ANET,SHOP,UBER,ABNB,NKE,COST,WMT,HD,PLTR,COIN,HOOD,GLD,SLV,TLT,XLE,SMH,INTC,MRVL,NFLX,ORCL,CRM,ADBE,QCOM,TXN,ASML,DELL,JPM,GS,V,MA,UNH,PG,KO,PEP,MCD,DIS,BA,DE,RTX,LMT,UPS,FDX,SOFI,RKLB,IONQ,APP,RDDT,MSTR,DKNG,CMG,LULU,ELF,ENPH,FSLR,OKLO,SMR,ASTS,HIMS,TEM,DUOL,SPOT,CAVA,CRWV,NBIS").split(",");
 const ema = (v, n) => { const k = 2 / (n + 1); const out = []; let e = v[0]; v.forEach((x, i) => { e = i ? x * k + e * (1 - k) : x; out.push(e); }); return out; };
@@ -41,7 +46,7 @@ function simulate(p) {
         const stop = p.atrStop ? open.entry - p.atrStop * open.atr : Math.min(e50[i], open.entry * (1 - p.stop)), tgt = open.entry * (1 + p.tgt), age = i - open.i;
         let exit = null, why = "";
         if (c[i] <= stop) { exit = c[i]; why = "stop"; } else if (c[i] >= tgt) { exit = c[i]; why = "target"; } else if (age >= p.days) { exit = c[i]; why = "time"; }
-        if (exit != null) { res.trades.push({ sym, entry: open.entry, exit, ret: exit / open.entry - 1, days: age, why, date: new Date(bars[open.i][0]).toISOString().slice(0, 10) }); open = null; }
+        if (exit != null) { const gross = exit / open.entry - 1; res.trades.push({ sym, entry: open.entry, exit, ret: netRet(gross), gross, days: age, why, date: new Date(bars[open.i][0]).toISOString().slice(0, 10), exitDate: new Date(bars[i][0]).toISOString().slice(0, 10) }); open = null; }
         continue;
       }
       const chg1 = c[i] / c[i - 1] - 1;
@@ -56,8 +61,9 @@ function simulate(p) {
     }
   }
   const t = res.trades, wins = t.filter(x => x.ret > 0), gw = wins.reduce((a, x) => a + x.ret, 0), gl = -t.filter(x => x.ret <= 0).reduce((a, x) => a + x.ret, 0);
+  const grossAvg = t.length ? t.reduce((a, x) => a + x.gross, 0) / t.length : null, grossPF = (() => { const w = t.filter(x => x.gross > 0).reduce((a, x) => a + x.gross, 0), l = -t.filter(x => x.gross <= 0).reduce((a, x) => a + x.gross, 0); return l ? w / l : null; })();
   const avgDays = t.length ? t.reduce((a, x) => a + x.days, 0) / t.length : null;
-  return { params: p, summary: { n: t.length, syms: res.syms, symbols: res.syms, winRate: t.length ? wins.length / t.length : null, avgRet: t.length ? t.reduce((a, x) => a + x.ret, 0) / t.length : null, avgWin: wins.length ? gw / wins.length : null, avgLoss: t.length - wins.length ? -gl / (t.length - wins.length) : null, profitFactor: gl ? gw / gl : null, avgDays, retPerDay: avgDays ? (t.reduce((a, x) => a + x.ret, 0) / t.length) / avgDays : null, exits: { stop: t.filter(x => x.why === "stop").length, target: t.filter(x => x.why === "target").length, time: t.filter(x => x.why === "time").length }, byExit: { stop: t.filter(x => x.why === "stop").length, target: t.filter(x => x.why === "target").length, time: t.filter(x => x.why === "time").length }, trimFwd5: res.trim.length ? res.trim.reduce((a, x) => a + x.fwd5, 0) / res.trim.length : null, trimDownPct: res.trim.length ? res.trim.filter(x => x.fwd5 < 0).length / res.trim.length : null, trimN: res.trim.length }, trades: t };
+  return { params: p, summary: { n: t.length, syms: res.syms, symbols: res.syms, costs: COSTS, grossAvgRet: grossAvg, grossProfitFactor: grossPF, winRate: t.length ? wins.length / t.length : null, avgRet: t.length ? t.reduce((a, x) => a + x.ret, 0) / t.length : null, avgWin: wins.length ? gw / wins.length : null, avgLoss: t.length - wins.length ? -gl / (t.length - wins.length) : null, profitFactor: gl ? gw / gl : null, avgDays, retPerDay: avgDays ? (t.reduce((a, x) => a + x.ret, 0) / t.length) / avgDays : null, exits: { stop: t.filter(x => x.why === "stop").length, target: t.filter(x => x.why === "target").length, time: t.filter(x => x.why === "time").length }, byExit: { stop: t.filter(x => x.why === "stop").length, target: t.filter(x => x.why === "target").length, time: t.filter(x => x.why === "time").length }, trimFwd5: res.trim.length ? res.trim.reduce((a, x) => a + x.fwd5, 0) / res.trim.length : null, trimDownPct: res.trim.length ? res.trim.filter(x => x.fwd5 < 0).length / res.trim.length : null, trimN: res.trim.length }, trades: t };
 }
 const variants = {
   v1: P,
@@ -82,6 +88,24 @@ const overlay = (() => {
 const halves = (() => { const t = [...chosen.trades].sort((a, b) => a.date < b.date ? -1 : 1); const mid = Math.floor(t.length / 2); const st = arr => { const w = arr.filter(x => x.ret > 0), gw = w.reduce((a, x) => a + x.ret, 0), gl = -arr.filter(x => x.ret <= 0).reduce((a, x) => a + x.ret, 0); return { n: arr.length, from: arr[0]?.date, to: arr.at(-1)?.date, winRate: arr.length ? w.length / arr.length : null, avgRet: arr.length ? arr.reduce((a, x) => a + x.ret, 0) / arr.length : null, profitFactor: gl ? gw / gl : null }; }; return { first: st(t.slice(0, mid)), second: st(t.slice(mid)) }; })();
 console.log("halves:", JSON.stringify(halves));
 console.log("positioning overlay:", overlay.enough ? JSON.stringify(overlay) : `${overlay.days} days of levels history, ${overlay.tradesWithLevels} covered trades — needs 40 (keep the feed running)`);
+// Walk-forward: for each calendar quarter from the third one on, the variant with the best profit factor on all trades *before* that quarter is
+// the one "chosen" for it; its trades in that quarter are the out-of-sample record. A rule that only looks good when the whole year picks it is
+// not what a trader would have been running at the time.
+const walkForward = (() => {
+  const all = Object.fromEntries(Object.entries(variants).map(([k, p]) => [k, simulate(p).trades]));
+  const qOf = d => d.slice(0, 4) + "Q" + Math.ceil(Number(d.slice(5, 7)) / 3); const quarters = [...new Set(Object.values(all).flat().map(x => qOf(x.date)))].sort();
+  const pfOf = arr => { const w = arr.filter(x => x.ret > 0).reduce((a, x) => a + x.ret, 0), l = -arr.filter(x => x.ret <= 0).reduce((a, x) => a + x.ret, 0); return l ? w / l : (w ? Infinity : 0); };
+  const picks = [], oos = [];
+  for (let i = 2; i < quarters.length; i++) { const q = quarters[i]; let best = null;
+    for (const [k, trades] of Object.entries(all)) { const prior = trades.filter(x => qOf(x.date) < q); if (prior.length < 15) continue; const pf = pfOf(prior); if (!best || pf > best.pf) best = { k, pf, n: prior.length }; }
+    if (!best) continue; const now = all[best.k].filter(x => qOf(x.date) === q); picks.push({ quarter: q, variant: best.k, priorPF: +best.pf.toFixed(2), priorN: best.n, n: now.length, pf: now.length ? +pfOf(now).toFixed(2) : null, avgRet: now.length ? +(now.reduce((a, x) => a + x.ret, 0) / now.length).toFixed(4) : null }); oos.push(...now); }
+  const w = oos.filter(x => x.ret > 0); return { quarters: picks, n: oos.length, winRate: oos.length ? w.length / oos.length : null, avgRet: oos.length ? oos.reduce((a, x) => a + x.ret, 0) / oos.length : null, profitFactor: oos.length ? pfOf(oos) : null, note: "out-of-sample: each quarter traded with the variant that led on every earlier quarter; needs at least 15 prior trades to pick" };
+})();
+console.log("walk-forward:", JSON.stringify({ n: walkForward.n, pf: walkForward.profitFactor && +walkForward.profitFactor.toFixed(2), avg: walkForward.avgRet && +(walkForward.avgRet * 100).toFixed(2), quarters: walkForward.quarters.map(q => `${q.quarter}:${q.variant}:${q.n}:${q.pf}`) }));
+// Reproducibility: the hash of everything that went in — parameters, costs, the symbol list and each series' span — so two runs that differ can be told apart.
+const inputs = { params: variants, baseline: BASELINE, costs: COSTS, symbols: data.map(d => d.sym).sort(), spans: Object.fromEntries(data.map(d => [d.sym, [d.bars.length, new Date(d.bars[0][0]).toISOString().slice(0, 10), new Date(d.bars.at(-1)[0]).toISOString().slice(0, 10)]])), levelsDays: LV ? Object.keys(LV.days || {}).length : 0 };
+const configHash = createHash("sha256").update(JSON.stringify(inputs)).digest("hex").slice(0, 16);
+const disclosure = { universe: `${data.length} names that trade today (survivorship: names that delisted or fell out of the list are not here)`, period: data.length ? `${inputs.spans[data[0].sym][1]} → ${inputs.spans[data[0].sym][2]}` : "", bars: "daily closes from Yahoo via the feed, split-adjusted, dividends not reinvested", fills: `entries and exits at the close of the signal/exit day; ${COSTS.slipBps} bps slippage a side${COSTS.commission ? ` + $${COSTS.commission} per round trip on $${COSTS.notional}` : ""}`, lookAhead: "signals use only the bars up to the entry day; SPY's regime is read on the same day's close", sampleSize: `${chosen.trades.length} trades — a single bad month moves the profit factor by tenths; nothing here is proof` };
 fs.mkdirSync("data-static", { recursive: true });
-fs.writeFileSync("data-static/backtest.json", JSON.stringify({ at: Date.now(), period: "last ~12 months of daily bars in the feed", chosenName, chosen: { params: chosen.params, summary: chosen.summary }, baseline: { params: baseline.params, summary: baseline.summary }, variants: out, overlay, halves, trades: chosen.trades }));
+fs.writeFileSync("data-static/backtest.json", JSON.stringify({ at: Date.now(), period: "last ~12 months of daily bars in the feed", configHash, costs: COSTS, disclosure, walkForward, chosenName, chosen: { params: chosen.params, summary: chosen.summary }, baseline: { params: baseline.params, summary: baseline.summary }, variants: out, overlay, halves, trades: chosen.trades }));
 console.log("chosen:", chosenName, JSON.stringify(chosen.summary));

@@ -73,3 +73,15 @@ Without credentials: `node test/fake-upstream.mjs 4899` and `MARKET_STREAM=alpac
 Verified here (`npm test`, 27 tests, all passing): message normalization for both providers, candle construction from trades (late and out-of-order prints), provider bars replacing trade-built bars, ref-counted subscriptions, reconnection with backoff and resubscription, stale detection that respects the market clock, auth failure and missing credentials, hub fan-out with coalescing and heartbeats, the browser client end to end against a fake upstream (header, tape, forming candle, symbol switch).
 
 Not verified, because this environment has no provider credentials and cannot reach the providers: the live Alpaca/Polygon authentication handshake, their exact REST field names at the edges (the adapters follow the published docs), plan limits (30 symbols, one connection) as enforced today, and prices against the consolidated tape. The first run with real keys is the verification step: open `/api/status`, watch for `state: "live"`, compare the header with your broker.
+
+## Server hardening
+
+- Static files: dotfiles (`.env*`, `.git`), `node_modules`, `server/`, `desktop/`, `scripts/` and `test/` are never served; only the app, its assets and `api/*` answer.
+- `/api/*`: 240 requests per minute per address (`API_RATE_PER_MIN`), then 429 with `Retry-After`; `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: SAMEORIGIN`.
+- `/ws`: the `Origin` header must be the server's own host or one listed in `WS_ORIGINS` (comma-separated, e.g. `https://edwinp2342.github.io`); 8 connections per address, 200 in all; 16 KB message cap; 60 symbols per client; clients that miss heartbeats are dropped.
+- Keys stay in the process environment; nothing a browser sends reaches a provider except symbol names.
+- Not done: TLS termination (put Caddy or a Cloudflare Tunnel in front for `wss://`), authentication for the API (the server is meant for one trader on a private host — add `ASK_KEY`-style access before exposing it publicly).
+
+## Backtest honesty (scripts/backtest.mjs)
+
+Costs (5 bps a side, configurable), gross and net figures, a walk-forward out-of-sample record (each quarter traded with the variant that led on every earlier quarter), a disclosure block (survivorship: today's names; fills at the close; split-adjusted closes; look-ahead statement; sample size) and a `configHash` of every input. The Ideas card shows all of it. As of Oct 26 the walk-forward record is PF 0.77 on 87 trades — the rule, picked ahead of time, has lost money in the last two quarters, and the card says so.

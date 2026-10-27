@@ -65,6 +65,10 @@ The GitHub Pages build pulls everything from Cboe's delayed feed directly in you
 - **Heatmap:** canvas-rendered, smoothed across strikes (5-tap gaussian) with spot, walls and flip drawn on, expected-move band, top nodes flagged. "Grid" shows exact cells.
 - **Flow:** net-premium timeline (bullish − bearish, cumulative), expiry filter, new prints flash gold as they arrive, 10-second polling when the collector is live.
 - **Contract flow:** every contract that printed, aggregated: premium, prints, average size, % at ask/bid, lean, sweeps/blocks, and a sparkline of cumulative ask-minus-bid premium.
+- **Command palette (⌘K / Ctrl+K):** tickers (the whole directory), tabs, chart intervals and overlays, watchlist, settings, theme, backup, data health — one box, keyboard-driven, with ARIA roles.
+- **Data health (right rail):** session, where the big number comes from (snapshot tape / minute quote / 5-minute sweep / IEX or SIP stream) and how old it is, chain age and delay, bars source, feed loop, sweep, breadth, stream state with reconnects. Gold = older than it should be, red = wrong. Ava's `data_status` tool returns the same table.
+- **Ava guardrails:** every write (log a trade, close one, remember something) is previewed and needs a click; every tool call lands in an audit log (Ava → Audit) you can clear; 30 tool calls a minute; tool results and chain data are treated as data, never instructions; she checks `data_status` before calling anything live.
+- **Backups never contain keys:** Back up everything strips the Anthropic key, tokens and private URLs; a restore keeps the ones this browser already holds.
 - **Chart:** scroll to zoom about the cursor, drag to pan, pinch on a phone, double-click or **Fit** to snap back to the latest bars; the crosshair row shows O/H/L/C, the bar's change and volume plus every indicator's value.
 - **Live indicator:** pulsing LIVE badge with a countdown to the next chain refresh (Settings → refresh seconds; 15s minimum).
 

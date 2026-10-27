@@ -111,3 +111,27 @@ test("hub: a browser subscribes, gets a snapshot, coalesced ticks, bars and hear
 test("REST helpers: range starts and the 429 contract", () => {
   const now = Date.parse("2026-10-26T15:00:00Z"); assert.equal(alpacaRangeStart("1d", now), now - 86400e3); assert.equal(alpacaRangeStart("ytd", now), Date.UTC(2026, 0, 1)); assert.ok(alpacaRangeStart("max", now) < now - 365 * 86400e3 * 10);
 });
+
+test("hub: origin check — same host and listed origins pass, others are refused; connections per address are capped", async () => {
+  const up = fakeUpstream(); const eng = new MarketEngine({ provider: "alpaca", keys: { key: "k", secret: "s" }, url: up.url, log: () => {} }); eng.start(); assert.ok(await until(() => eng.state === "live"));
+  const srv = http.createServer((req, res) => { res.writeHead(404); res.end(); }); const hub = attachHub(srv, eng, { log: () => {}, allowedOrigins: ["https://edwinp2342.github.io"], maxClientsPerIp: 2 });
+  await new Promise(r => srv.listen(0, "127.0.0.1", r)); const port = srv.address().port;
+  const tryOpen = origin => new Promise(r => { const ws = new WsClient(`ws://127.0.0.1:${port}/ws`, origin ? { headers: { origin } } : {}); ws.on("open", () => r({ ok: true, ws })); ws.on("error", () => r({ ok: false })); });
+  const a = await tryOpen(`http://127.0.0.1:${port}`); assert.ok(a.ok, "same host");
+  const b = await tryOpen("https://edwinp2342.github.io"); assert.ok(b.ok, "listed origin");
+  const c = await tryOpen("https://evil.example"); assert.ok(!c.ok, "an unlisted origin is refused");
+  const d = await tryOpen(null); assert.ok(!d.ok, "a third connection from the same address is refused (cap 2)");
+  a.ws.close(); b.ws.close(); await sleep(50); const e = await tryOpen(null); assert.ok(e.ok, "room again after a close"); e.ws.close();
+  hub.close(); eng.stop(); await new Promise(r => srv.close(r)); await up.close();
+});
+
+test("local server: private paths are never served, security headers are set, the API answers, the rate limit trips", async () => {
+  const { startServer } = await import("../desktop/server.js"); const root = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+  const port = await startServer(root, 4899 + Math.floor(Math.random() * 100)); const get = p => fetch(`http://127.0.0.1:${port}${p}`);
+  assert.equal((await get("/app.html")).status, 200); assert.equal((await get("/index.html")).status, 200);
+  for (const p of ["/.env.example", "/.git/config", "/node_modules/ws/package.json", "/server/market.mjs", "/desktop/server.js", "/scripts/snapshot.mjs", "/test/stream.test.mjs", "/../etc/passwd"]) assert.equal((await get(p)).status, 404, p + " must not be served");
+  const st = await get("/api/status"); assert.equal(st.status, 200); assert.equal(st.headers.get("x-content-type-options"), "nosniff"); const j = await st.json(); assert.equal(j.stream.state, "disabled", "no keys in the test environment: the stream says so");
+  const kn = globalThis.__kingnode; kn.engine.stop();
+  let limited = false; for (let i = 0; i < 260; i++) { const r = await get("/api/status"); if (r.status === 429) { limited = true; break; } } assert.ok(limited, "the per-address rate limit trips within a minute of hammering");
+  kn.hub.close(); await new Promise(r => kn.server.close(r));
+});

@@ -7,10 +7,14 @@
 //            {type:"bar", sym, bar, final} · {type:"bbo", sym, bid, ask} · {type:"status", …} · {type:"hb", t} · {type:"error", msg}
 import { WebSocketServer } from "ws";
 
-export function attachHub(httpServer, engine, { path = "/ws", rest = null, heartbeatMs = 10000, tickEveryMs = 250, log = (...a) => console.log("[hub]", ...a), maxSubsPerClient = 60 } = {}) {
+export function attachHub(httpServer, engine, { path = "/ws", rest = null, heartbeatMs = 10000, tickEveryMs = 250, log = (...a) => console.log("[hub]", ...a), maxSubsPerClient = 60, allowedOrigins = null, maxClientsPerIp = 8, maxClients = 200 } = {}) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
-  const clients = new Set();
-  httpServer.on("upgrade", (req, socket, head) => { let u; try { u = new URL(req.url, "http://x"); } catch { socket.destroy(); return; } if (u.pathname !== path) { socket.destroy(); return; } wss.handleUpgrade(req, socket, head, ws => wss.emit("connection", ws, req)); });
+  const clients = new Set(); const perIp = new Map();
+  // origin check: same host always; others only when listed (WS_ORIGINS=https://edwinp2342.github.io,…). A browser cannot fake Origin; non-browser clients send none and are allowed (they hold no cookies here).
+  const originOk = req => { const o = req.headers.origin; if (!o) return true; let host; try { host = new URL(o).host; } catch { return false; } if (host === req.headers.host) return true; const list = allowedOrigins ?? (process.env.WS_ORIGINS || "").split(",").map(x => x.trim()).filter(Boolean); return list.some(a => a === o || a === host || (a.startsWith("*.") && host.endsWith(a.slice(1)))); };
+  httpServer.on("upgrade", (req, socket, head) => { let u; try { u = new URL(req.url, "http://x"); } catch { socket.destroy(); return; } if (u.pathname !== path || !originOk(req)) { socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return; }
+    const ip = req.socket.remoteAddress || "?"; if ((perIp.get(ip) || 0) >= maxClientsPerIp || clients.size >= maxClients) { socket.write("HTTP/1.1 429 Too Many Connections\r\n\r\n"); socket.destroy(); return; }
+    wss.handleUpgrade(req, socket, head, ws => { ws._ip = ip; perIp.set(ip, (perIp.get(ip) || 0) + 1); wss.emit("connection", ws, req); }); });
   const send = (ws, obj) => { if (ws.readyState === 1) { try { ws.send(JSON.stringify(obj)); } catch {} } };
   const snapFor = sym => { const s = engine.snapshot(sym); return s ? { type: "snap", sym, price: s.price, t: s.t, prev: s.prev, bid: s.bid, ask: s.ask, bar: s.bar, bars: s.bars.slice(-30), daily: s.daily, unavailable: s.unavailable || false, provider: s.provider, feedType: s.feedType } : { type: "snap", sym, price: null }; };
   wss.on("connection", ws => {
@@ -30,7 +34,7 @@ export function attachHub(httpServer, engine, { path = "/ws", rest = null, heart
       } else if (m.op === "unsub") { const had = syms.filter(s => c.subs.has(s)); for (const s of had) c.subs.delete(s); engine.unsubscribe(had); }
       else send(ws, { type: "error", msg: "unknown op" });
     });
-    ws.on("close", () => { engine.unsubscribe([...c.subs]); clients.delete(c); clearTimeout(c.flush); });
+    ws.on("close", () => { engine.unsubscribe([...c.subs]); clients.delete(c); clearTimeout(c.flush); const n = (perIp.get(ws._ip) || 1) - 1; if (n <= 0) perIp.delete(ws._ip); else perIp.set(ws._ip, n); });
     ws.on("error", () => {});
   });
   // previous close / daily figures from REST for symbols the stream will not announce by itself; a symbol the provider rejects is marked unavailable

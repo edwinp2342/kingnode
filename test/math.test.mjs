@@ -225,7 +225,7 @@ test("series: 1-minute bars aggregate on the 09:30 grid, live minutes rebuild th
   const sctx = { Math, Date, Number, Map, Set, Array, Object, isFinite, Intl, String, console };
   vm.createContext(sctx);
   const grabConst = name => { const i = js.indexOf(`const ${name} = `); const j = js.indexOf("\n", i); return js.slice(i, j); };
-  vm.runInContext([grabConst("IV_MIN"), grabConst("ET_CACHE"), grab("etInfo"), grab("isRegularBar"), grab("bucketStart"), grab("aggregateBars"), grab("mergeBars"), grab("foldMinutes"), grab("barDay"), grab("foldQuote"), grab("foldQuoteBar"), grab("barsForInterval")].join("\n") + "\nthis.f = { etInfo, isRegularBar, bucketStart, aggregateBars, mergeBars, foldMinutes, foldQuote, barsForInterval };", sctx);
+  vm.runInContext([grabConst("IV_MIN"), grabConst("ET_CACHE"), grabConst("NYSE_HALF_DAYS"), grab("etInfo"), grab("isRegularBar"), grab("bucketStart"), grab("aggregateBars"), grab("mergeBars"), grab("foldMinutes"), grab("barDay"), grab("foldQuote"), grab("foldQuoteBar"), grab("barsForInterval")].join("\n") + "\nthis.f = { etInfo, isRegularBar, bucketStart, aggregateBars, mergeBars, foldMinutes, foldQuote, barsForInterval };", sctx);
   const f = sctx.f;
   const open = Date.parse("2026-10-22T09:30:00-04:00"); const m = k => open + k * 60000;
   // a session of 1-minute bars 09:30 → 16:00
@@ -234,6 +234,7 @@ test("series: 1-minute bars aggregate on the 09:30 grid, live minutes rebuild th
   const b60 = f.aggregateBars(mins, 1, 60); assert.equal(b60[0][0], m(0), "hourly bars start at 09:30, not 09:00"); assert.equal(b60[1][0], m(60));
   assert.equal(f.bucketStart(m(7), 5), m(5)); assert.equal(f.bucketStart(m(61), 60), m(60)); assert.equal(f.bucketStart(m(61), 30), m(60)); assert.equal(f.bucketStart(m(89), 30), m(60));
   assert.ok(f.isRegularBar(m(390)) && !f.isRegularBar(m(391)) && !f.isRegularBar(open - 60000), "16:00 is the closing print; 16:01 and 09:29 are not regular");
+  const halfDay = Date.parse("2026-11-27T13:00:00-05:00"); assert.ok(f.isRegularBar(halfDay) && !f.isRegularBar(halfDay + 60000) && f.isRegularBar(halfDay - 3600e3), "Black Friday closes at 1 PM: the 13:00 bar is the last regular one");
   // a 5-minute base patched by 1-minute live bars: the forming bar is rebuilt from the minutes it has in full
   const base = { kind: "5m", bars: b5.slice(0, 10).map(b => b.slice()), at: Date.now() };
   const live = [45, 46, 47, 48, 49, 50, 51, 52].map(k => [m(k), 200, 210, 190, 205, 1000]);
