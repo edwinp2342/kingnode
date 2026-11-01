@@ -83,6 +83,8 @@ a{color:var(--blue)}
 .symrow{display:flex; align-items:center; gap:12px; padding:6px 12px; border-bottom:1px solid var(--rule); flex-wrap:wrap; min-height:44px}
 #symName{font-weight:600; font-size:14px}
 .quote{display:flex; align-items:baseline; gap:8px} .quote .px{font-size:20px; font-weight:700} .quote .chg{font-size:13px}
+.bbo{font-family:var(--mono); font-size:12px; color:var(--muted); display:inline-flex; gap:6px; align-items:baseline; white-space:nowrap} .bbo .bid{color:var(--pos)} .bbo .ask{color:var(--neg)} .bbo b{font-weight:600} .bbo .sp{opacity:.85}
+.badge.click{cursor:pointer}
 .live{display:inline-flex; align-items:center; gap:5px; color:var(--pos); font-weight:600; text-transform:uppercase; font-size:10.5px; letter-spacing:.05em}
 .live i{width:7px; height:7px; border-radius:50%; background:var(--pos); box-shadow:0 0 0 0 rgba(38,166,154,.6); animation:pulse 2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(38,166,154,.6)} 70%{box-shadow:0 0 0 6px rgba(38,166,154,0)} 100%{box-shadow:0 0 0 0 rgba(38,166,154,0)}}
@@ -369,6 +371,7 @@ body:not(.showhelp) .helptext{display:none !important}
 <div class="symrow">
   <span id="symName"></span>
   <div class="quote"><span class="px num" id="px">—</span><span class="chg num" id="chg"></span></div>
+  <span class="bbo num" id="bbo" hidden title="bid × ask"></span>
   <span class="badge" id="liveq" hidden></span>
   <span class="badge" id="ahq" hidden></span>
   <span id="rvolq"></span>
@@ -570,8 +573,8 @@ async function loadTape(){
     const res = await Promise.all(syms.map(tapeFromCboe)); got = res.filter(Boolean);
     const spx = got.find(q => q.symbol === "SPX"); if (spx) got.push({symbol:"XSP", price:spx.price/10, prev:spx.prev/10, last:spx.last/10, t:spx.t, src:"derived"});
   }
-  if (!got.length && S.chain && S.demo){ got = TAPE.map(sym => { const sp = {SPX:7743.41, NDX:28510, RUT:2846, VIX:16.8, SPY:772.4, QQQ:642, IWM:282, DIA:471, XSP:774.3}[sym]; return {symbol:sym, price:sp, prev:sp*(1-0.0051), last:sp, t:Date.now(), demo:true}; }); }
-  got.forEach(q => { const cur = tapeQuotes.get(q.symbol); if (cur && cur.src === "stream" && STR.state === "live" && (cur.t || 0) >= (q.t || 0)) return; tapeQuotes.set(q.symbol, q); }); renderTape(); renderLiveQuote(); applyLivePatches(); // the chart's last candles move with the tape; a streamed print is never replaced by an older polled one
+  if (!got.length && S.chain && S.demo && !rhAvailable()){ got = TAPE.map(sym => { const sp = {SPX:7743.41, NDX:28510, RUT:2846, VIX:16.8, SPY:772.4, QQQ:642, IWM:282, DIA:471, XSP:774.3}[sym]; return {symbol:sym, price:sp, prev:sp*(1-0.0051), last:sp, t:Date.now(), demo:true}; }); }
+  got.forEach(q => { const cur = tapeQuotes.get(q.symbol); if (cur && cur.src === "stream" && STR.state === "live" && (cur.t || 0) >= (q.t || 0)) return; if (cur && cur.src === "broker" && rhLive()) return; tapeQuotes.set(q.symbol, q); }); renderTape(); renderLiveQuote(); applyLivePatches(); // the chart's last candles move with the tape; a streamed print is never replaced by an older polled one, and the broker's quote (polled every few seconds) is never replaced by the feed's
 }
 function extState(q){ // "PRE" | "POST" | false — from the feed's marketState, else from the print's ET clock
   const st = (q.state||"").toUpperCase(); if (st.startsWith("PRE")) return "PRE"; if (st.startsWith("POST") || st === "CLOSED") return "POST";
@@ -617,7 +620,9 @@ async function restartFeed(){
 function demoLabel(){ return S.demo && bestQuote() ? "No options chain" : "Demo data"; } // a real price with a placeholder chain is "no chain", not "demo"
 function renderNoChain(){
   let b = document.getElementById("nochain"); if (!b){ b = h("div",{id:"nochain",class:"notice",style:{margin:"0 14px 8px",borderColor:"var(--gold)",color:"var(--gold)"}}); document.getElementById("tvChart")?.before(b); }
-  if (S.demo && S.chain?.noChain && S.bars && !S.barsDemo){ const info = symInfo(S.sym); b.hidden = false;
+  if (rhAvailable() && S.demo && (S.chain?.noChain || RH.state !== "live")){ b.hidden = false; // Claude's preview: no feed, so no chain — say where the real terminal is
+    b.replaceChildren(h("span",null, `This is the preview inside Claude: it cannot reach Kingnode's feed, so there is no options chain, flow or levels here — ${RH.state === "live" ? "the price, bid × ask and chart come from your Robinhood connection" : RH.state === "not_connected" ? "connect Robinhood in claude.ai (Settings → Connectors) for live quotes here" : RH.state === "denied" ? "allow Robinhood for this page to get live quotes here" : "quotes arrive from your Robinhood connection once you allow it"}. The full terminal runs at `), h("a",{href:"https://edwinp2342.github.io/kingnode/app.html", target:"_blank", rel:"noopener"}, "edwinp2342.github.io/kingnode"), h("span",null,".")); }
+  else if (S.demo && S.chain?.noChain && S.bars && !S.barsDemo){ const info = symInfo(S.sym); b.hidden = false;
     b.textContent = info && !info.optionable ? `${S.sym} (${info.name}, ${info.exchange}) has no listed options — there is no chain to read. Price and chart are real; the positioning panels below are placeholders.`
       : `No options chain for ${S.sym} on the free feed right now — price and chart are real, the levels, Heatseeker and flow below are placeholders. The feed snapshots the core list every 3 minutes and the 150 most active optionable names every 15, so ${S.sym} appears here when it is one of them; for any name any time, set a data proxy in ⚙ (a free Cloudflare Worker, see proxy/ in the project).`; }
   else b.hidden = true;
@@ -641,10 +646,16 @@ function renderHeaderPrice(){
     const extSess = lp.session !== "LIVE" && lp.session !== "CLOSE"; const ec = extSess ? px - q.price : 0; // extended sessions: the move since the regular close, as well
     el.textContent = q.stale ? `STALE${lp.t ? " · " + whenLabel(lp.t) : ""}` : extSess ? `${lp.session} ${ec>=0?"+":""}${fmt(ec,2)} (${q.price ? pct(ec/q.price*100) : ""}) vs close ${fmt(q.price,2)}${lp.t ? " · " + whenLabel(lp.t) : ""}` : `${lp.session === "LIVE" ? "LIVE" : "CLOSE"}${lp.t ? " · " + whenLabel(lp.t) : ""}`;
     el.title = q.stale ? `Feed stopped ${ageLabel(q.snapAt)} — this is the last print it saw, not a live price.` : `${SESSION_WORD[lp.session] || ""} · source: ${q.src || "feed"}${lp.session === "OVN" ? " · the 24-hour session (20:00–04:00 ET) prints a price but no bars; sampled every minute" : ""}${d && !S.demo && Math.abs(d.spot / px - 1) > 0.0005 ? ` · the chain was priced at ${fmt(d.spot, 2)}` : ""}`;
-    el.className = "badge " + (q.stale ? "warn" : extSess ? (ec >= 0 ? "up" : "dn") : (chg >= 0 ? "up" : "dn")); el.style.textTransform = "none"; el.hidden = false; }
-  else if (d && !S.demo){ pxEl.textContent = fmt(d.spot, 2); const pc = d.changePct != null ? d.changePct : (d.spot && d.change != null && d.spot !== d.change ? d.change/(d.spot - d.change)*100 : 0); chgEl.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(pc)})`; chgEl.className = "chg num " + (d.change>=0?"up":"dn"); el.hidden = true; } // Cboe's own percent: after hours its spot is the AH print while its change is the session's, so recomputing from the two would be wrong
-  else { pxEl.textContent = "—"; chgEl.textContent = NAMES.has(S.sym) ? "no quote yet" : "unknown ticker"; chgEl.className = "chg hint"; el.hidden = true; }
+    el.className = "badge " + (q.stale ? "warn" : extSess ? (ec >= 0 ? "up" : "dn") : (chg >= 0 ? "up" : "dn")); el.style.textTransform = "none"; el.hidden = false; renderBbo(q); }
+  else if (d && !S.demo){ renderBbo(null); pxEl.textContent = fmt(d.spot, 2); const pc = d.changePct != null ? d.changePct : (d.spot && d.change != null && d.spot !== d.change ? d.change/(d.spot - d.change)*100 : 0); chgEl.textContent = `${d.change>=0?"+":""}${fmt(d.change,2)} (${pct(pc)})`; chgEl.className = "chg num " + (d.change>=0?"up":"dn"); el.hidden = true; } // Cboe's own percent: after hours its spot is the AH print while its change is the session's, so recomputing from the two would be wrong
+  else { renderBbo(null); pxEl.textContent = "—"; chgEl.textContent = NAMES.has(S.sym) ? (RH.state === "asking" || RH.state === "starting" ? "waiting for Robinhood…" : RH.unavailable.has(S.sym) && rhAvailable() ? "no quote — Robinhood does not serve " + S.sym + " through its connector" : "no quote yet") : "unknown ticker"; chgEl.className = "chg hint"; el.hidden = true; }
 }
+// The two-sided quote under the price, when the source carries one: the viewer's Robinhood connection (inside Claude's preview) or a streaming
+// server's book. The feed never has one — Yahoo's chart data is last trade only — so on the public site this stays hidden.
+function renderBbo(q){ const el = document.getElementById("bbo"); if (!el) return; if (!q || q.demo || q.stale || !(q.bid > 0) || !(q.ask > 0) || q.ask < q.bid){ el.hidden = true; return; }
+  const dp = q.ask < 2 ? 4 : 2; const spread = q.ask - q.bid, mid = (q.ask + q.bid) / 2, bps = mid > 0 ? spread / mid * 1e4 : 0; const sz = q.bidSize > 0 && q.askSize > 0 ? ` · ${fmt(q.bidSize)} × ${fmt(q.askSize)}` : "";
+  el.replaceChildren(h("span",{class:"bid"}, fmt(q.bid, dp)), h("b",null,"×"), h("span",{class:"ask"}, fmt(q.ask, dp)), h("span",{class:"sp"}, `spread ${fmt(spread, dp)} · ${bps < 10 ? bps.toFixed(1) : Math.round(bps)} bp${sz}`));
+  el.title = `bid × ask from ${q.src === "broker" ? "your Robinhood connection" : q.src === "stream" ? streamLabel() : q.src}${q.bboT ? " · " + whenLabel(q.bboT) : ""}${q.src === "stream" && STR.status?.feedType === "iex" ? " · one exchange's book, not the NBBO" : ""}`; el.hidden = false; }
 function renderMarketState(){ const el = document.getElementById("mktState"); if (!el) return; const ph = marketPhase(); const et = new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"})); const dow = et.getDay();
   const text = ph === "regular" ? "Regular session · closes 4:00 PM" : ph === "pre" ? "Pre-market · opens 9:30 AM" : ph === "post" ? "After hours · until 8:00 PM" : ph === "overnight" ? "Overnight · 24-hour session until 4:00 AM" : dow === 6 || (dow === 0) ? "Closed · overnight session opens Sun 8:00 PM" : dow === 5 ? "Closed for the weekend" : "Closed";
   el.textContent = text; el.className = "badge mkt" + (ph === "regular" ? " up" : ""); el.style.textTransform = "none"; el.title = "New York time. Sessions: pre-market 4:00–9:30, regular 9:30–4:00, after hours 4:00–8:00, overnight 8:00 PM–4:00 AM (a sampled 24-hour price, no bars)."; el.hidden = false; }
@@ -663,6 +674,100 @@ setInterval(() => { if (document.visibilityState === "visible" && (S.set.proxy||
 setInterval(() => { if (document.visibilityState === "visible" && !(S.set.proxy||"").trim()) loadTape(); }, 15000); // the feed writes the tape every 20 s in regular hours
 setInterval(() => { if (document.visibilityState === "visible"){ loadUniverse(true).then(() => { renderLiveQuote(); applyLivePatches(); }); if (!FEED_NAMES.has(S.sym)) loadMarket(true).then(() => { renderLiveQuote(); applyLivePatches(); }); else if (Date.now() - MKT.at > 5*60e3) loadMarket(true).then(renderLiveQuote); } }, 30000); // the feed's universe quote backs the header for every name, not just the tape; the sweep covers the rest
 
+// ---------- Broker quotes: the viewer's own Robinhood connection, when the page runs inside Claude's artifact viewer ----------
+// The published preview is sandboxed: it cannot reach the feed or any website. What it can reach, with the viewer's consent and the viewer's own
+// credentials (never this page's), is the viewer's claude.ai connectors. With Robinhood connected the page asks it for the symbol on screen and
+// the tape every few seconds — last trade with its exchange time, bid × ask, previous close, index levels — and for the chart's bars. Quotes carry
+// src "broker" / feedType "robinhood" and the badge says ROBINHOOD. Anywhere else (github.io, a file, the desktop app) window.claude does not
+// exist and this block is inert. Robinhood calls its quotes real-time; it does not say which feed, so Kingnode never calls them the consolidated tape.
+const RH_SERVER = "Robinhood";
+const RH_INDEX = { SPX:"432fbbb8-b82c-454a-852d-eb85382c7066", NDX:"50c298f7-27a8-44a1-b049-ec153cf2892f", VIX:"3b912aa2-88f9-4682-8ae3-e39520bdf4db", XSP:"b8ae3ed3-7f82-4c77-adb4-f25f2cab6a4e" }; // Robinhood's index instrument ids (public identifiers, not secrets); RUT is not served through the connector
+const RH = { mcp:null, state:"off", note:"", err:null, timer:null, busy:false, lastOk:0, lastSym:null, dueTape:0, until:0, calls:0, prev:{}, prevAt:0, unavailable:new Set(["RUT"]) }; // state: off | starting | asking | live | denied | not_connected | reauth | error
+function rhAvailable(){ return !!(window.claude && typeof window.claude.use === "function"); }
+function rhLive(){ return RH.state === "live" && Date.now() - RH.lastOk < 180e3; }
+function rhReady(){ return !!RH.mcp && RH.state === "live"; }
+function rhLabel(){ return RH.state === "live" ? "ROBINHOOD · real-time" : RH.state === "asking" ? "Robinhood · waiting for your OK" : RH.state === "starting" ? "Robinhood · connecting…" : RH.state === "denied" ? "Robinhood quotes off — tap to allow" : RH.state === "not_connected" ? "Robinhood not connected — add it in claude.ai Settings → Connectors" : RH.state === "reauth" ? "Reconnect Robinhood in claude.ai Settings → Connectors" : RH.state === "error" ? `Robinhood · ${RH.note || "error"} — tap to retry` : ""; }
+function rhInterval(){ const ph = marketPhase(); return ph === "regular" ? 4000 : ph === "pre" || ph === "post" ? 8000 : ph === "overnight" ? 20000 : 60000; }
+function rhSchedule(ms){ clearTimeout(RH.timer); RH.timer = setTimeout(rhPoll, ms); }
+async function rhStart(){
+  if (!rhAvailable() || RH.state !== "off") return; RH.state = "starting"; renderBrokerBadge();
+  let mcp = null; try { mcp = await window.claude.use("mcp"); } catch { mcp = null; }
+  if (!mcp){ RH.state = "off"; renderBrokerBadge(); return; } RH.mcp = mcp;
+  try { const l = await mcp.listTools(RH_SERVER); const s = l?.servers?.find(x => x.server === RH_SERVER); if (!s || !s.tools?.length){ RH.state = "not_connected"; renderBrokerBadge(); renderStatus(); renderNoChain(); return; } if (s.authStatus === "needs_reauth"){ RH.state = "reauth"; renderBrokerBadge(); renderStatus(); return; } } catch {} // listing failed: the first call's error code decides
+  RH.state = "asking"; renderBrokerBadge(); renderHeaderPrice(); rhSchedule(0);
+}
+function rhRetry(){ if (!RH.mcp) return; RH.state = "asking"; RH.until = 0; RH.err = null; RH.note = ""; renderBrokerBadge(); rhSchedule(0); }
+async function rhCall(tool, input){
+  RH.calls++; const opts = { cache:false }; if (RH.state !== "asking" && typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") opts.signal = AbortSignal.timeout(20000); // the first call waits for the consent prompt, however long that takes
+  const r = await RH.mcp.callTool(RH_SERVER, tool, input, opts); return r && r.payload !== undefined ? r.payload : r;
+}
+// the viewer's answer to a call, as the capability's error codes: a few stop the polling for good (only a viewer action brings it back), the rest back off
+function rhFail(e, soft){
+  const code = e?.code || "upstream_error"; RH.err = e || null;
+  if (code === "approval_required" || code === "not_in_manifest" || code === "not_granted" || code === "blocked_by_policy" || code === "consent_required"){ RH.state = "denied"; }
+  else if (code === "server_not_connected" || code === "selection_required" || code === "server_not_found"){ RH.state = "not_connected"; }
+  else if (code === "needs_reauth"){ RH.state = "reauth"; }
+  else if (code === "capability_disabled" || code === "capability_removed" || code === "user_changed"){ RH.state = "off"; clearTimeout(RH.timer); }
+  else { const wait = e?.retryAfterMs > 0 ? Math.min(60e3, e.retryAfterMs) : code === "cancelled" ? 3000 : Math.min(60e3, 8000 * Math.pow(2, Math.min(3, RH.fails || 0))); RH.fails = (RH.fails || 0) + 1; RH.note = code === "tool_error" ? "Robinhood reported an error" : code === "server_unavailable" ? "Robinhood unreachable, retrying" : code === "rate_limited" ? "rate limited, backing off" : code === "cancelled" ? "slow answer, retrying" : (e?.message || code).slice(0, 80); if (!soft || !rhLive()){ RH.state = "error"; RH.until = Date.now() + wait; rhSchedule(wait); } }
+  renderBrokerBadge(); renderHeaderPrice(); renderStatus();
+}
+async function rhPoll(){
+  if (!RH.mcp || !["asking","live","error"].includes(RH.state)) return;
+  if (document.visibilityState !== "visible"){ rhSchedule(2000); return; }
+  if (RH.busy){ rhSchedule(500); return; }
+  const now = Date.now(); if (now < RH.until){ rhSchedule(RH.until - now); return; }
+  const symChanged = S.sym !== RH.lastSym; RH.lastSym = S.sym; const tapeDue = symChanged || now >= RH.dueTape; const slow = marketPhase() === "regular" ? 15000 : marketPhase() === "closed" ? 120000 : 30000;
+  const eq = [...new Set([S.sym, ...(tapeDue ? ["SPY","QQQ","IWM","DIA"] : [])])].filter(s => s && !INDEX_SYMS.has(s) && /^[A-Z][A-Z.]{0,9}$/.test(s));
+  const ix = [...new Set([...(INDEX_SYMS.has(S.sym) ? [S.sym] : []), ...(tapeDue ? Object.keys(RH_INDEX) : [])])].filter(s => RH_INDEX[s]);
+  RH.busy = true; const first = RH.state === "asking";
+  try {
+    const jobs = [];
+    if (eq.length) jobs.push(rhCall("get_equity_quotes", { symbols: eq }).then(p => rhFoldEquities(p, Date.now())));
+    if (ix.length && !first) jobs.push(rhCall("get_index_quotes", { instrument_ids: ix.map(s => RH_INDEX[s]) }).then(p => rhFoldIndexes(p, Date.now()))); // the first call alone carries the consent prompt; two at once would race it
+    else if (ix.length && first && !eq.length) jobs.push(rhCall("get_index_quotes", { instrument_ids: ix.map(s => RH_INDEX[s]) }).then(p => rhFoldIndexes(p, Date.now())));
+    await Promise.all(jobs); RH.state = "live"; RH.lastOk = Date.now(); RH.err = null; RH.note = ""; RH.fails = 0; if (tapeDue && !first) RH.dueTape = Date.now() + slow;
+    for (const [k, v] of tapeQuotes) if (v.demo) tapeQuotes.delete(k); // placeholders never sit next to real quotes
+    if (first){ rhSchedule(50); } else rhSchedule(rhInterval()); // right after consent: the indices and the tape follow at once
+    if (ix.length && Date.now() - RH.prevAt > 6 * 3600e3 && !first) rhIndexPrev().catch(() => {}); // index previous closes once in a while (Robinhood's index quote carries none)
+    renderTape(); renderLiveQuote(); applyLivePatches(); renderBrokerBadge(); renderNoChain();
+    if ((S.barsDemo || S.barsMissing || !S.base) && !first) loadBars(); // the chart was waiting for a source
+  } catch (e) { rhFail(e); }
+  finally { RH.busy = false; }
+}
+// one Robinhood equity result → a Kingnode quote. last_trade_price is the regular-session last (the close, outside the session); a newer
+// last_non_reg_trade_price is the extended-hours print and becomes the "last" with its own time, like the feed's extended bar.
+function rhEquityQuote(row, now, cur){
+  const r = row?.quote; if (!r || !r.symbol) return null; const sym = String(r.symbol).toUpperCase();
+  const px = +r.last_trade_price || 0, ext = +r.last_non_reg_trade_price || 0; const tReg = Date.parse(r.venue_last_trade_time || "") || 0, tExt = Date.parse(r.venue_last_non_reg_trade_time || "") || 0;
+  if (!(px > 0) && !(ext > 0)) return null; const useExt = ext > 0 && tExt > 0 && tExt > tReg;
+  const prev = +r.adjusted_previous_close || +r.previous_close || +(row.close?.price) || cur?.prev || null; const bid = +r.bid_price > 0 ? +r.bid_price : null, ask = +r.ask_price > 0 ? +r.ask_price : null;
+  const halted = r.state && r.state !== "active" ? String(r.state) : null;
+  return { symbol:sym, price: px > 0 ? px : ext, prev, last: useExt ? ext : (px > 0 ? px : ext), t: useExt ? tExt : (tReg || now), state:null, full: useExt ? ext : null, fullT: useExt ? tExt : null, src:"broker", feedType:"robinhood", realtime:true, snapAt:now, bid, ask, bboT: Date.parse(r.venue_bid_time || r.venue_ask_time || "") || null, halted, traded: r.has_traded !== false };
+}
+function rhFoldEquities(p, now){ const d = p?.data || p; const rows = Array.isArray(d?.results) ? d.results : []; let n = 0; for (const row of rows){ const q = rhEquityQuote(row, now, tapeQuotes.get(String(row?.quote?.symbol || "").toUpperCase())); if (q){ tapeQuotes.set(q.symbol, q); n++; } } return n; }
+function rhIndexQuote(r, now, cur, prevMap){ const byId = RH.byId || (RH.byId = Object.fromEntries(Object.entries(RH_INDEX).map(([s,id]) => [id, s]))); const sym = byId[r?.instrument_id] || String(r?.symbol || "").toUpperCase(); const v = +r?.value; if (!sym || !(v > 0)) return null; const t = Date.parse(r.venue_timestamp || r.updated_at || "") || now; const prev = prevMap?.[sym] ?? cur?.prev ?? null; return { symbol:sym, price:v, prev, last:v, t, state:null, full:null, fullT:null, src:"broker", feedType:"robinhood", realtime:true, snapAt:now, bid:null, ask:null }; }
+function rhFoldIndexes(p, now){ const d = p?.data || p; const rows = Array.isArray(d?.quotes) ? d.quotes : []; let n = 0; for (const r of rows){ const q = rhIndexQuote(r, now, tapeQuotes.get(String(r?.symbol || "").toUpperCase()), RH.prev); if (q){ const feed = UV.q ? universeQuote(q.symbol) : null; if (q.prev == null && feed?.prev > 0) q.prev = feed.prev; tapeQuotes.set(q.symbol, q); n++; } } for (const x of (Array.isArray(d?.restricted) ? d.restricted : [])){ const s = String(x?.symbol || "").toUpperCase(); if (s) RH.unavailable.add(s); } return n; }
+// the previous session's close for an index, from its daily bars: the last completed session before the one the quote belongs to
+function rhIndexPrevFrom(bars, quoteT){ if (!bars?.length) return null; const day = etInfo(quoteT || Date.now()).day; let prev = null; for (const b of bars){ const bd = barDay(b[0]); if (bd < day) prev = b[4]; } return prev; }
+async function rhIndexPrev(){ RH.prevAt = Date.now(); const ids = Object.values(RH_INDEX); const p = await rhCall("get_index_historicals", { instrument_ids: ids, interval:"day", start_time: new Date(Date.now() - 9 * 86400e3).toISOString() }); const d = p?.data || p; for (const res of (Array.isArray(d?.results) ? d.results : [])){ const sym = RH.byId?.[res.instrument_id] || String(res.symbol || "").toUpperCase(); const q = tapeQuotes.get(sym); const prev = rhIndexPrevFrom(rhBarsFrom(res.bars), q?.t); if (prev > 0){ RH.prev[sym] = prev; if (q && q.src === "broker") q.prev = prev; } } renderTape(); renderLiveQuote(); }
+// Robinhood bars → Kingnode bars; gap-fill bars carry no information and are dropped
+function rhBarsFrom(rows){ const out = []; for (const b of (Array.isArray(rows) ? rows : [])){ if (!b || b.interpolated) continue; const t = Date.parse(b.begins_at || ""); const o = +(b.open_price ?? b.open_value), hi = +(b.high_price ?? b.high_value), lo = +(b.low_price ?? b.low_value), c = +(b.close_price ?? b.close_value); if (!(t > 0) || !(c > 0)) continue; out.push([t, o > 0 ? o : c, hi > 0 ? hi : c, lo > 0 ? lo : c, c, +b.volume || 0]); } out.sort((a, b) => a[0] - b[0]); return out; }
+// the chart's base series from Robinhood, in the feed's shape: 1-minute, 5-minute (extended hours, filtered later by the session setting) or daily
+async function rhBars(sym, kind, rg){
+  if (!rhReady()) return null;
+  try {
+    const days = kind === "1d" ? ({"1d":10,"5d":10,"1mo":45,"3mo":120,"6mo":220,"1y":400}[rg] || 400) : kind === "1m" ? 2 : ({"1d":3,"5d":8,"1mo":32}[rg] || 8);
+    const interval = kind === "1d" ? "day" : kind === "1m" ? "minute" : "5minute";
+    const fetchRows = async d => { const start = new Date(Date.now() - d * 86400e3).toISOString(); if (INDEX_SYMS.has(sym)){ const id = RH_INDEX[sym]; if (!id) return null; const p = await rhCall("get_index_historicals", { instrument_ids:[id], interval, start_time:start }); return (p?.data || p)?.results?.[0]?.bars; } const p = await rhCall("get_equity_historicals", { symbols:[sym], interval, start_time:start, bounds: kind === "1d" ? "regular" : "extended" }); return (p?.data || p)?.results?.[0]?.bars; };
+    let rows; try { rows = await fetchRows(days); } catch (e) { if (e?.code !== "tool_error" || days <= 1) throw e; rows = await fetchRows(Math.max(1, Math.floor(days / 4))); } // too many bars for the range: ask for less
+    const bars = rhBarsFrom(rows); if (!bars.length) return null; return { bars, kind, session:null, at:Date.now(), src:"broker" };
+  } catch (e) { rhFail(e, true); return null; }
+}
+function renderBrokerBadge(){ let el = document.getElementById("brokerBadge"); if (!el){ const asof = document.getElementById("asof"); if (!asof) return; el = h("span",{id:"brokerBadge",class:"badge"}); asof.append(el); }
+  if (RH.state === "off"){ el.hidden = true; return; } el.hidden = false; el.style.textTransform = "none"; const live = RH.state === "live"; const click = RH.state === "denied" || RH.state === "error";
+  el.textContent = rhLabel(); el.className = "badge " + (live ? "up" : RH.state === "asking" || RH.state === "starting" ? "" : "warn") + (click ? " click" : ""); el.onclick = click ? rhRetry : null;
+  el.title = live ? `Quotes from your own Robinhood connection, with your consent — last trade with its exchange time, bid × ask, previous close, index levels — polled every ${Math.round(rhInterval()/1000)} s. Robinhood serves them as real-time but does not say which feed, so Kingnode does not call them the consolidated tape. Your credentials never touch this page.` : (RH.err?.message || ""); }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && RH.mcp && ["live","error"].includes(RH.state)) rhSchedule(0); });
 // ---------- main chart host (built-in) ----------
 // true when the bars on screen are for the current symbol, interval, range and session setting — anything else is another ticker's chart wearing this one's label
 function barsMetaMatches(){ const m = S.barsMeta; return !!(m && m.sym === S.sym && m.iv === S.set.interval && m.rg === S.set.chartRange && m.ext === (S.set.extended && S.set.interval !== "1d")); }
@@ -1045,11 +1150,12 @@ function renderStatus(){
   const row = (k,v,ok,title) => h("div",{style:{display:"flex",justifyContent:"space-between",gap:"8px",padding:"3px 0"}, title: title || ""}, h("span",null,k), h("span",{class:ok===true?"c":ok===false?"p":"", style:{fontFamily:"var(--mono)",textAlign:"right"}}, v));
   const d = S.chain; const ds = dataStatusFor(S.sym); const q = ds.quote; const ph = marketPhase();
   const sessionWord = { regular:"regular session", pre:"pre-market", post:"after hours", overnight:"overnight (24-hour)", closed:"closed" }[ph] || ph;
-  const feedKind = q && !q.error ? (q.source === "stream" ? `${q.feedType === "sip" ? "SIP real-time" : q.feedType === "iex" ? "IEX real-time (one exchange)" : q.feedType}` : q.source === "sweep" ? "snapshot · 5-min sweep" : q.source === "feed" ? "snapshot · minute quote" : q.source === "bars" ? "last bar" : "snapshot · 20 s tape") : "—";
-  const ageOk = v => v == null ? null : ph === "closed" ? true : v <= (q?.source === "stream" ? 120 : ph === "overnight" ? 240 : 150);
+  const feedKind = q && !q.error ? (q.source === "stream" ? `${q.feedType === "sip" ? "SIP real-time" : q.feedType === "iex" ? "IEX real-time (one exchange)" : q.feedType}` : q.source === "broker" ? "Robinhood · real-time (your connection)" : q.source === "sweep" ? "snapshot · 5-min sweep" : q.source === "feed" ? "snapshot · minute quote" : q.source === "bars" ? "last bar" : "snapshot · 20 s tape") : "—";
+  const ageOk = v => v == null ? null : ph === "closed" ? true : v <= (q?.source === "stream" || q?.source === "broker" ? 120 : ph === "overnight" ? 240 : 150);
   el.replaceChildren(
     row("Session", sessionWord + (ds.sessionNote ? " · " + ds.sessionNote.split(":")[0] : ""), null),
-    row("Quote source", q && !q.error ? feedKind : "no quote", q && !q.error ? (q.source === "stream" ? true : null) : false, "Where the big number comes from. Only a stream quote with real-time true is live; everything else is a snapshot behind a CDN."),
+    row("Quote source", q && !q.error ? feedKind : "no quote", q && !q.error ? (q.source === "stream" || q.source === "broker" ? true : null) : false, "Where the big number comes from. Only a stream quote with real-time true, or your own broker's quote, is live; everything else is a snapshot behind a CDN."),
+    row("Bid × ask", q && !q.error && q.bid > 0 && q.ask > 0 ? `${fmt(q.bid, q.ask < 2 ? 4 : 2)} × ${fmt(q.ask, q.ask < 2 ? 4 : 2)}` : "none — the feed carries last trade only", q && q.bid > 0 ? true : null, "A two-sided quote needs a quote source: your Robinhood connection inside Claude's preview, or a streaming server's book. Yahoo's chart data has none."),
     row("Quote age", q && q.ageSec != null ? `${q.ageSec < 120 ? q.ageSec + "s" : Math.round(q.ageSec/60) + "m"} · ${q.printSession.toLowerCase()} print` : "—", ageOk(q?.ageSec), "Seconds since the print the header shows."),
     row("Chain", S.demo ? "placeholder — no options data" : `${d?.source||"server"} · ${d?.rows?.length||0} contracts${ds.chain?.ageMin != null ? ` · ${ds.chain.ageMin}m old` : ""}${ds.chain?.delayed ? " · 15-min delayed" : ""}`, !S.demo, "Walls, flip and expected move are computed on this chain at its own spot (Chain spot in Key levels)."),
     row("Bars", S.barsDemo ? "DEMO — feed failed" : S.bars ? `${S.bars.length} · ${chartSourceLabel()}` : "loading", S.bars ? !S.barsDemo : null),
@@ -1059,6 +1165,7 @@ function renderStatus(){
     row("Breadth", BRD.d ? `${fmt(BRD.d.adv)} up / ${fmt(BRD.d.dec)} down · ${ageLabel(BRD.d.at)}` : "—", BRD.d ? true : null),
     row("Tape", tapeQuotes.size ? `${tapeQuotes.size} tickers · ${[...tapeQuotes.values()][0]?.demo ? "demo" : ([...tapeQuotes.values()][0]?.src || "server")}` : "loading", tapeQuotes.size ? ![...tapeQuotes.values()][0]?.demo : null),
     row("Stream", STR.state === "off" ? "none — polling the feed" : STR.state === "live" ? `${streamLabel()} · ${STR.status?.provider} · ${STR.subs.size} symbols${STR.status?.reconnects ? ` · ${STR.status.reconnects} reconnects` : ""}` : `${STR.state}${STR.status?.errors?.length ? " · " + STR.status.errors.at(-1).msg : ""}`, STR.state === "off" ? null : STR.state === "live", "A self-hosted Kingnode server with provider keys (docs/MARKET-DATA.md). IEX is one exchange's prints; SIP is the consolidated tape."),
+    row("Broker", RH.state === "off" ? (rhAvailable() ? "Robinhood · not started" : "none — only inside Claude's preview") : RH.state === "live" ? `Robinhood · ${RH.calls} calls · answered ${ageLabel(RH.lastOk)}` : rhLabel(), RH.state === "off" ? null : RH.state === "live", "Inside Claude's preview (where the feed is unreachable) the page asks your own Robinhood connection, with your consent, for quotes — last trade, bid × ask, previous close, index levels — and bars. Your credentials never touch this page; Robinhood does not serve RUT or options chains through it."),
     row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
     row("Host", location.hostname.includes("github.io") ? "static site — snapshot mode" : location.hostname || "file", null),
     row("Proxy", (S.set.proxy||"").trim() ? "set" : "none — direct browser fetch", (S.set.proxy||"").trim() ? true : null),
@@ -1078,7 +1185,7 @@ function renderAsOf(bq){ const d = S.chain; if (!d) return; if (bq === undefined
   const noChain = S.demo && !!bq; // real price, placeholder chain
   const lq = !S.demo ? bestQuote() : null; const chainOff = !!(lq && !lq.demo && !lq.stale && d.spot && Math.abs(d.spot / latestPrint(lq).price - 1) > 0.0005); // the header shows a fresher price than the chain was priced at
   document.getElementById("asof").replaceChildren(h("span",{class:"live" + (S.demo ? " demo" : chainStale ? " stale" : "")}, h("i",null), noChain ? "no chain" : S.demo ? "demo" : chainStale ? "stale" : "live"), h("span",{id:"cd"},""), h("span",{id:"tapeAge",class:"hint"},""), noChain ? h("span",{title:"the price is the feed's; there is no options chain for this name on it"}, "price " + (bq.t ? whenLabel(bq.t) : "from the feed")) : h("span",{title: chainT ? "last chain snapshot " + ageLabel(chainT) + (chainOff ? " — the walls, flip and expected move were computed at this spot" : "") : ""}, "chain " + (chainT ? whenLabel(chainT) : new Date(d.asOf).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})) + (chainOff ? ` @ ${fmt(d.spot, d.spot < 200 ? 2 : 0)}` : "")), h("span",{class:"badge"+(S.demo?" demo":chainStale?" warn":"")}, noChain ? "No options chain" : S.demo ? "Demo data" : chainStale ? "Feed stale · " + ageLabel(chainT) : (d.delayed === false ? "real-time chain" : "chain 15-min delayed")));
-  renderStreamBadge(); // the as-of line was rebuilt; the stream badge lives at its end
+  renderStreamBadge(); renderBrokerBadge(); // the as-of line was rebuilt; the stream and broker badges live at its end
 }
 function renderAll(){
   const d = S.chain, c = S.calc;
@@ -1680,6 +1787,8 @@ async function loadBarsRun(){
     let snap = await snapshotJson(file(want), want === "1d" ? 24*60 : 20); let kind = want;
     if (!snap?.bars?.length && want === "1m"){ snap = await snapshotJson(file("5m"), 20); kind = "5m"; }
     if (snap?.bars?.length) got = { bars: snap.bars, kind, session: snap.session||null, at: snap.snapshotAt || snap._at || Date.now(), src:"snapshot" }; }
+  // 2b. inside Claude's preview the feed is unreachable: the viewer's Robinhood connection has the history (once the viewer has allowed it)
+  if (!got && rhReady()){ const c = await rhBars(sym, baseKindFor(iv), rg); if (c?.bars?.length) got = c; }
   // 3. Yahoo through the user's proxy (any name, any interval; the public relays are tried when there is no proxy)
   if (!got){ try { const r = await fetchExt(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(Y[sym]||sym)}?interval=${iv}&range=${rg}&includePrePost=${ext?"true":"false"}`); if (r && r.ok){ const j = await r.json(); const res0 = j.chart?.result?.[0], q = res0?.indicators?.quote?.[0]; if (res0?.timestamp && q){ const bars = []; res0.timestamp.forEach((t,i) => { if (q.close[i] != null && q.open[i] != null) bars.push([t*1000, q.open[i], q.high[i], q.low[i], q.close[i], q.volume?.[i]||0]); }); if (bars.length) got = { bars: bars.slice(-1500).map(b => sym==="XSP" ? [b[0],b[1]/10,b[2]/10,b[3]/10,b[4]/10,b[5]] : b), kind: iv, session:null, at:Date.now(), src:"yahoo-proxy" }; } } } catch {} }
   // 4. Cboe's delayed charts (1-minute intraday, daily history), aggregated here
@@ -1740,7 +1849,7 @@ function tvFallback(){ mountChart(); }
 function applyChartHeight(){ const host = chartHost(); if (!host) return; const hgt = S.set.chartH; host.style.height = hgt ? Math.max(260, Math.min(window.innerHeight * 0.9, hgt)) + "px" : ""; }
 function gripStart(ev){ const host = chartHost(); if (!host) return; ev.preventDefault(); const y0 = ev.clientY, h0 = host.getBoundingClientRect().height; const move = e => { S.set.chartH = Math.round(Math.max(260, Math.min(window.innerHeight * 0.9, h0 + e.clientY - y0))); applyChartHeight(); }; const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); saveSettings(); }; window.addEventListener("pointermove", move); window.addEventListener("pointerup", up); }
 function chartFull(on){ const host = chartHost(); if (!host) return; document.body.classList.toggle("chart-full", on); if (on) host.style.height = ""; else applyChartHeight(); renderChartControls(); KC?.resize(); }
-function chartSourceLabel(){ const s = S.barsSrc; if (STR.state === "live" && STRB[S.sym] && !STRB[S.sym].unavailable && !S.barsDemo) return `stream (${streamLabel()}) on ${s === "snapshot" ? "feed" : s || "feed"} history`; return S.barsDemo ? "demo bars" : s === "yahoo-proxy" ? "live" : s === "snapshot" ? "feed" : s === "closes" ? "daily closes from the nightly sweep" : s === "server" ? "server" : s ? "delayed" : ""; }
+function chartSourceLabel(){ const s = S.barsSrc; if (STR.state === "live" && STRB[S.sym] && !STRB[S.sym].unavailable && !S.barsDemo) return `stream (${streamLabel()}) on ${s === "snapshot" ? "feed" : s || "feed"} history`; return S.barsDemo ? "demo bars" : s === "yahoo-proxy" ? "live" : s === "snapshot" ? "feed" : s === "broker" ? "Robinhood (your connection)" : s === "closes" ? "daily closes from the nightly sweep" : s === "server" ? "server" : s ? "delayed" : ""; }
 function chartFreshLabel(){ const b = S.base; if (!b || S.barsDemo) return ""; const last = S.bars?.at(-1); if (!last) return ""; if (!marketOpenNow()) return "";
   const lq = LIVEB.q?.bars?.[S.sym] ? LIVEB.q.at : 0, lu = LIVEB.u?.bars?.[S.sym] ? LIVEB.u.at : 0; const bq = bestQuote(); const pt = bq && !bq.demo ? (latestPrint(bq)?.t || 0) : 0; // the newest thing folded into the forming bar, not the age of the file behind it
   const t = Math.max(b.at || 0, last[0] || 0, lq, lu, pt); const s = Math.round((Date.now() - t) / 1000); return s < 90 ? ` · ${s}s` : ` · ${Math.round(s/60)}m`; }
@@ -2991,12 +3100,13 @@ function dataStatusFor(symIn){
   const sym = String(symIn || S.sym || "").toUpperCase(); const q = sym === S.sym ? bestQuote() : (tapeQuotes.get(sym) || universeQuote(sym) || marketQuote(sym)); const lp = q ? latestPrint(q) : null; const ph = marketPhase();
   const chain = S.chain && S.chain.symbol === sym && !S.demo ? S.chain : null; const chainT = chain ? (chain.snapAt || Date.parse(String(chain.asOf).replace(" ", "T"))) : null;
   return { sym, session: ph, sessionNote: ph === "overnight" ? "24-hour session: a price sampled every minute, no bars" : ph === "closed" ? "market closed: the last prints are from the last session" : "",
-    quote: q ? { price: lp.price, printSession: lp.session, printTime: lp.t ? new Date(lp.t).toISOString() : null, ageSec: lp.t ? Math.round((Date.now() - lp.t) / 1000) : null, previousClose: q.prev, source: q.src, feedType: q.feedType || (q.src === "stream" ? STR.status?.feedType : q.src === "sweep" ? "snapshot (5-minute sweep)" : "snapshot (20-second feed)"), realtime: q.src === "stream" ? !!q.realtime : false, consolidated: q.src === "stream" ? STR.status?.feedType === "sip" : false, stale: !!q.stale } : { error: "no quote for " + sym },
+    quote: q ? { price: lp.price, printSession: lp.session, printTime: lp.t ? new Date(lp.t).toISOString() : null, ageSec: lp.t ? Math.round((Date.now() - lp.t) / 1000) : null, previousClose: q.prev, bid: q.bid > 0 ? q.bid : null, ask: q.ask > 0 ? q.ask : null, source: q.src, feedType: q.feedType || (q.src === "stream" ? STR.status?.feedType : q.src === "sweep" ? "snapshot (5-minute sweep)" : "snapshot (20-second feed)"), realtime: q.src === "stream" || q.src === "broker" ? !!q.realtime : false, consolidated: q.src === "stream" ? STR.status?.feedType === "sip" : q.src === "broker" ? "unknown — Robinhood does not say which feed" : false, stale: !!q.stale } : { error: "no quote for " + sym },
     chain: chain ? { asOf: chainT ? new Date(chainT).toISOString() : null, ageMin: chainT ? Math.round((Date.now() - chainT) / 60000) : null, delayed: chain.delayed !== false, source: chain.source, pricedAt: chain.spot, note: "walls, flip and expected move were computed at pricedAt, not at the live print" } : { error: sym === S.sym && S.demo ? "placeholder chain — no options data for this name on the feed" : "chain not loaded for " + sym },
     chart: sym === S.sym ? { source: chartSourceLabel(), interval: S.set.interval, bars: S.bars?.length || 0, lastBar: S.bars?.length ? new Date(S.bars.at(-1)[0]).toISOString() : null, liveFromStream: STR.state === "live" && !!STRB[sym] } : null,
     feedLoop: S.feed ? { phase: S.feed.phase, lastWrite: new Date(feedLastWrite()).toISOString(), ageSec: Math.round((Date.now() - feedLastWrite()) / 1000), stale: feedStale() } : null,
     stream: STR.state === "off" ? "none (polling the feed)" : { state: STR.state, provider: STR.status?.provider, feedType: STR.status?.feedType, symbols: [...STR.subs] },
-    rule: "Say 'live' only for a stream quote with realtime true; the feed is a 20-second snapshot behind a CDN; chains are 15-minute delayed." };
+    broker: RH.state === "off" ? "none (Robinhood quotes are available only inside Claude's preview)" : { state: RH.state, provider: "Robinhood (the viewer's own connection)", calls: RH.calls, lastAnswer: RH.lastOk ? new Date(RH.lastOk).toISOString() : null, note: RH.note || null },
+    rule: "Say 'live' only for a stream quote with realtime true or a broker quote (Robinhood, the viewer's connection, real-time but of unstated feed); the feed is a 20-second snapshot behind a CDN; chains are 15-minute delayed." };
 }
 async function avaToolRun(name, input){
   switch (name){
@@ -3581,7 +3691,7 @@ let sugItems = [], sugIdx = -1, sugTimer = null;
 function goSym(v){ v = v.toUpperCase().replace(/[^A-Z.]/g,""); if (!v) return; sugEl.hidden = true; if (v === S.sym){ load(); return; }
   S.sym = v; symIn.value = v; S.exps = []; S.inspect = null; closeInspector();
   S.bars = null; S.base = null; S.barsMeta = null; S.barsMissing = false; S.barsDemo = false; S.session = null; // the old ticker's chart must not wear the new name while the new bars load
-  renderChips(); mountChart(); load(); streamSync(); }
+  renderChips(); mountChart(); load(); streamSync(); if (rhReady()) rhSchedule(0); }
 function showSug(items){ sugItems = items; sugIdx = -1; sugEl.replaceChildren(...items.map((it,i) => h("button",{type:"button", role:"option", onmousedown:e=>{ e.preventDefault(); goSym(it.symbol); }}, h("span",null, h("b",null,it.symbol), h("small",null,it.type||"")), h("span",null,it.name)))); sugEl.hidden = !items.length; }
 // Search: the feed's names first (chart + minute quotes), then every US-listed symbol from the directory (symbols.json) — any ticker, with what the feed has for it
 function localSearch(q){ q = q.toUpperCase(); const ql = q.toLowerCase(); const out = []; for (const [sym,name] of UNIVERSE){ if (halalOnly() && halalStatus(sym).s === "excluded") continue; if (sym.startsWith(q)) out.unshift({symbol:sym,name,type:"feed"}); else if (sym.includes(q) || name.toLowerCase().includes(ql)) out.push({symbol:sym,name,type:"feed"}); if (out.length > 30) break; }
@@ -3694,12 +3804,13 @@ document.getElementById("themeBtn").onclick = () => { const r = document.documen
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
 try { if (localStorage.getItem("kingnode:help") === "1" || !localStorage.getItem("kingnode:seen")) document.body.classList.add("showhelp"); } catch {}
-window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyLivePatches, loadTape, loadUniverse, get chart(){ return KC; } }; applyLayout(); renderChips(); ediInit(); renderPlan(); loadTape(); loadUniverse().then(renderLiveQuote); loadMarket().then(renderLiveQuote); loadBreadth(); streamConnect();
+window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyLivePatches, loadTape, loadUniverse, RH, rhStart, rhPoll, get tapeQuotes(){ return tapeQuotes; }, get chart(){ return KC; } }; applyLayout(); renderChips(); ediInit(); renderPlan(); loadTape(); loadUniverse().then(renderLiveQuote); loadMarket().then(renderLiveQuote); loadBreadth(); streamConnect();
 { try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
 { const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); S.sym = v; document.getElementById("symIn").value = v; } }
 load();
+rhStart(); // inside Claude's preview: the viewer's Robinhood connection; everywhere else this returns at once
 let tickTimer = null, nextAt = 0;
 loadFeedStatus();
 { const rm = document.getElementById("readMore"), rd = document.getElementById("read"); if (rm && rd) rm.onclick = () => { const open = rd.classList.toggle("clamp"); rm.textContent = open ? "Show the whole read" : "Collapse the read"; }; }

@@ -274,3 +274,35 @@ test("latest print: regular price in regular hours, the extended bar after hours
   assert.equal(mk("closed")({ ...q, last: 212.21, full: null, fullT: null }).session, "CLOSE");
   assert.equal(mk("post")({ ...q, last: 212.21, full: null, fullT: null }).session, "AH", "after hours, a print that sits on the close is still an after-hours print");
 });
+
+// ---------- broker quotes: Robinhood's connector payloads (recorded Oct 28, 2026) become Kingnode quotes and bars ----------
+test("broker: a Robinhood equity quote, index quote, previous close from daily bars, and bars in the feed's shape", () => {
+  const c = { Math, Date, Number, Map, Set, Array, Object, isFinite, Intl, String, console, UV: {}, universeQuote: () => null };
+  vm.createContext(c);
+  const grabConst = name => { const i = js.indexOf(`const ${name} = `); const j = js.indexOf("\n", i); return js.slice(i, j); };
+  vm.runInContext([grabConst("ET_CACHE"), grabConst("NYSE_HALF_DAYS"), grabConst("RH_INDEX"), grabConst("RH"), grab("etInfo"), grab("barDay"), grab("rhEquityQuote"), grab("rhIndexQuote"), grab("rhIndexPrevFrom"), grab("rhBarsFrom")].join("\n") + "\nthis.f = { rhEquityQuote, rhIndexQuote, rhIndexPrevFrom, rhBarsFrom };", c);
+  const f = c.f; const now = Date.parse("2026-10-28T16:58:00Z");
+  // regular hours: last trade with its venue time, bid × ask, the adjusted previous close for the day's change
+  const spy = { quote: { symbol: "SPY", last_trade_price: "771.765000", venue_last_trade_time: "2026-10-28T16:57:45.518134843Z", last_non_reg_trade_price: null, venue_last_non_reg_trade_time: null, adjusted_previous_close: "769.660000", previous_close: "769.660000", previous_close_date: "2026-10-27", bid_price: "771.740000", venue_bid_time: "2026-10-28T16:57:45.236399431Z", ask_price: "771.780000", venue_ask_time: "2026-10-28T16:57:45.236399431Z", has_traded: true, state: "active" }, close: { symbol: "SPY", date: "2026-10-27", price: "769.66", interpolated: false, source: "sip-list-exchange-close" } };
+  const q = JSON.parse(JSON.stringify(f.rhEquityQuote(spy, now, null)));
+  assert.equal(q.price, 771.765); assert.equal(q.last, 771.765); assert.equal(q.t, Date.parse("2026-10-28T16:57:45.518Z")); assert.equal(q.prev, 769.66); assert.equal(q.bid, 771.74); assert.equal(q.ask, 771.78); assert.equal(q.src, "broker"); assert.equal(q.realtime, true); assert.equal(q.full, null); assert.equal(q.halted, null);
+  // after hours: a newer extended-hours print becomes the last, stamped with its own time; the regular last stays the close
+  const ah = { quote: { ...spy.quote, last_non_reg_trade_price: "771.900000", venue_last_non_reg_trade_time: "2026-10-28T21:15:00Z", venue_last_trade_time: "2026-10-28T20:00:00Z", bid_price: "0", ask_price: "0" } };
+  const q2 = JSON.parse(JSON.stringify(f.rhEquityQuote(ah, now, null)));
+  assert.equal(q2.price, 771.765, "the regular last is the close"); assert.equal(q2.last, 771.9); assert.equal(q2.t, Date.parse("2026-10-28T21:15:00Z")); assert.equal(q2.full, 771.9); assert.equal(q2.bid, null, "a zero bid is no bid");
+  // a halted or inactive state is carried, a result without prices is dropped
+  assert.equal(f.rhEquityQuote({ quote: { ...spy.quote, state: "halted" } }, now, null).halted, "halted");
+  assert.equal(f.rhEquityQuote({ quote: { symbol: "X", last_trade_price: "0", last_non_reg_trade_price: null } }, now, null), null);
+  // an index quote is matched by instrument id; the previous close comes from the daily bars (the last completed session before the quote's day)
+  const ix = { instrument_id: "432fbbb8-b82c-454a-852d-eb85382c7066", symbol: "SPX", value: "7742.47", state: "", venue_timestamp: "2026-10-28T12:58:08.0472-04:00", updated_at: "2026-10-28T12:58:08.057981597-04:00" };
+  const iq = JSON.parse(JSON.stringify(f.rhIndexQuote(ix, now, null, { SPX: 7722.6 })));
+  assert.equal(iq.symbol, "SPX"); assert.equal(iq.price, 7742.47); assert.equal(iq.prev, 7722.6); assert.equal(iq.t, Date.parse("2026-10-28T16:58:08.047Z")); assert.equal(iq.bid, null);
+  const daily = f.rhBarsFrom([{ begins_at: "2026-10-26T00:00:00Z", open_value: "7639.7", high_value: "7702.13", low_value: "7639.7", close_value: "7676.77" }, { begins_at: "2026-10-27T00:00:00Z", open_value: "7699.47", high_value: "7736.24", low_value: "7677.16", close_value: "7722.6" }, { begins_at: "2026-10-28T00:00:00Z", open_value: "7735.56", high_value: "7758.43", low_value: "7718.37", close_value: "7743.98" }, { begins_at: "2026-10-29T00:00:00Z", open_value: "7735.56", high_value: "7758.43", low_value: "7718.37", close_value: "7743.98", interpolated: true }]);
+  assert.equal(daily.length, 3, "gap-fill bars are dropped"); assert.equal(daily[1][4], 7722.6); assert.equal(daily[0][5], 0, "index bars carry no volume");
+  assert.equal(f.rhIndexPrevFrom(daily, Date.parse("2026-10-28T12:58:08-04:00")), 7722.6, "Wednesday's quote: Tuesday's close");
+  assert.equal(f.rhIndexPrevFrom(daily, Date.parse("2026-10-31T21:00:00-04:00")), 7743.98, "a weekend quote stamped Friday... the last completed session before its day");
+  assert.equal(f.rhIndexPrevFrom(daily, Date.parse("2026-10-27T15:00:00-04:00")), 7676.77);
+  // equity bars: prices as strings, volume as numbers, sorted by time
+  const bars = f.rhBarsFrom([{ begins_at: "2026-10-28T13:35:00Z", open_price: "771.340000", close_price: "770.750000", high_price: "771.519900", low_price: "770.540000", volume: 164112, session: "reg" }, { begins_at: "2026-10-28T13:30:00Z", open_price: "771.430000", close_price: "771.340000", high_price: "771.700000", low_price: "770.975000", volume: 263203, session: "reg" }]);
+  assert.deepEqual([...bars[0]], [Date.parse("2026-10-28T13:30:00Z"), 771.43, 771.7, 770.975, 771.34, 263203]); assert.equal(bars[1][5], 164112);
+});

@@ -48,6 +48,19 @@ provider WebSocket (Alpaca / Polygon)            REST (bars, snapshots, assets)
 
 Indices (SPX, NDX, RUT, VIX, XSP) are not on either stock stream; they stay on the feed (Yahoo, delayed).
 
+## The preview inside Claude: the viewer's broker
+
+The published preview at claude.ai/artifact/… is a third shape. Its sandbox blocks every network request the page makes, so the feed, Cboe and Yahoo are all unreachable and the page would show no price. What the sandbox does offer is the viewer's own claude.ai connectors through `window.claude.use("mcp")`, called with the viewer's credentials after a one-time consent prompt. With Robinhood connected, `app.html` asks it for:
+
+| Call | For | Cadence |
+|---|---|---|
+| `get_equity_quotes` | the symbol on screen + SPY/QQQ/IWM/DIA: `last_trade_price` + `venue_last_trade_time`, `last_non_reg_trade_price` (extended hours), `bid_price`/`ask_price`, `adjusted_previous_close`, `state` | 4 s regular · 8 s pre/post · 20 s overnight · 60 s closed (tape names every 15–120 s) |
+| `get_index_quotes` | SPX, NDX, VIX, XSP by instrument id (RUT is not served) | same |
+| `get_index_historicals` (daily) | the previous session's close for each index, which the index quote lacks | every 6 h |
+| `get_equity_historicals` / `get_index_historicals` | the chart's base series (1-minute, 5-minute extended, or daily) | on symbol/interval change, then with the chain refresh |
+
+Quotes carry `src: "broker"`, `feedType: "robinhood"`, `realtime: true`; the header shows **bid × ask** with the spread in bp, the badge says `ROBINHOOD · real-time`, Data health has a Broker row and a Bid × ask row, and Ava's `data_status` reports `consolidated: "unknown — Robinhood does not say which feed"`. Failure codes are handled individually (`approval_required`/`not_in_manifest` → "tap to allow", `server_not_connected` → add the connector, `needs_reauth` → reconnect, `server_unavailable`/`rate_limited` → back off with `retryAfterMs`), polling pauses while the tab is hidden, and the feed's placeholder quotes are never shown next to broker quotes. The manifest the artifact is published with: `{mcp: {servers: [{server: "Robinhood", tools: ["get_equity_quotes", "get_index_quotes", "get_equity_historicals", "get_index_historicals"]}]}}`. Verified: the parsers against recorded Robinhood payloads (`npm test`), the whole flow in a browser against a fake `window.claude` (consent, denial and retry, not connected, flaky upstream, symbol switch, the forming candle). Not verifiable from a build session: the live consent prompt and calls inside the viewer — the first open of the preview is that check.
+
 ## Running it
 
 ```
