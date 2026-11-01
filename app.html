@@ -620,8 +620,10 @@ async function restartFeed(){
 function demoLabel(){ return S.demo && bestQuote() ? "No options chain" : "Demo data"; } // a real price with a placeholder chain is "no chain", not "demo"
 function renderNoChain(){
   let b = document.getElementById("nochain"); if (!b){ b = h("div",{id:"nochain",class:"notice",style:{margin:"0 14px 8px",borderColor:"var(--gold)",color:"var(--gold)"}}); document.getElementById("tvChart")?.before(b); }
-  if (rhAvailable() && S.demo && (S.chain?.noChain || RH.state !== "live")){ b.hidden = false; // Claude's preview: no feed, so no chain — say where the real terminal is
-    b.replaceChildren(h("span",null, `This is the preview inside Claude: it cannot reach Kingnode's feed, so there is no options chain, flow or levels here — ${RH.state === "live" ? "the price, bid × ask and chart come from your Robinhood connection" : RH.state === "not_connected" ? "connect Robinhood in claude.ai (Settings → Connectors) for live quotes here" : RH.state === "denied" ? "allow Robinhood for this page to get live quotes here" : "quotes arrive from your Robinhood connection once you allow it"}. The full terminal runs at `), h("a",{href:"https://edwinp2342.github.io/kingnode/app.html", target:"_blank", rel:"noopener"}, "edwinp2342.github.io/kingnode"), h("span",null,".")); }
+  if (rhAvailable() && (S.demo || S.chain?.source === "robinhood")){ b.hidden = false; const d = S.chain; const live = RH.state === "live"; const real = live && d && !S.demo && d.source === "robinhood"; // Claude's preview: no feed — say where the numbers come from and where the full terminal is
+    const link = h("a",{href:"https://edwinp2342.github.io/kingnode/app.html", target:"_blank", rel:"noopener"}, "edwinp2342.github.io/kingnode");
+    if (real){ b.style.borderColor = "var(--pos)"; b.style.color = "var(--pos)"; b.replaceChildren(h("span",null, `Claude preview · price, bid × ask, chart and this real-time options chain (${fmt(d.contracts || d.rows.length)} contracts · ${d.expirations || S.exps.length} expirations · ±${d.window || S.set.range}%) come from your Robinhood connection, refreshed every ${Math.round(rhChainInterval()/60000)} min; flow here is derived from chain changes between refreshes. The full terminal with the feed runs at `), link, h("span",null,".")); }
+    else { b.style.borderColor = "var(--gold)"; b.style.color = "var(--gold)"; b.replaceChildren(h("span",null, `This is the preview inside Claude: it cannot reach Kingnode's feed — ${live ? (RHC.inflight ? "the price, bid × ask and chart come from your Robinhood connection; the options chain is loading from it…" : RHC.last[S.sym] ? "the price, bid × ask and chart come from your Robinhood connection; the chain is being refreshed" : "the price, bid × ask and chart come from your Robinhood connection; Robinhood returned no options chain for this name, so the positioning panels are placeholders") : RH.state === "not_connected" ? "connect Robinhood in claude.ai (Settings → Connectors) for live quotes and a real-time chain here" : RH.state === "denied" ? "allow Robinhood for this page to get live quotes and a real-time chain here" : "quotes and a real-time options chain arrive from your Robinhood connection once you allow it"}. The full terminal runs at `), link, h("span",null,".")); } }
   else if (S.demo && S.chain?.noChain && S.bars && !S.barsDemo){ const info = symInfo(S.sym); b.hidden = false;
     b.textContent = info && !info.optionable ? `${S.sym} (${info.name}, ${info.exchange}) has no listed options — there is no chain to read. Price and chart are real; the positioning panels below are placeholders.`
       : `No options chain for ${S.sym} on the free feed right now — price and chart are real, the levels, Heatseeker and flow below are placeholders. The feed snapshots the core list every 3 minutes and the 150 most active optionable names every 15, so ${S.sym} appears here when it is one of them; for any name any time, set a data proxy in ⚙ (a free Cloudflare Worker, see proxy/ in the project).`; }
@@ -731,6 +733,8 @@ async function rhPoll(){
     if (ix.length && Date.now() - RH.prevAt > 6 * 3600e3 && !first) rhIndexPrev().catch(() => {}); // index previous closes once in a while (Robinhood's index quote carries none)
     renderTape(); renderLiveQuote(); applyLivePatches(); renderBrokerBadge(); renderNoChain();
     if ((S.barsDemo || S.barsMissing || !S.base) && !first) loadBars(); // the chart was waiting for a source
+    if (first) RH.chainKick = true; else if (RH.chainKick){ RH.chainKick = false; if (S.demo) load(); } // and so was the chain: one reload right after consent, the refresh timer does the rest
+    else if (S.demo && !RHC.inflight && !RHC.last[S.sym] && Date.now() > RHC.coolUntil && Date.now() - (RHC.kickedAt || 0) > 20e3){ RHC.kickedAt = Date.now(); load(); } // a chain that failed on a transient error is asked for again once its cooldown has passed
   } catch (e) { rhFail(e); }
   finally { RH.busy = false; }
 }
@@ -763,6 +767,64 @@ async function rhBars(sym, kind, rg){
     const bars = rhBarsFrom(rows); if (!bars.length) return null; return { bars, kind, session:null, at:Date.now(), src:"broker" };
   } catch (e) { rhFail(e, true); return null; }
 }
+// ---------- Broker chain: Robinhood's option quotes as a Kingnode chain (preview only) ----------
+// Each contract comes with bid × ask and sizes, mark, implied vol, delta, gamma, theta, vega, open interest and volume, stamped per contract — a
+// real-time chain where the public feed's is Cboe's 15-minute-delayed one. Contracts are listed once a day per expiration and type (their ids do
+// not change), starting at the window's lower strike, then quoted 100 at a time: about a dozen calls a refresh for six expirations of SPY.
+// Refreshed every two minutes in regular hours, ten outside them, thirty when closed; a failure cools the builder off for a minute.
+const RHC = { chains:{}, inst:{}, last:{}, inflight:null, coolUntil:0, maxContracts:1500 };
+function rhChainInterval(){ const ph = marketPhase(); return ph === "regular" ? 120e3 : ph === "closed" ? 1800e3 : 600e3; }
+function rhChain(sym){
+  if (!rhReady()) return Promise.resolve(null);
+  const cached = RHC.last[sym]; if (cached && Date.now() - cached.snapAt < rhChainInterval()) return Promise.resolve(cached);
+  if (Date.now() < RHC.coolUntil) return Promise.resolve(cached || null);
+  if (RHC.inflight?.sym === sym) return RHC.inflight.p;
+  const p = rhChainBuild(sym).catch(e => { rhFail(e, true); RHC.coolUntil = Date.now() + (e?.retryAfterMs > 0 ? Math.min(60e3, e.retryAfterMs + 2000) : 60e3); return RHC.last[sym] || null; }).finally(() => { if (RHC.inflight?.sym === sym) RHC.inflight = null; });
+  RHC.inflight = { sym, p }; return p;
+}
+async function rhChainBuild(sym){
+  const q = tapeQuotes.get(sym); const lp = q ? latestPrint(q) : null; const spot = lp?.price || q?.price; if (!(spot > 0)) return null; // priced at the live print
+  const day = etNowParts().ymd;
+  let ch = RHC.chains[sym]; if (!ch || ch.day !== day){ const p = await rhCall("get_option_chains", { underlying_symbol: sym }); const list = ((p?.data || p)?.chains || []).filter(c => c?.id && Array.isArray(c.expiration_dates)); if (!list.length) return null; ch = RHC.chains[sym] = { day, list }; }
+  const expMap = new Map(); for (const c of ch.list) for (const e of c.expiration_dates) if (!expMap.has(e)) expMap.set(e, c.id); // SPX lists SPX and SPXW chains: one expiration, one chain
+  const exps = liveExps([...expMap.keys()].sort()).slice(0, Math.min(8, Math.max(1, S.set.expCount || 6))); if (!exps.length) return null;
+  const pct = Math.max(1, Math.min(40, S.set.range || 6)); const lo = spot * (1 - pct / 100), hi = spot * (1 + pct / 100);
+  const inst = RHC.inst[sym]?.day === day ? RHC.inst[sym] : (RHC.inst[sym] = { day, byExp:{} });
+  let want = [];
+  for (const exp of exps) for (const type of ["call", "put"]){
+    const key = exp + "|" + type; let rows = inst.byExp[key];
+    if (!rows || rows.lo > lo || rows.hi < hi){ rows = await rhListContracts(expMap.get(exp), exp, type, lo, hi); inst.byExp[key] = rows; }
+    for (const r of rows.list) if (r.K >= lo && r.K <= hi) want.push({ id:r.id, exp, type, K:r.K });
+  }
+  if (!want.length) return null;
+  if (want.length > RHC.maxContracts){ want.sort((a, b) => Math.abs(a.K - spot) - Math.abs(b.K - spot)); want = want.slice(0, RHC.maxContracts); } // a wide index chain: the nearest strikes, every expiration
+  const byId = new Map(want.map(w => [w.id, w])); const rows = []; let newest = 0;
+  for (let i = 0; i < want.length; i += 100){ const p = await rhCall("get_option_quotes", { instrument_ids: want.slice(i, i + 100).map(w => w.id) }); for (const res of ((p?.data || p)?.results || [])){ const r = rhChainRow(res?.quote, byId.get(res?.quote?.instrument_id), spot); if (r){ rows.push(r.row); if (r.t > newest) newest = r.t; } } }
+  if (!rows.length) return null;
+  rows.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[2] - b[2] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  const prev = q.prev > 0 ? q.prev : null; const change = prev ? spot - prev : 0;
+  const data = { symbol: sym, spot, asOf: new Date(newest || Date.now()).toISOString(), snapAt: Date.now(), source: "robinhood", delayed: false, realtime: true, change, changePct: prev ? change / prev * 100 : 0, rows, contracts: rows.length, expirations: exps.length, window: pct, quotedAt: newest || null };
+  RHC.last[sym] = data; return data;
+}
+// the contracts of one expiration and type inside the strike window; the service pages by strike, and its cursor is "p=<strike>" — start there
+async function rhListContracts(chainId, exp, type, lo, hi){
+  const list = []; let cursor = btoa(`p=${Math.max(0, Math.floor(lo) - 1).toFixed(4)}`); let pages = 0, fromStart = false;
+  while (pages++ < 8){
+    let p; try { p = await rhCall("get_option_instruments", { chain_id: chainId, expiration_dates: exp, type, ...(cursor ? { cursor } : {}) }); }
+    catch (e) { if (!fromStart && (e?.code === "tool_error" || e?.code === "bad_request")){ fromStart = true; cursor = null; pages = 0; continue; } throw e; } // if the service ever refuses the strike cursor, page from the first strike
+    const d = p?.data || p; const items = Array.isArray(d?.instruments) ? d.instruments : []; let past = false;
+    for (const it of items){ const K = +it.strike_price; if (!(K > 0) || !it.id || (it.state && it.state !== "active")) continue; if (K > hi){ past = true; break; } if (K >= lo) list.push({ id: it.id, K }); }
+    if (past || !d?.next || !items.length) break; cursor = d.next;
+  }
+  return { lo, hi, list };
+}
+// one option quote → a chain row [exp, C|P, K, oi, vol, iv, gamma, delta, bid, ask, last]; deep in-the-money contracts come without greeks
+function rhChainRow(qt, w, spot){
+  if (!qt || !w) return null; const bid = +qt.bid_price || 0, ask = +qt.ask_price || 0; const mark = +qt.mark_price || (bid > 0 && ask > 0 ? (bid + ask) / 2 : 0);
+  const iv = qt.implied_volatility != null && isFinite(+qt.implied_volatility) ? +qt.implied_volatility : 0; const gamma = qt.gamma != null && isFinite(+qt.gamma) ? +qt.gamma : 0;
+  let delta = qt.delta != null && isFinite(+qt.delta) ? +qt.delta : null; if (delta == null) delta = w.type === "call" ? (w.K < spot ? 1 : 0) : (w.K > spot ? -1 : 0);
+  return { row: [w.exp, w.type === "call" ? "C" : "P", w.K, +qt.open_interest || 0, +qt.volume || 0, iv, gamma, delta, bid, ask, mark], t: Date.parse(qt.updated_at || "") || 0 };
+}
 function renderBrokerBadge(){ let el = document.getElementById("brokerBadge"); if (!el){ const asof = document.getElementById("asof"); if (!asof) return; el = h("span",{id:"brokerBadge",class:"badge"}); asof.append(el); }
   if (RH.state === "off"){ el.hidden = true; return; } el.hidden = false; el.style.textTransform = "none"; const live = RH.state === "live"; const click = RH.state === "denied" || RH.state === "error";
   el.textContent = rhLabel(); el.className = "badge " + (live ? "up" : RH.state === "asking" || RH.state === "starting" ? "" : "warn") + (click ? " click" : ""); el.onclick = click ? rhRetry : null;
@@ -787,7 +849,8 @@ async function loadRun(){
       if (!r || !r.ok){
         const snap = await snapshotJson(`${sym}.json`, 40); const wrap = sn => ({ ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => ({...sn, source: (sn.source||"cboe") + " · snapshot", stale: !!sn._stale, snapAt: sn._at}) });
         if (snap?.rows?.length && !snap._stale) r = wrap(snap);
-        else { r = await cboeDirect(sym); if ((!r || !r.ok) && snap?.rows?.length) r = wrap(snap); } } }
+        else { r = await cboeDirect(sym); if ((!r || !r.ok) && snap?.rows?.length) r = wrap(snap); }
+        if ((!r || !r.ok) && rhReady()){ const rc = await rhChain(sym); if (rc?.rows?.length && mySeq === loadSeq && S.sym === sym) r = { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => rc }; } } } // Claude's preview: the viewer's Robinhood chain, real-time
     if (!r.ok) throw 0;
     data = await r.json();
     if (!data.rows || !data.rows.length) throw 0;
@@ -1201,7 +1264,7 @@ function renderAll(){
     h("div",{class:"regime "+(c.total>0?"pos":"neg")}, h("b",null, c.total > 0 ? "Positive gamma — dampened" : "Negative gamma — amplified"), h("span",{class:"hint"}, "GEX ", money(c.total), " per 1% move")),
     h("div",{class:"regime "+(c.totalVex>0?"pos":"neg")}, h("b",null, c.totalVex > 0 ? "Positive vanna — vol down lifts price" : "Negative vanna — vol down pressures price"), h("span",{class:"hint"}, "VEX ", money(c.totalVex), " per 1 vol pt", c.vexPeak ? ` · peak at ${fmt(c.vexPeak.K)}` : "")));
   const HELP = {"Call wall":"Strike above spot with the most call gamma. Dealers sell into rallies here, so it tends to cap price. A break above can squeeze.","Put wall":"Strike below spot with the most put gamma. First real support; losing it tends to accelerate selling.","Gamma flip":"Where net dealer gamma changes sign. Above it, hedging dampens moves; below it, hedging amplifies them.","Max pain":"Strike where the most options expire worthless for the nearest expiration. Price often drifts toward it into expiry.","Vanna peak":"Strike where vanna exposure is largest. When IV drops, dealer hedging near this strike moves price most — the classic post-event 'vanna rally' level.","GEX crossover":"Where the cumulative net dealer gamma across strikes (at today's spot) changes sign — the strike-space flip. Fast, but it does not reprice the book.","Zero gamma":"The spot at which the whole book's gamma, recomputed at that hypothetical price with each contract's IV, sums to zero. The regime boundary dealers actually hedge around. Can differ from the GEX crossover on skewed chains.","Dealer model":"How the app decides which side dealers are on. Standard assumes dealers are long calls and short puts (customers sell covered calls, buy protective puts). Flow-inferred uses the tape: where customers net-bought a contract at the ask, dealers are short it. The model is the biggest assumption in positioning analysis; the two will disagree on put-heavy chains.","Charm into close":"Estimated dealer delta that must be bought or sold as one day of time passes on the 0–3 DTE expiries. Positive = buying pressure into the close (the 3:30 ramp mechanism).","Walls held this month":"Every time spot came within 0.15% of a wall while the tab was open, the app recorded whether it held (moved 0.4% away) or broke (0.3% through).","Chain spot":"The underlying price the options data was priced against (15-min delayed on the free feed).","Expected move":"What the ATM straddle says the market is pricing for the nearest expiration, as ± points."};
-  const L = [["Chain spot", c.spot, S.demo ? "demo" : "options data, delayed"],["Call wall", c.callWall?.K, c.callWall ? money(c.callWall.cG) + " call gamma" : ""],["Put wall", c.putWall?.K, c.putWall ? money(c.putWall.pG) + " put gamma" : ""],["GEX crossover", c.flip, c.flipConf && c.flipConf !== "ok" ? "confidence " + c.flipConf : "cumulative net gamma changes sign"],["Zero gamma", c.zeroGamma, c.zeroGamma ? "book repriced at that spot sums to zero gamma" : "no crossing within ±10%"],["Dealer model", S.set.model === "flow" ? "flow-inferred" : S.set.model === "standard" ? "standard" : "short-all", S.set.model === "flow" ? `${(S.chain.flowSign?.size||0)} contracts inferred from the tape, rest standard` : "assumed, not estimated — switch to flow-inferred in ⚙ once the tape has prints"],["Vanna peak", c.vexPeak?.K, c.vexPeak ? money(c.vexPeak.vex) + " VEX" : ""],["Max pain", c.maxPain, c.near],["Expected move", c.em[0] ? "±" + fmt(c.em[0].move,1) : null, c.em[0] ? `${fmt(c.em[0].pct,2)}% into ${c.em[0].exp}` : ""]];
+  const L = [["Chain spot", c.spot, S.demo ? "demo" : S.chain?.delayed === false ? `options data, real-time (${S.chain.source || "stream"})` : "options data, delayed"],["Call wall", c.callWall?.K, c.callWall ? money(c.callWall.cG) + " call gamma" : ""],["Put wall", c.putWall?.K, c.putWall ? money(c.putWall.pG) + " put gamma" : ""],["GEX crossover", c.flip, c.flipConf && c.flipConf !== "ok" ? "confidence " + c.flipConf : "cumulative net gamma changes sign"],["Zero gamma", c.zeroGamma, c.zeroGamma ? "book repriced at that spot sums to zero gamma" : "no crossing within ±10%"],["Dealer model", S.set.model === "flow" ? "flow-inferred" : S.set.model === "standard" ? "standard" : "short-all", S.set.model === "flow" ? `${(S.chain.flowSign?.size||0)} contracts inferred from the tape, rest standard` : "assumed, not estimated — switch to flow-inferred in ⚙ once the tape has prints"],["Vanna peak", c.vexPeak?.K, c.vexPeak ? money(c.vexPeak.vex) + " VEX" : ""],["Max pain", c.maxPain, c.near],["Expected move", c.em[0] ? "±" + fmt(c.em[0].move,1) : null, c.em[0] ? `${fmt(c.em[0].pct,2)}% into ${c.em[0].exp}` : ""]];
   const lt = getLT(), hf = hedgeFlows();
   L.push(["Charm into close", money(hf.charm), hf.charm >= 0 ? "dealers buy delta as the day decays (0–3 DTE)" : "dealers sell delta as the day decays (0–3 DTE)"]);
   if (lt.cw.t || lt.pw.t) L.push(["Walls held this month", `${lt.pw.h}/${lt.pw.t} put · ${lt.cw.h}/${lt.cw.t} call`, "tests recorded while the tab was open"]);
@@ -3106,7 +3169,7 @@ function dataStatusFor(symIn){
     feedLoop: S.feed ? { phase: S.feed.phase, lastWrite: new Date(feedLastWrite()).toISOString(), ageSec: Math.round((Date.now() - feedLastWrite()) / 1000), stale: feedStale() } : null,
     stream: STR.state === "off" ? "none (polling the feed)" : { state: STR.state, provider: STR.status?.provider, feedType: STR.status?.feedType, symbols: [...STR.subs] },
     broker: RH.state === "off" ? "none (Robinhood quotes are available only inside Claude's preview)" : { state: RH.state, provider: "Robinhood (the viewer's own connection)", calls: RH.calls, lastAnswer: RH.lastOk ? new Date(RH.lastOk).toISOString() : null, note: RH.note || null },
-    rule: "Say 'live' only for a stream quote with realtime true or a broker quote (Robinhood, the viewer's connection, real-time but of unstated feed); the feed is a 20-second snapshot behind a CDN; chains are 15-minute delayed." };
+    rule: "Say 'live' only for a stream quote with realtime true or a broker quote (Robinhood, the viewer's connection, real-time but of unstated feed); the feed is a 20-second snapshot behind a CDN; chains are 15-minute delayed unless chain.source is robinhood (real-time option quotes, delayed false)." };
 }
 async function avaToolRun(name, input){
   switch (name){

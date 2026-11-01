@@ -280,7 +280,7 @@ test("broker: a Robinhood equity quote, index quote, previous close from daily b
   const c = { Math, Date, Number, Map, Set, Array, Object, isFinite, Intl, String, console, UV: {}, universeQuote: () => null };
   vm.createContext(c);
   const grabConst = name => { const i = js.indexOf(`const ${name} = `); const j = js.indexOf("\n", i); return js.slice(i, j); };
-  vm.runInContext([grabConst("ET_CACHE"), grabConst("NYSE_HALF_DAYS"), grabConst("RH_INDEX"), grabConst("RH"), grab("etInfo"), grab("barDay"), grab("rhEquityQuote"), grab("rhIndexQuote"), grab("rhIndexPrevFrom"), grab("rhBarsFrom")].join("\n") + "\nthis.f = { rhEquityQuote, rhIndexQuote, rhIndexPrevFrom, rhBarsFrom };", c);
+  vm.runInContext([grabConst("ET_CACHE"), grabConst("NYSE_HALF_DAYS"), grabConst("RH_INDEX"), grabConst("RH"), grab("etInfo"), grab("barDay"), grab("rhEquityQuote"), grab("rhIndexQuote"), grab("rhIndexPrevFrom"), grab("rhBarsFrom"), grab("rhChainRow")].join("\n") + "\nthis.f = { rhEquityQuote, rhIndexQuote, rhIndexPrevFrom, rhBarsFrom, rhChainRow };", c);
   const f = c.f; const now = Date.parse("2026-10-28T16:58:00Z");
   // regular hours: last trade with its venue time, bid × ask, the adjusted previous close for the day's change
   const spy = { quote: { symbol: "SPY", last_trade_price: "771.765000", venue_last_trade_time: "2026-10-28T16:57:45.518134843Z", last_non_reg_trade_price: null, venue_last_non_reg_trade_time: null, adjusted_previous_close: "769.660000", previous_close: "769.660000", previous_close_date: "2026-10-27", bid_price: "771.740000", venue_bid_time: "2026-10-28T16:57:45.236399431Z", ask_price: "771.780000", venue_ask_time: "2026-10-28T16:57:45.236399431Z", has_traded: true, state: "active" }, close: { symbol: "SPY", date: "2026-10-27", price: "769.66", interpolated: false, source: "sip-list-exchange-close" } };
@@ -305,4 +305,10 @@ test("broker: a Robinhood equity quote, index quote, previous close from daily b
   // equity bars: prices as strings, volume as numbers, sorted by time
   const bars = f.rhBarsFrom([{ begins_at: "2026-10-28T13:35:00Z", open_price: "771.340000", close_price: "770.750000", high_price: "771.519900", low_price: "770.540000", volume: 164112, session: "reg" }, { begins_at: "2026-10-28T13:30:00Z", open_price: "771.430000", close_price: "771.340000", high_price: "771.700000", low_price: "770.975000", volume: 263203, session: "reg" }]);
   assert.deepEqual([...bars[0]], [Date.parse("2026-10-28T13:30:00Z"), 771.43, 771.7, 770.975, 771.34, 263203]); assert.equal(bars[1][5], 164112);
+// an option quote → a chain row in the feed's shape; a deep in-the-money contract without greeks gets delta ±1 and no gamma
+  const oq = { instrument_id: "852b46c8", ask_price: "8.510000", ask_size: 76, bid_price: "8.390000", bid_size: 27, mark_price: "8.450000", implied_volatility: "0.191703", delta: "0.553792", gamma: "0.021663", theta: "-0.670142", vega: "0.376355", open_interest: 911, volume: 8139, updated_at: "2026-10-30T20:14:59.938340289Z" };
+  const r1 = JSON.parse(JSON.stringify(f.rhChainRow(oq, { id: "852b46c8", exp: "2026-11-06", type: "call", K: 755 }, 760)));
+  assert.deepEqual(r1.row, ["2026-11-06", "C", 755, 911, 8139, 0.191703, 0.021663, 0.553792, 8.39, 8.51, 8.45]); assert.equal(r1.t, Date.parse("2026-10-30T20:14:59.938Z"));
+  const deep = JSON.parse(JSON.stringify(f.rhChainRow({ ...oq, implied_volatility: null, delta: null, gamma: null }, { id: "x", exp: "2026-11-06", type: "put", K: 900 }, 760)));
+  assert.deepEqual(deep.row.slice(5, 8), [0, 0, -1]); assert.equal(f.rhChainRow(null, { K: 1 }, 1), null);
 });
