@@ -438,7 +438,7 @@ body:not(.showhelp) .helptext{display:none !important}
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v45 beta";
+const KN_VERSION = "v46 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -678,7 +678,7 @@ function renderTape(){
 }
 setInterval(() => { if (document.visibilityState === "visible" && (S.set.proxy||"").trim()) loadTape(); }, 10000);
 setInterval(() => { if (document.visibilityState === "visible" && !(S.set.proxy||"").trim()) loadTape(); }, 15000); // the feed writes the tape every 20 s in regular hours
-setInterval(() => { if (document.visibilityState === "visible"){ loadUniverse(true).then(() => { renderLiveQuote(); applyLivePatches(); }); if (!FEED_NAMES.has(S.sym)) loadMarket(true).then(() => { renderLiveQuote(); applyLivePatches(); }); else if (Date.now() - MKT.at > 5*60e3) loadMarket(true).then(renderLiveQuote); } }, 30000); // the feed's universe quote backs the header for every name, not just the tape; the sweep covers the rest
+setInterval(() => { if (document.visibilityState === "visible"){ if (!rhAvailable()) loadMacroData(); loadUniverse(true).then(() => { renderLiveQuote(); applyLivePatches(); }); if (!FEED_NAMES.has(S.sym)) loadMarket(true).then(() => { renderLiveQuote(); applyLivePatches(); }); else if (Date.now() - MKT.at > 5*60e3) loadMarket(true).then(renderLiveQuote); } }, 30000); // the feed's universe quote backs the header for every name, not just the tape; the sweep covers the rest
 
 // ---------- Broker quotes: the viewer's own Robinhood connection, when the page runs inside Claude's artifact viewer ----------
 // The published preview is sandboxed: it cannot reach the feed or any website. What it can reach, with the viewer's consent and the viewer's own
@@ -1159,42 +1159,76 @@ function askForm(spec){ return new Promise(resolve => {
   dlg.showModal(); const first = form.querySelector("input:not([readonly]),select") || form.querySelector("button[type=submit]"); if (first){ first.focus(); if (first.select) first.select(); }
 }); }
 // Macro calendar — verified against BLS/BEA/Fed schedules for Oct–Nov 2026; times ET. impact: 3 = moves everything, 2 = moves rates/sector, 1 = watch.
+// Macro calendar — the publishers' own dates (BLS 2026 schedule, BEA full schedule, FOMC 2026 + the 2027 schedule), verified 2026-11-03; times ET.
+// impact: 3 = moves everything, 2 = moves rates/sector, 1 = watch. The feed's data/macro.json carries the same list (plus FRED's calendar when a key is set) and the latest readings.
 const MACRO_CAL = [
-  {date:"2026-10-07", time:"14:00", name:"FOMC minutes (Sept meeting)", impact:2},
-  {date:"2026-10-08", time:"08:30", name:"Jobless claims", impact:1},
-  {date:"2026-10-14", time:"08:30", name:"CPI (September)", impact:3},
-  {date:"2026-10-15", time:"08:30", name:"PPI + Retail sales (September)", impact:2},
-  {date:"2026-10-15", time:"08:30", name:"Jobless claims", impact:1},
-  {date:"2026-10-16", time:"16:00", name:"Monthly opex (Oct)", impact:2},
-  {date:"2026-10-21", time:"09:30", name:"VIX October expiration (settlement)", impact:1},
-  {date:"2026-10-22", time:"08:30", name:"Jobless claims", impact:1},
-  {date:"2026-10-28", time:"14:00", name:"FOMC rate decision + presser 2:30", impact:3},
-  {date:"2026-10-29", time:"08:30", name:"GDP Q3 advance", impact:2},
-  {date:"2026-10-29", time:"08:30", name:"Jobless claims", impact:1},
-  {date:"2026-10-30", time:"08:30", name:"PCE inflation (September) — BEA may post 10/29", impact:2},
-  {date:"2026-11-03", time:"10:00", name:"ISM Manufacturing (Oct) / JOLTS", impact:1},
-  {date:"2026-11-06", time:"08:30", name:"Jobs report (October)", impact:3},
-  {date:"2026-11-10", time:"08:30", name:"CPI (October)", impact:3},
-  {date:"2026-11-13", time:"08:30", name:"PPI (October)", impact:2},
-  {date:"2026-11-17", time:"08:30", name:"Retail sales (October)", impact:2},
-  {date:"2026-11-20", time:"16:00", name:"Monthly opex (Nov)", impact:2},
-  {date:"2026-12-09", time:"14:00", name:"FOMC rate decision", impact:3},
-  // Q3 earnings — dates are the companies' usual slots; confirm the week of (unconfirmed = ~)
-  {date:"2026-10-13", time:"07:00", name:"~ Big banks start Q3 earnings (JPM, C, WFC)", impact:2},
-  {date:"2026-10-15", time:"02:00", name:"~ TSM Q3 earnings (pre-market)", impact:2},
-  {date:"2026-10-20", time:"16:05", name:"~ NFLX Q3 earnings", impact:1},
-  {date:"2026-10-21", time:"16:05", name:"~ TSLA Q3 earnings", impact:2},
-  {date:"2026-10-22", time:"16:05", name:"~ INTC Q3 earnings", impact:2},
-  {date:"2026-10-27", time:"16:05", name:"~ GOOGL / MSFT / META Q3 earnings week", impact:3},
-  {date:"2026-10-29", time:"16:05", name:"~ AAPL / AMZN Q3 earnings", impact:3},
+  {date:"2026-11-03", time:"", name:"US midterm elections \u2014 Election Day; results overnight, markets keep normal hours", impact:2, src:"static"},
+  {date:"2026-11-03", time:"10:00", name:"JOLTS job openings (September)", impact:1, src:"bls"},
+  {date:"2026-11-04", time:"08:30", name:"Trade balance (September)", impact:1, src:"bea"},
+  {date:"2026-11-05", time:"08:30", name:"Productivity & costs Q3 (preliminary) + jobless claims", impact:1, src:"bls"},
+  {date:"2026-11-06", time:"08:30", name:"Jobs report \u2014 Employment Situation (October)", impact:3, src:"bls"},
+  {date:"2026-11-10", time:"08:30", name:"CPI (October) + real earnings", impact:3, src:"bls"},
+  {date:"2026-11-12", time:"08:30", name:"Jobless claims", impact:1, src:"static"},
+  {date:"2026-11-13", time:"08:30", name:"PPI (October)", impact:2, src:"bls"},
+  {date:"2026-11-17", time:"08:30", name:"Import/export prices (October)", impact:1, src:"bls"},
+  {date:"2026-11-19", time:"08:30", name:"Jobless claims", impact:1, src:"static"},
+  {date:"2026-11-20", time:"16:00", name:"Monthly opex (November)", impact:2, src:"static"},
+  {date:"2026-11-25", time:"08:30", name:"GDP Q3 second estimate + corporate profits", impact:2, src:"bea"},
+  {date:"2026-11-25", time:"08:30", name:"PCE inflation \u2014 personal income & outlays (October)", impact:3, src:"bea"},
+  {date:"2026-11-25", time:"08:30", name:"Jobless claims (moved up for Thanksgiving)", impact:1, src:"static"},
+  {date:"2026-11-26", time:"", name:"Thanksgiving \u2014 markets closed", impact:2, src:"static"},
+  {date:"2026-11-27", time:"13:00", name:"Half day \u2014 markets close 1:00 PM", impact:1, src:"static"},
+  {date:"2026-12-01", time:"10:00", name:"JOLTS job openings (October)", impact:1, src:"bls"},
+  {date:"2026-12-03", time:"08:30", name:"Jobless claims", impact:1, src:"static"},
+  {date:"2026-12-04", time:"08:30", name:"Jobs report \u2014 Employment Situation (November)", impact:3, src:"bls"},
+  {date:"2026-12-08", time:"08:30", name:"Productivity & costs Q3 (revised) + trade balance (October)", impact:1, src:"bls"},
+  {date:"2026-12-09", time:"14:00", name:"FOMC rate decision + projections (SEP) \u00b7 presser 2:30", impact:3, src:"fed"},
+  {date:"2026-12-10", time:"08:30", name:"CPI (November) + real earnings + jobless claims", impact:3, src:"bls"},
+  {date:"2026-12-15", time:"08:30", name:"PPI (November)", impact:2, src:"bls"},
+  {date:"2026-12-17", time:"08:30", name:"Import/export prices (November) + jobless claims", impact:1, src:"bls"},
+  {date:"2026-12-18", time:"16:00", name:"Quad witching \u2014 December opex", impact:3, src:"static"},
+  {date:"2026-12-23", time:"08:30", name:"GDP Q3 third estimate + PCE inflation (November)", impact:2, src:"bea"},
+  {date:"2026-12-24", time:"13:00", name:"Christmas Eve \u2014 markets close 1:00 PM", impact:1, src:"static"},
+  {date:"2026-12-25", time:"", name:"Christmas \u2014 markets closed", impact:2, src:"static"},
+  {date:"2027-01-01", time:"", name:"New Year's Day \u2014 markets closed", impact:2, src:"static"},
+  {date:"2027-01-08", time:"08:30", name:"Jobs report \u2014 Employment Situation (December)", impact:3, src:"static"},
+  {date:"2027-01-15", time:"16:00", name:"Monthly opex (January)", impact:2, src:"static"},
+  {date:"2027-01-27", time:"14:00", name:"FOMC rate decision \u00b7 presser 2:30", impact:3, src:"fed"},
+  {date:"2027-03-17", time:"14:00", name:"FOMC rate decision + projections (SEP)", impact:3, src:"fed"},
+  {date:"2027-04-28", time:"14:00", name:"FOMC rate decision", impact:3, src:"fed"},
+  {date:"2027-06-09", time:"14:00", name:"FOMC rate decision + projections (SEP)", impact:3, src:"fed"},
+  {date:"2027-07-28", time:"14:00", name:"FOMC rate decision", impact:3, src:"fed"},
+  {date:"2027-09-15", time:"14:00", name:"FOMC rate decision + projections (SEP)", impact:3, src:"fed"},
+  {date:"2027-10-27", time:"14:00", name:"FOMC rate decision", impact:3, src:"fed"},
+  {date:"2027-12-08", time:"14:00", name:"FOMC rate decision + projections (SEP)", impact:3, src:"fed"},
+  // Q3 earnings — the companies' usual slots; confirm the week of (~ = typical date)
   {date:"2026-11-04", time:"16:05", name:"~ AMD Q3 earnings", impact:2},
   {date:"2026-11-18", time:"16:20", name:"~ NVDA Q3 earnings", impact:3},
 ];
-const FOMC_2026 = ["2026-01-28","2026-03-18","2026-04-29","2026-06-17","2026-07-29","2026-09-16"];
+const FOMC_DATES = ["2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09", "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09", "2027-07-28", "2027-09-15", "2027-10-27", "2027-12-08"]; // decision days, 2026 and the Fed's published 2027 schedule
+// ---------- Macro readings and the release calendar from the feed (data/macro.json, hourly): BLS, NY Fed, Treasury yields ----------
+const MAC = { d:null, at:0, loading:false };
+function macroTopic(n){ n = String(n || ""); return /consumer price|\bcpi\b/i.test(n) ? "cpi" : /employment situation|jobs report|nonfarm|payrolls/i.test(n) ? "jobs" : /personal income|\bpce\b/i.test(n) ? "pce" : /gross domestic|\bgdp\b/i.test(n) ? "gdp" : /producer price|\bppi\b/i.test(n) ? "ppi" : /jolts|job openings/i.test(n) ? "jolts" : /fomc/i.test(n) ? "fomc" : null; }
+async function loadMacroData(force){ if (MAC.loading || (!force && Date.now() - MAC.at < 30*60e3)) return MAC.d; MAC.loading = true; try { const j = await snapshotJson("macro.json", 0); if (j?.at){ MAC.d = j; MAC.at = Date.now(); if (S.tab === "calendar" || S.tab === "macro") renderTabs(); renderEvents(); } else MAC.at = Date.now() - 25*60e3; } finally { MAC.loading = false; } return MAC.d; }
+const monthName = p => { const m = /^(\d{4})-(\d{2})/.exec(String(p || "")); return m ? new Date(Date.UTC(+m[1], +m[2]-1, 15)).toLocaleDateString("en-US",{month:"short",year:"numeric",timeZone:"UTC"}) : p; };
+// the readings as one-line facts with their periods — for Ava, the Calendar tab and the Macro tab; nothing here is estimated
+function macroReadings(){ const d = MAC.d?.data; if (!d) return null; const lines = {}; const pc = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+  if (d.cpi) lines.cpi = `CPI ${pc(d.cpi.yoy)} y/y, ${pc(d.cpi.mom)} m/m (${monthName(d.cpi.period)})${d.cpi.coreYoy != null ? ` · core ${pc(d.cpi.coreYoy)} y/y, ${pc(d.cpi.coreMom)} m/m` : ""}`;
+  if (d.unemployment) lines.unemployment = `Unemployment ${d.unemployment.rate}% (${monthName(d.unemployment.period)}${d.unemployment.prior != null ? `, prior ${d.unemployment.prior}%` : ""})`;
+  if (d.payrolls) lines.payrolls = `Nonfarm payrolls ${d.payrolls.change != null ? (d.payrolls.change >= 0 ? "+" : "") + fmt(d.payrolls.change) + "k" : "—"} (${monthName(d.payrolls.period)}${d.payrolls.priorChange != null ? `, prior ${d.payrolls.priorChange >= 0 ? "+" : ""}${fmt(d.payrolls.priorChange)}k` : ""})`;
+  if (d.hourlyEarnings?.yoy != null) lines.wages = `Avg hourly earnings ${pc(d.hourlyEarnings.yoy)} y/y (${monthName(d.hourlyEarnings.period)})`;
+  if (d.fedFunds) lines.fedFunds = `Fed funds target ${d.fedFunds.range}${d.effr ? ` · EFFR ${d.effr.rate}% (${d.effr.date})` : ` (as of ${d.fedFunds.asOf}, ${d.fedFunds.src})`}`;
+  if (d.yields) lines.yields = `Treasuries: 3m ${d.yields.t3m ?? "—"} · 5y ${d.yields.t5y ?? "—"} · 10y ${d.yields.t10y ?? "—"} · 30y ${d.yields.t30y ?? "—"}${d.yields.t10y != null && d.yields.t3m != null ? ` · 10y−3m ${(d.yields.t10y - d.yields.t3m).toFixed(2)}` : ""} (${whenLabel(Date.parse(d.yields.asOf))})`;
+  return Object.keys(lines).length ? { ...lines, asOf: MAC.d.at ? new Date(MAC.d.at).toISOString() : null, sources: MAC.d.sources } : null; }
+function macroReadingsBlock(){ const r = macroReadings(); const box = h("div",{class:"card", style:{marginBottom:"10px"}}, h("h2",null,"Latest readings"));
+  if (!r){ box.append(h("p",{class:"hint",style:{margin:0}}, rhAvailable() ? "No readings inside Claude's preview — the feed that fetches them (BLS, NY Fed, Treasury) is unreachable here; the calendar above is the built-in, verified one." : MAC.at ? "The feed has not written macro.json yet — it fetches BLS, NY Fed and Treasury readings hourly." : "Loading…")); return box; }
+  const ks = ["cpi","unemployment","payrolls","wages","fedFunds","yields"].filter(k => r[k]);
+  box.append(h("div",{style:{display:"grid",gap:"3px",fontSize:"12.5px"}}, ...ks.map(k => h("div",{style:{padding:"3px 0",borderBottom:"1px solid var(--rule)"}}, r[k]))), h("p",{class:"hint",style:{margin:"6px 0 0"}}, `BLS public API, NY Fed and Yahoo's Treasury quotes, via the feed · fetched ${ageLabel(MAC.d.at)}${MAC.d.calendarVerified ? ` · release dates verified ${MAC.d.calendarVerified}` : ""}${MAC.d.sources?.fred ? " · FRED calendar on" : ""}`)); return box; }
 function autoEvents(){ const out = []; const now = new Date();
   MACRO_CAL.forEach(e => out.push({...e, auto:true}));
+  for (const r of (MAC.d?.releases || [])){ if (!r?.date || !r.name) continue; const t = macroTopic(r.name); const k = r.name.toLowerCase().replace(/[^a-z]/g,"").slice(0,10); if (out.some(e => e.date === r.date && ((t && macroTopic(e.name) === t) || e.name.toLowerCase().replace(/[^a-z]/g,"").slice(0,10) === k))) continue; out.push({...r, auto:true, feed:true}); } // the feed's calendar (FRED when a key is set) adds what the built-in list lacks
   Object.entries(HOLIDAY_NAMES).forEach(([date, name]) => out.push({date, time:"", name, impact: NYSE_HOLIDAYS.has(date) ? 2 : 1, auto:true, holiday:true}));
-  FOMC_2026.forEach(d => out.push({name:"FOMC decision", date:d, time:"14:00", impact:3, auto:true})); for (let m = 0; m < 3; m++){ const y = now.getFullYear(), mo = now.getMonth()+m; const d1 = new Date(y, mo, 1); const firstFri = new Date(y, mo, 1 + ((5 - d1.getDay() + 7) % 7)); const thirdFri = new Date(firstFri); thirdFri.setDate(firstFri.getDate()+14); const fd = firstFri.toISOString().slice(0,10), td = thirdFri.toISOString().slice(0,10); if (!out.some(e => e.date === fd && /jobs/i.test(e.name))) out.push({name:"Jobs report (NFP)", date:fd, time:"08:30", impact:3, auto:true}); if (!out.some(e => e.date === td && /opex/i.test(e.name))) out.push({name:"Monthly opex", date:td, time:"16:00", impact:2, auto:true}); } return out; }
+  [...new Set([...FOMC_DATES, ...(MAC.d?.fomc || [])])].forEach(d => { if (!out.some(e => e.date === d && /fomc/i.test(e.name))) out.push({name:"FOMC decision", date:d, time:"14:00", impact:3, auto:true}); }); for (let m = 0; m < 3; m++){ const y = now.getFullYear(), mo = now.getMonth()+m; const d1 = new Date(y, mo, 1); const firstFri = new Date(y, mo, 1 + ((5 - d1.getDay() + 7) % 7)); const thirdFri = new Date(firstFri); thirdFri.setDate(firstFri.getDate()+14); const fd = firstFri.toISOString().slice(0,10), td = thirdFri.toISOString().slice(0,10); if (!out.some(e => e.date === fd && /jobs/i.test(e.name))) out.push({name:"Jobs report (NFP)", date:fd, time:"08:30", impact:3, auto:true}); if (!out.some(e => e.date === td && /opex/i.test(e.name))) out.push({name:"Monthly opex", date:td, time:"16:00", impact:2, auto:true}); } return out; }
 // Earnings for a ticker from the calendar (built-in list + your own events): the first event within `withinDays` whose name carries the symbol as a word and says earnings/ER/reports
 function earningsFor(sym, withinDays = 21){ const today = new Date(); today.setHours(0,0,0,0); const re = new RegExp(`(^|[^A-Z.])${sym.replace(".","\\.")}([^A-Z.]|$)`);
   const hits = [...autoEvents(), ...getEvents()].filter(e => e.name && re.test(e.name) && /earnings|\bER\b|reports/i.test(e.name)).map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= 0 && e.days <= withinDays).sort((a,b)=>a.days-b.days);
@@ -2937,6 +2971,7 @@ function viewCalendar(){
     cells.push(h("div",{class:"jc-cell"+(k===todayKey?" today":""), style:{minHeight:"84px", background: top>=3 ? "rgba(239,83,80,.10)" : top===2 ? "rgba(245,185,66,.08)" : "var(--panel2)"}}, h("div",{class:"jc-d"}, d, HOLIDAY_NAMES[k] ? h("span",{class:"hint", title:HOLIDAY_NAMES[k], style:{color:"var(--gold)"}}, NYSE_HOLIDAYS.has(k) ? " closed" : NYSE_HALF_DAYS.has(k) ? " 1pm close" : " bonds closed") : null),
       ...evs.map(e => h("div",{style:{fontSize:"10.5px",lineHeight:"1.3",margin:"2px 0",color: e.impact>=3?"#FCA5A5":e.impact===2?"var(--gold)":"var(--ink)"}, title:e.name + (e.time?` · ${e.time} ET`:"")}, (e.time ? e.time + " " : "") + e.name.replace(/ \(.*?\)/,""), e.mine ? h("button",{class:"btn small", style:{marginLeft:"4px",padding:"0 4px"}, onclick:()=>{ setEvents(getEvents().filter(x => !(x.name===e.name && x.date===e.date))); renderTabs(); renderEvents(); }},"×") : null)))); }
   box.append(h("div",{class:"card"}, h("div",{class:"jc-head"}, ...["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>h("div",null,x))), h("div",{class:"jc-grid"}, ...cells)));
+  box.append(macroReadingsBlock()); if (!MAC.d && !rhAvailable()) loadMacroData();
   // list view for the month
   const monthEvs = all.filter(e => e.date.startsWith(`${CALV.y}-${String(CALV.m+1).padStart(2,"0")}`)).sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
   box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"This month, in order"), h("table",{class:"data"}, h("thead",null,h("tr",null,["Date","Time ET","Event","Impact","What it tends to move"].map(x=>h("th",null,x)))), h("tbody",null, monthEvs.map(e => h("tr",null, h("td",null, new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})), h("td",null,e.time||"—"), h("td",{style:{textAlign:"left"}},e.name), h("td",{style:{color:e.impact>=3?"var(--neg)":e.impact===2?"var(--gold)":"var(--muted)"}},"●".repeat(e.impact||1)), h("td",{style:{textAlign:"left",color:"var(--muted)"}}, /CPI|PCE|PPI/.test(e.name) ? "rates, TLT, growth vs value, VIX" : /FOMC|Fed/.test(e.name) ? "everything — rates, dollar, indexes, vol" : /Jobs|payroll|claims/i.test(e.name) ? "rates, small caps, TLT" : /opex|VIX/i.test(e.name) ? "pin/unpin around walls; gamma rolls off" : /earnings/i.test(e.name) ? "the name, its group, the index if mega-cap" : /Retail/.test(e.name) ? "consumer names, growth" : /GDP/.test(e.name) ? "rates, cyclicals" : "sector")))))));
@@ -2959,7 +2994,7 @@ setInterval(checkEventAlerts, 60000); setTimeout(checkEventAlerts, 5000);
 const MACRO = ["SPY","IWM","QQQ","TLT","GLD","UUP","XLE","SMH"]; const MC = { bars:new Map(), at:0, loading:false };
 async function loadMacro(){ if (MC.loading || Date.now() - MC.at < 10*60e3) return; MC.loading = true; let changed = false; for (const s of MACRO){ if (MC.bars.has(s)) continue; const b = await fetchBarsAny(s); MC.bars.set(s, b || (S.demo ? synthBars({SPY:775,IWM:283,QQQ:756,TLT:77.1,GLD:378,UUP:28,XLE:62.7,SMH:330}[s]||100,"1d") : null)); changed = true; } MC.loading = false; MC.at = Date.now(); if (changed && S.tab === "macro") renderTabs(); }
 function viewMacro(){
-  const box = h("div",null); const rets = new Map();
+  const box = h("div",null); const rets = new Map(); box.append(macroReadingsBlock()); if (!MAC.d && !rhAvailable()) loadMacroData();
   for (const s of MACRO){ const b = MC.bars.get(s); if (!b || b.length < 25) continue; const cl = b.map(x=>x[4]); rets.set(s, {r:cl.slice(1).map((c,i)=>Math.log(c/cl[i])).slice(-20), c1:cl.at(-1)/cl.at(-2)-1, c5:cl.at(-1)/cl.at(-6)-1, c20:cl.at(-1)/cl.at(-21)-1, px:cl.at(-1)}); }
   const corr = (a,b) => { const n = Math.min(a.length,b.length); if (n < 10) return null; const ma = a.reduce((x,y)=>x+y,0)/n, mb = b.reduce((x,y)=>x+y,0)/n; let num=0, da=0, db=0; for (let i=0;i<n;i++){ num += (a[i]-ma)*(b[i]-mb); da += (a[i]-ma)**2; db += (b[i]-mb)**2; } return num/Math.sqrt(da*db||1); };
   const syms = MACRO.filter(s => rets.has(s));
@@ -3053,13 +3088,13 @@ function ediContext(){
     rules: { account:pb.account, maxRiskPct:pb.maxRiskPct, maxPositions:pb.maxPositions, minDte:pb.minDte, stopPct:pb.stopPct, style:"swing trader; 30+ DTE directional; cuts quickly when thesis breaks even if green; never lets a green contract go red; no short-dated holds over weekends; buy low / sell high" },
     today: marketDate(), prevTradingDay: prevTradingDay(), marketPhase: marketPhase(), feed: S.feed ? { lastWrite: whenLabel(S.feed.at), stale: feedStale() } : null,
     sessionFlow: (S.flow?.session||S.flow?.trades||[]).filter(t=>!t.deep).slice(0,8).map(t => `${t.exp.slice(5)} ${fmt(t.K)}${t.cp} ${fmtK(t.sz)}v${t.oi!=null?"/"+fmtK(t.oi)+"oi":""} ${money(t.prem)}${t.side==="A"?" ask":t.side==="B"?" bid":""}`),
-    market: { tape: [...tapeQuotes.values()].filter(q=>!q.demo && q.prev).map(q => `${q.symbol} ${fmt(INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price,2)} ${pct(((INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price)/q.prev-1)*100)}${q.stale ? " (stale)" : ""}`), movers: moversForAva(), scanAt: SCAN.at ? whenLabel(SCAN.at) : null, scan: scanLines(), macro: macroForAva() },
+    market: { tape: [...tapeQuotes.values()].filter(q=>!q.demo && q.prev).map(q => `${q.symbol} ${fmt(INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price,2)} ${pct(((INDEX_SYMS.has(q.symbol)&&q.last ? q.last : q.price)/q.prev-1)*100)}${q.stale ? " (stale)" : ""}`), movers: moversForAva(), scanAt: SCAN.at ? whenLabel(SCAN.at) : null, scan: scanLines(), macro: macroForAva(), macroData: macroReadings() },
     book: { open: open.map(p => ({ id:p.id, text: p.shares ? `${p.sym} ${p.qty} shares @ ${p.entry}` : `${p.sym} ${p.exp} ${p.K}${p.cp} ×${p.qty} @ ${p.entry} (inval ${p.inval||"—"}, tgt ${p.target||"—"}, ${dte(p.exp)}d)` })), netDelta:delta, thetaPerDay:theta },
     recentJournal: getJournal().slice(-12).map(e => `${new Date(e.opened).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})} ${e.contract} ×${e.qty} @ ${e.entry}${e.closed ? ` → ${e.exit} (${e.pnl>=0?"+":""}${Math.round(e.pnl)} / ${fmt(e.pnlPct,0)}%)` : " open"}${e.thesis ? " · " + e.thesis.slice(0,60) : ""}${e.why ? " · exit: " + e.why.slice(0,40) : ""}`),
     memory: avaNotes().slice(-60).map(n => `[${n.kind||"note"} ${new Date(n.t).toLocaleDateString("en-US",{month:"numeric",day:"numeric"})}] ${n.text}`),
     watchlist: getWatch().map(sym => { const v = watchCache.get(sym)?.v; return v && !v.missing ? `${sym} ${fmt(v.spot,2)} PW ${fmt(v.pw)} flip ${fmt(v.flip)} CW ${fmt(v.cw)} EM ±${v.em?fmt(v.em.move,1):"—"}` : sym; }),
     journal: coach.stats && coach.stats.n ? { closed:coach.stats.n, winRate:coach.stats.wr, avgWin:coach.stats.avgW, avgLoss:coach.stats.avgL, expectancy:coach.stats.expectancy, bestSetup:coach.stats.setups?.[0]?.[0], worstSetup:coach.stats.setups?.at(-1)?.[0] } : null,
-    events: ev.map(e => `${e.name} ${e.time||""} in ${e.days}d (impact ${e.impact||1})`),
+    events: ev.map(e => `${e.name}${e.time ? " " + e.time + " ET" : ""} · ${e.days === 0 ? "today" : e.days === 1 ? "tomorrow" : "in " + e.days + "d"} (impact ${e.impact||1})${e.src === "fred" ? " [FRED]" : ""}`),
     ideasBacktest: BT.data?.chosen?.summary ? { winRate:BT.data.chosen.summary.winRate, avgRet:BT.data.chosen.summary.avgRet, profitFactor:BT.data.chosen.summary.profitFactor } : null,
   };
 }
@@ -3071,7 +3106,7 @@ HOW A DESK THINKS (your frame for any trade question)
 1. Regime: positive gamma pins, negative gamma trends; where spot sits against the GEX crossover and zero gamma. 2. Levels: put wall under, call wall over, king node, expected move — the map. 3. Flow: where the money went today (premium, call share, volume vs OI, last print at the ask or bid) and whether it agrees with the map. 4. Price: trend (21/50/200 EMA), pullback or extension, RSI, ATR for the stop, relative strength. 5. Vol: IV vs realized — rich means spreads or shares, cheap means long premium works; the term structure says whether an event is priced. 6. Catalysts: what's on the calendar inside the holding period. 7. The trade: direction, structure, entry, invalidation (a level, not just a premium stop), target, size against their rules, one line on what would make you wrong. Say which of these the data supports and which is your judgment.
 
 WHAT YOU HAVE — the CONTEXT JSON
-ticker (the loaded name's positioning and sessionFlow), market.tape, market.movers (regular-session moves across ~300 names), market.scan (one line per chain ticker, top 30 by premium — the full set is behind scan_market), market.macro, events, rules, book (open positions with ids), recentJournal, memory (what you saved in earlier sessions, tagged fact/plan/lesson/feedback), watchlist, feed (whether the data loop is stale). If the context says demo or noChain, the levels are placeholders — say so. If feed.stale, the numbers are from when the feed stopped — say so.
+ticker (the loaded name's positioning and sessionFlow), market.tape, market.movers (regular-session moves across ~300 names), market.scan (one line per chain ticker, top 30 by premium — the full set is behind scan_market), market.macro (cross-asset momentum), market.macroData (the latest official readings — CPI, unemployment, payrolls, wages, the fed funds target with the effective rate, Treasury yields — each with its period; quote the period when you cite one, and say "no reading" rather than guess when it is null), events (the next ten days from the verified release calendar — BLS, BEA, FOMC dates — plus what the user added), rules, book (open positions with ids), recentJournal, memory (what you saved in earlier sessions, tagged fact/plan/lesson/feedback), watchlist, feed (whether the data loop is stale). If the context says demo or noChain, the levels are placeholders — say so. If feed.stale, the numbers are from when the feed stopped — say so.
 
 TOOLS. You have real tools; use them freely and before asserting numbers you don't have. peek_ticker for any specific name (levels, fresh positioning, scan line). price_history before a directional view, a stop or a target. scan_market to look across the tape (premium, calls, puts, unusual, wall, iv, gainers, losers). session_flow for where the money went in a name. quant_structures when they want a strike and expiry, or ask what structure makes sense. idea_score for the Ideas engine's backtested verdict. journal to read their trades before judging them. log_trade / close_trade when they tell you what they took or closed — only with the numbers they stated; ask for what's missing, never invent. remember for durable facts, plans, lessons, and feedback about you (one sentence each; not what the journal already holds). load_ticker to pull a name up on screen. calendar for what's ahead. Call several tools at once when a question needs several. After the tools come back, answer the question — don't narrate the tool calls, just use what they returned, and never cite a number that isn't in the context or a tool result.
 
@@ -3098,7 +3133,7 @@ const AVA_TOOLS = [
   { name:"remember", description:"Save a durable fact for future sessions. kind = 'fact' (holdings, sleeves, habits, how they trade), 'plan' (what they intend to do or watch), 'lesson' (what a trade taught them), 'feedback' (how they want you to behave). Keep it to one sentence. Don't save what the journal already holds.", input_schema:{ type:"object", properties:{ kind:{ type:"string" }, text:{ type:"string" } }, required:["kind","text"] } },
   { name:"load_ticker", description:"Switch the Kingnode screen to a ticker (when they ask you to pull something up).", input_schema:{ type:"object", properties:{ sym:{ type:"string" } }, required:["sym"] } },
   { name:"data_status", description:"Where every number on screen comes from and how old it is: the quote's source and feed type (snapshot feed, IEX or SIP stream, delayed), its age, the session (regular, pre-market, after hours, overnight, closed), the chain's timestamp and delay, the chart's bars source, the feed loop's health and the stream state. Call this before telling the user anything is 'live' or 'current', and whenever they ask how fresh the data is.", input_schema:{ type:"object", properties:{ sym:{ type:"string", description:"defaults to the loaded ticker" } } } },
-  { name:"calendar", description:"Scheduled events ahead: macro releases, Fed, opex, the usual earnings slots, market holidays, plus whatever the user added.", input_schema:{ type:"object", properties:{ days:{ type:"integer", description:"default 10" } } } },
+  { name:"calendar", description:"Scheduled events ahead (verified BLS/BEA/FOMC dates, opex, the usual earnings slots, market holidays, the user's own) and the latest official macro readings (CPI, unemployment, payrolls, fed funds, yields) with their periods.", input_schema:{ type:"object", properties:{ days:{ type:"integer", description:"default 10" } } } },
 ];
 // session flow for any chain (chainFlow() is the loaded-ticker wrapper)
 function flowFromChain(chain, sym, exps){
@@ -3205,7 +3240,7 @@ async function avaToolRun(name, input){
     case "close_trade": return { done: ediApply({ action:"close", ...input }) };
     case "remember": { avaRemember(input.text, input.kind); return { done:`remembered (${input.kind||"fact"})` }; }
     case "load_ticker": return { done: ediApply({ action:"load", sym:input.sym }) };
-    case "calendar": { const days = Math.min(60, Number(input.days)||10); const today = new Date(); today.setHours(0,0,0,0); return { events: [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= 0 && e.days <= days).sort((a,b)=>a.days-b.days).map(e => `${e.date}${e.time?" "+e.time+" ET":""} · ${e.name} · impact ${e.impact||1} · in ${e.days}d`) }; }
+    case "calendar": { const days = Math.min(60, Number(input.days)||10); const today = new Date(); today.setHours(0,0,0,0); return { readings: macroReadings(), calendar: `BLS/BEA/FOMC dates verified ${MAC.d?.calendarVerified || "2026-11-03"}${MAC.d?.sources?.fred ? " + FRED release calendar" : ""}; ~ marks a typical earnings slot`, events: [...autoEvents(), ...getEvents()].map(e => ({...e, days: Math.round((new Date(e.date+"T00:00:00") - today)/86400000)})).filter(e => e.days >= 0 && e.days <= days).sort((a,b)=>a.days-b.days).map(e => `${e.date}${e.time?" "+e.time+" ET":""} · ${e.name} · impact ${e.impact||1} · in ${e.days}d`) }; }
     default: throw new Error("unknown tool " + name);
   }
 }
@@ -3887,7 +3922,7 @@ document.getElementById("themeBtn").onclick = () => { const r = document.documen
 try { const t = localStorage.getItem("kingnode:theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
 try { S.lines = JSON.parse(localStorage.getItem("kingnode:lines") || "{}"); } catch { S.lines = {}; }
 try { if (localStorage.getItem("kingnode:help") === "1" || !localStorage.getItem("kingnode:seen")) document.body.classList.add("showhelp"); } catch {}
-window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyLivePatches, loadTape, loadUniverse, RH, rhStart, rhPoll, get tapeQuotes(){ return tapeQuotes; }, get chart(){ return KC; } }; applyLayout(); renderChips(); ediInit(); renderPlan(); loadTape(); loadUniverse().then(renderLiveQuote); loadMarket().then(renderLiveQuote); loadBreadth(); streamConnect();
+window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyLivePatches, loadTape, loadUniverse, RH, rhStart, rhPoll, MAC, loadMacroData, macroReadings, autoEvents, ediContext, get tapeQuotes(){ return tapeQuotes; }, get chart(){ return KC; } }; applyLayout(); renderChips(); ediInit(); renderPlan(); loadTape(); loadUniverse().then(renderLiveQuote); if (!rhAvailable()) loadMacroData(); loadMarket().then(renderLiveQuote); loadBreadth(); streamConnect();
 { try { const sv = JSON.parse(localStorage.getItem("kingnode:brief")||"null"); const etH = Number(new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:false,timeZone:"America/New_York"}).format(new Date())); const todayStr = new Date().toDateString(); if (etH >= 8 && (!sv || new Date(sv.t).toDateString() !== todayStr)) setTimeout(buildBrief, 4000); } catch {} }
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }

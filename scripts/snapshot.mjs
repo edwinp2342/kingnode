@@ -13,6 +13,7 @@
 import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import { computeLevels } from "../api/_lib/levels.js";
 import { updateSymbols, sweepMarket, sweepCloses, mostActive, computeBreadth, readJSON, writeJSON } from "./market.mjs";
+import { refreshMacro } from "./macro.mjs";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 
@@ -75,7 +76,7 @@ const LIVE_SYMS = [...new Set([...TAPE, ...SYMS])].filter(s => s !== "XSP");
 const LIVE_BARS_KEEP = Number(process.env.LIVE_BARS || 8);   // minutes of 1-minute bars carried in each live bucket — enough to bridge the CDN's five-minute cache on SYM-1m.json
 
 // ---------- FINRA off-exchange (dark pool / ATS) short volume: real, daily, free ----------
-let svAt = 0;
+let svAt = 0, macroAt = 0;
 async function shortVolume() {
   const want = new Set(BAR_SYMS); const days = {};
   const d = new Date(); let got = 0, tries = 0;
@@ -188,6 +189,7 @@ async function cycle(n, ph) {
     const r429 = await chainBatch(slice, 6, 0.12, "cb", 1, 350); if (r429 < 3) tierBPos = (tierBPos + slice.length) % tierBList.length; /* rate-limited: the same dozen go again next cycle */ }
   if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em emExp gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan); }
   if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
+  if (Date.now() - macroAt > 3600e3) { try { const m = await refreshMacro(); macroAt = Date.now(); status.macro = { at: macroAt, sources: m.sources }; console.log(`macro: ${Object.entries(m.sources).map(([k, v]) => k + " " + v).join(" · ")} · ${m.releases.length} releases`); } catch (e) { macroAt = Date.now() - 3600e3 + 900e3; fail.push(`macro:${e.message}`); } } // readings (BLS, NY Fed, yields) and the release calendar for Ava, hourly
   const loopEnd = end; const nextIn = plan.every * 1000;
   writeIndex({ cycle: n, phase: ph, chainAt, barsAt, next: nextIn, loopEnd, ok, fail });
   await watchdog(n, ok, fail, ph);
