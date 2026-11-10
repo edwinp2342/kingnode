@@ -429,7 +429,7 @@ body:not(.showhelp) .helptext{display:none !important}
     <label style="grid-column:1/-1">Data proxy URL (Cloudflare Worker — makes the static site live; see proxy/ in the project)<input name="proxy" placeholder="https://kingnode-proxy.yourname.workers.dev"></label>
     <label style="grid-column:1/-1">Stream URL — a Kingnode server running with MARKET_STREAM keys (its /ws). Leave empty when this page is served by that server; the GitHub Pages site needs it to stream.<input name="streamUrl" placeholder="wss://your-kingnode-server/ws (optional)"></label>
     <label style="grid-column:1/-1">Discord webhook URL (for ⚑ Flag and alerts — works without a server)<input name="webhook" placeholder="https://discord.com/api/webhooks/…"></label>
-    <label style="grid-column:1/-1">GitHub token with Actions: write on edwinp2342/kingnode (lets “Restart feed” kick the data loop from here — stored only in this browser)<input name="ghToken" type="password" placeholder="github_pat_… (optional)"></label>
+    <label style="grid-column:1/-1">GitHub token with Actions: write on edwinp2342/kingnode (lets “Restart feed” kick the data loop from here — stored only in this browser)<span style="display:flex;gap:6px"><input name="ghToken" type="password" placeholder="github_pat_… (optional)" style="flex:1"><button type="button" class="btn small" id="ghTokenTest" title="Asks GitHub, with this token, to list the kingnode workflows — read-only, nothing is restarted">Test</button></span></label>
 
   </div>
   <div class="actions" style="justify-content:space-between"><span><button class="btn gold" type="submit">Save</button> <button class="btn" type="button" onclick="this.closest('dialog').close()">Cancel</button></span><button class="btn small" type="button" id="openCustomize">Customize tabs &amp; cards</button> <button class="btn small" type="button" id="exportFlags">Export my flags</button> <button class="btn small" type="button" id="backupAll" title="Journal, positions, rules, watchlist, settings, flags — everything this browser holds, as one file">Back up everything</button> <button class="btn small" type="button" id="restoreAll" title="Load a backup file made here (on this or another device)">Restore</button> <button class="btn small" type="button" id="resetSet">Reset to defaults</button></div>
@@ -438,7 +438,7 @@ body:not(.showhelp) .helptext{display:none !important}
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v46 beta";
+const KN_VERSION = "v47 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -613,6 +613,16 @@ function renderFeedBanner(){
   b.replaceChildren(h("span",{style:{flex:1,minWidth:"240px"}}, `Feed stale — the data loop last wrote ${ageLabel(feedLastWrite())} (${whenLabel(feedLastWrite())}, ${f.phase||"?"} phase, cycle ${f.cycle}). Everything below is from that moment, not now.`),
     h("button",{class:"btn small gold", onclick:restartFeed}, "Restart feed"), h("a",{class:"btn small", href:"https://github.com/edwinp2342/kingnode/actions/workflows/data.yml", target:"_blank", rel:"noopener"}, "Open Actions"));
   b.hidden = false;
+}
+// read-only check of the token in the settings form: can it see the repo's workflows? (a fine-grained token with Actions: write can)
+async function testGhToken(){
+  const inp = document.querySelector('#setDlg input[name="ghToken"]'); const tok = (inp?.value || "").trim(); if (!tok){ notice("Paste the token first.", true); return; }
+  try { const r = await fetch("https://api.github.com/repos/edwinp2342/kingnode/actions/workflows", { headers:{ authorization:"Bearer " + tok, accept:"application/vnd.github+json", "x-github-api-version":"2022-11-28" } });
+    if (r.status === 200){ const j = await r.json(); notice(`Token OK — GitHub lists ${j.total_count} workflow${j.total_count === 1 ? "" : "s"} on kingnode. Save to keep it in this browser.`); }
+    else if (r.status === 401) notice("GitHub says 401: that token is not valid (pasted wrong, expired, or deleted).", true);
+    else if (r.status === 403 || r.status === 404) notice(`GitHub says ${r.status}: the token exists but cannot see kingnode's Actions — check Repository access (kingnode) and Permissions → Actions: Read and write.`, true);
+    else notice(`GitHub said ${r.status}: ${(await r.text()).slice(0, 140)}`, true); }
+  catch (e) { notice("Couldn't reach GitHub: " + e.message, true); }
 }
 async function restartFeed(){
   const tok = (S.set.ghToken||"").trim();
@@ -3830,6 +3840,7 @@ document.getElementById("flagBtn").onclick = async () => { const r = await askFo
   const text = `🚩 **Kingnode feedback** ${note}\n${ctx}`; const how = await notify(text);
   const log = (() => { try { return JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch { return []; } })(); log.unshift({t:Date.now(), note, ctx}); try { localStorage.setItem("kingnode:flags", JSON.stringify(log.slice(0,200))); } catch {}
   notice(how === "server" || how === "discord" ? "Flagged. Sent to your Discord with the screen context." : how === "clipboard" ? "No Discord webhook set — flag copied to your clipboard and saved locally. Add a webhook URL in ⚙ Settings to send automatically." : "Saved locally. Add a Discord webhook URL in ⚙ Settings to send flags.", how !== "server" && how !== "discord"); };
+document.getElementById("ghTokenTest").onclick = testGhToken;
 document.getElementById("settingsBtn").onclick = () => { const f = document.getElementById("setForm"); for (const el of f.elements) if (el.name && S.set[el.name] != null) el.value = S.set[el.name]; document.getElementById("setDlg").showModal(); };
 document.getElementById("setForm").addEventListener("submit", e => { const f = e.target; for (const el of f.elements) if (el.name){ const v = el.type === "number" ? Number(el.value) : el.value.trim(); if (el.name === "defaultSym") S.set[el.name] = v.toUpperCase(); else if (el.type === "number" ? isFinite(v) : v) S.set[el.name] = v; } if (!f.elements.streamUrl?.value.trim()) S.set.streamUrl = ""; saveSettings(); startTimer(); S.exps = []; load(); streamConnect(true); });
 // Everything lives in this browser's storage. A cleared cache or a new phone loses it — so one file holds it all, and loads back anywhere.
