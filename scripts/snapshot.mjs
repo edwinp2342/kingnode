@@ -32,6 +32,13 @@ const HANDOFF_MIN = Number(process.env.HANDOFF_MINUTES || 4);   // dispatch the 
 const end = Date.now() + LOOP_MIN * 60e3; const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Start from what the last run left on the data branch (daily bars, chains for names not refreshed yet, the scan), without its
 // history: the branch is force-pushed as a single commit every cycle, so the repo never accumulates a minute-by-minute history.
+const SEED_FILES = ["closes.json", "levels-history.json", "symbols.json", "market.json", "breadth.json", "universe.json", "quotes.json", "scan.json", "macro.json", "index.json", "shortvol.json", "insiders.json"];
+// a server that is not pushing (Railway, a VPS) starts from the public data branch's current files, so history (closes, levels) survives a redeploy
+async function seedFromPublic() {
+  if (fs.existsSync("data/closes.json")) return; const base = process.env.SEED_FROM || "https://raw.githubusercontent.com/edwinp2342/kingnode/data/"; let n = 0;
+  await Promise.all(SEED_FILES.map(async f => { try { const r = await fetch(base + f + "?t=" + Date.now(), { signal: AbortSignal.timeout(20000) }); if (!r.ok) return; const txt = await r.text(); JSON.parse(txt); fs.mkdirSync("data", { recursive: true }); fs.writeFileSync("data/" + f, txt); n++; } catch {} }));
+  console.log(`seeded data/ with ${n} files from ${base}`);
+}
 function seed() {
   if (fs.existsSync("data/.git")) return;
   if (PUSH && process.env.GITHUB_TOKEN && process.env.GITHUB_REPOSITORY) {
@@ -40,7 +47,7 @@ function seed() {
   }
   fs.mkdirSync("data", { recursive: true });
 }
-seed();
+seed(); if (!PUSH) await seedFromPublic();
 
 import { marketPhase, etNow } from "./market-clock.mjs";
 // what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all

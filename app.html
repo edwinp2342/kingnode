@@ -438,7 +438,7 @@ body:not(.showhelp) .helptext{display:none !important}
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v48 beta";
+const KN_VERSION = "v49 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -890,13 +890,24 @@ async function loadRun(){
   if (barsCurrent() && !S.barsDemo && Date.now() - (S.baseLoadedAt||0) > 55000) loadBars(); // same chart, just old: refresh it with the chain
 }
 // Snapshot feed: the GitHub Action writes chains/bars/quotes to the `data` branch every 5 minutes; raw.githubusercontent allows browser reads.
-const DATA_BASE = "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
+let DATA_BASE = "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
+// ---------- Kingnode's own server (Railway, a VPS, the desktop app): same-origin data with no CDN in the way, and Ava through a server-held key ----------
+const SRV = { checked:false, data:false, ava:null, base:null }; // ava: {configured, locked, local} from GET /api/ava, or null when there is no server
+async function detectServer(){
+  if (SRV.checked) return SRV; SRV.checked = true;
+  if (!/^https?:$/.test(location.protocol) || /github\.io$|vercel\.app$|claudeusercontent\.com$/.test(location.hostname)) return SRV; // static hosts and Claude's preview have no server
+  try { const r = await fetch("/data/index.json", { cache:"no-store" }); if (r.ok){ const j = await r.json(); if (j && (j.at || j.cycle != null)){ SRV.data = true; SRV.base = location.origin + "/data/"; DATA_BASE = SRV.base; LIVE_MISS.clear(); } } } catch {}
+  try { const r = await fetch("/api/ava", { cache:"no-store" }); if (r.ok){ const j = await r.json(); if (j && typeof j.configured === "boolean") SRV.ava = j; } } catch {}
+  if (SRV.data || SRV.ava) console.log(`[server] data ${SRV.data ? "same-origin" : "GitHub"} · Ava ${SRV.ava?.configured ? (SRV.ava.locked ? "server key (password)" : "server key") : "browser key"}`);
+  return SRV;
+}
 // Returns the snapshot with its age attached (_at, _age ms, _stale). Old real data beats fresh fake data, so callers show the age instead of dropping it.
 // The raw CDN caches each path for five minutes whatever the query string, so the feed also writes the tape every 20 s and the universe every
 // minute under time-bucketed names (live/q-<bucket>.json, live/u-<bucket>.json). A path nobody has asked for yet is a cache miss: asking for
 // the bucket from ~30 s ago (long enough for the push to land) gives a fresh file; a miss falls back to the plain file.
 const LIVE_MISS = new Set();
 async function liveJson(kind, secs, behindMs, plain, maxAgeMin, tries = 2){
+  if (SRV.data){ behindMs = Math.min(behindMs, 5000); tries = Math.max(tries, 3); } // same-origin files are current the moment the feed writes them
   const b = Math.floor((Date.now() - behindMs) / (secs * 1000));
   for (let k = 0; k < tries; k++){ const bucket = b - k; const name = `live/${kind}-${bucket}.json`; if (LIVE_MISS.has(name)) continue;
     try { const r = await fetch(DATA_BASE + name, {cache:"no-store"}); if (r.ok){ const j = await r.json(); const t = j.at || 0; if (t){ j._at = t; j._age = Date.now() - t; j._stale = maxAgeMin ? isStale(t, maxAgeMin) : false; } return j; } LIVE_MISS.add(name); } catch { LIVE_MISS.add(name); } }
@@ -1280,7 +1291,7 @@ function renderStatus(){
     row("Stream", STR.state === "off" ? "none — polling the feed" : STR.state === "live" ? `${streamLabel()} · ${STR.status?.provider} · ${STR.subs.size} symbols${STR.status?.reconnects ? ` · ${STR.status.reconnects} reconnects` : ""}` : `${STR.state}${STR.status?.errors?.length ? " · " + STR.status.errors.at(-1).msg : ""}`, STR.state === "off" ? null : STR.state === "live", "A self-hosted Kingnode server with provider keys (docs/MARKET-DATA.md). IEX is one exchange's prints; SIP is the consolidated tape."),
     row("Broker", RH.state === "off" ? (rhAvailable() ? "Robinhood · not started" : "none — only inside Claude's preview") : RH.state === "live" ? `Robinhood · ${RH.calls} calls · answered ${ageLabel(RH.lastOk)}` : rhLabel(), RH.state === "off" ? null : RH.state === "live", "Inside Claude's preview (where the feed is unreachable) the page asks your own Robinhood connection, with your consent, for quotes — last trade, bid × ask, previous close, index levels — and bars. Your credentials never touch this page; Robinhood does not serve RUT or options chains through it."),
     row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
-    row("Host", `${location.hostname.includes("github.io") ? "static site — snapshot mode" : rhAvailable() ? "Claude preview" : location.hostname || "file"} · ${KN_VERSION}`, null),
+    row("Host", `${location.hostname.includes("github.io") ? "static site — snapshot mode" : rhAvailable() ? "Claude preview" : SRV.data || SRV.ava ? `Kingnode server (${location.hostname}) · data ${SRV.data ? "same-origin, no CDN" : "GitHub"} · Ava ${avaRouteLabel()}` : location.hostname || "file"} · ${KN_VERSION}`, SRV.data ? true : null),
     row("Proxy", (S.set.proxy||"").trim() ? "set" : "none — direct browser fetch", (S.set.proxy||"").trim() ? true : null),
     h("p",{style:{margin:"6px 0 0"}},"Red = something is wrong; gold = older than it should be. Ava's data_status tool reports the same table."),
     h("div",{style:{marginTop:"8px",display:"flex",gap:"6px",flexWrap:"wrap"}}, h("button",{class:"btn small", onclick: showDiagnostics, title:"Everything about this session's data in one block of text — paste it when reporting a problem"}, "Diagnostics"), h("button",{class:"btn small", onclick: () => renderStatus()}, "Refresh")));
@@ -3258,8 +3269,14 @@ const TOOL_LABEL = { peek_ticker:i=>`Looked at ${String(i.sym||"").toUpperCase()
 
 // ===== Ava: streaming call to the Messages API (SSE) =====
 function parseSse(chunk){ let ev = null, data = ""; for (const line of chunk.split("\n")){ if (line.startsWith("event:")) ev = line.slice(6).trim(); else if (line.startsWith("data:")) data += line.slice(5).trim(); } if (!data) return null; try { return { event: ev, data: JSON.parse(data) }; } catch { return null; } }
-async function avaStream({ key, model, system, messages, tools, maxTokens, onText, signal }){
-  const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal, headers:{ "content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" }, body: JSON.stringify({ model, max_tokens: maxTokens || 2400, system, messages, tools, stream:true }) });
+// Where Ava's model call goes: a Kingnode server's own key (behind the Server access key on a public host), else the key in this browser.
+function avaRoute(){ const key = (S.set.anthropicKey||"").trim(); if (SRV.ava?.configured && (!SRV.ava.locked || (S.set.askKey||"").trim())) return { mode:"server" }; if (key) return { mode:"browser", key }; return null; }
+function avaRouteLabel(){ const r = avaRoute(); return !r ? "no key" : r.mode === "server" ? "server key" + (SRV.ava?.locked ? " · password" : "") : "browser key"; }
+async function avaFetch(payload, signal){ const r = avaRoute(); if (!r){ const e = new Error("Ava has no key — add an Anthropic key in ⚙ Settings, or the Server access key on a Kingnode server"); e.status = 0; throw e; }
+  if (r.mode === "server") return fetch("/api/ava", { method:"POST", signal, headers:{ "content-type":"application/json", "x-ask-key": (S.set.askKey||"").trim() }, body: JSON.stringify({ body: payload }) });
+  return fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal, headers:{ "content-type":"application/json", "x-api-key": r.key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" }, body: JSON.stringify(payload) }); }
+async function avaStream({ model, system, messages, tools, maxTokens, onText, signal }){
+  const r = await avaFetch({ model, max_tokens: maxTokens || 2400, system, messages, tools, stream:true }, signal);
   if (!r.ok){ let msg = String(r.status); try { const j = await r.json(); msg = j.error?.message || msg; } catch {} const e = new Error(msg); e.status = r.status; throw e; }
   const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "", stop = null; const blocks = []; let text = "";
   const handle = ev => { const d = ev.data; if (!d) return;
@@ -3273,26 +3290,24 @@ async function avaStream({ key, model, system, messages, tools, maxTokens, onTex
 }
 // non-streaming one-shot (journal coach, desk notes) — same key, same model
 async function avaComplete(prompt, system, maxTokens){
-  const key = (S.set.anthropicKey||"").trim(); if (!key) return null;
-  try { const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", headers:{ "content-type":"application/json", "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" }, body: JSON.stringify({ model:(S.set.ediModel||"claude-sonnet-5-5").trim(), max_tokens:maxTokens||1800, system: system || "You are Ava, a sharp, plain-spoken trading coach and desk analyst. Full sentences, specifics, no filler.", messages:[{role:"user", content:prompt}] }) }); const j = await r.json(); if (!r.ok) return null; return (j.content||[]).map(x=>x.text||"").join("\n").trim(); } catch { return null; }
+  if (!avaRoute()) return null;
+  try { const r = await avaFetch({ model:(S.set.ediModel||"claude-sonnet-5-5").trim(), max_tokens:maxTokens||1800, system: system || "You are Ava, a sharp, plain-spoken trading coach and desk analyst. Full sentences, specifics, no filler.", messages:[{role:"user", content:prompt}] }); const j = await r.json(); if (!r.ok) return null; return (j.content||[]).map(x=>x.text||"").join("\n").trim(); } catch { return null; }
 }
 
 // ===== Ava: the conversation loop =====
 async function ediAsk(question){
   await Promise.all([loadScan(), loadUniverse(), loadMacro()].map(p => p && p.catch ? p.catch(()=>null) : p));
   const ctx = ediContext(); const history = EDI.log.slice(-24).filter(m => m.text).map(m => ({ role:m.role, content:m.text }));
-  const key = (S.set.anthropicKey||"").trim();
-  // 1. local server (desktop) — text-embedded actions, no tools
-  try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt:`${EDI_SYSTEM}\n${EDI_KN_FALLBACK}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
-  // 2. direct with the user's key: streaming, native tools, prompt caching on the static part
-  if (key){
+  const route = avaRoute();
+  // 1. Claude with native tools, streaming, prompt caching on the static part — through a Kingnode server's key or the key in this browser
+  if (route){
     const models = [...new Set([(S.set.ediModel||"claude-sonnet-5-5").trim(), "claude-sonnet-5-5", "claude-sonnet-4-5"])]; let lastErr = "";
     const system = [ { type:"text", text:EDI_SYSTEM, cache_control:{ type:"ephemeral" } }, { type:"text", text:"CONTEXT (live, delayed data from the app)\n" + JSON.stringify(ctx) } ];
     for (const model of models){
       const messages = [...history, { role:"user", content:question }]; const used = [];
       try {
         for (let round = 0; round < 7; round++){
-          EDI.partial = ""; const r = await avaStream({ key, model, system, messages, tools:AVA_TOOLS, onText: t => { EDI.partial = t; ediRenderPartial(); } });
+          EDI.partial = ""; const r = await avaStream({ model, system, messages, tools:AVA_TOOLS, onText: t => { EDI.partial = t; ediRenderPartial(); } });
           const uses = r.blocks.filter(b => b.type === "tool_use");
           if (r.stop !== "tool_use" || !uses.length || round === 6) return { text: r.text, via: model, actions: used };
           messages.push({ role:"assistant", content: r.blocks.map(b => b.type === "text" ? { type:"text", text:b.text } : { type:"tool_use", id:b.id, name:b.name, input: (() => { try { return JSON.parse(b.json||"{}"); } catch { return {}; } })() }).filter(b => b.type !== "text" || b.text.trim()) });
@@ -3302,8 +3317,10 @@ async function ediAsk(question){
         }
       } catch (e) { lastErr = e.message || String(e); if (!(e.status === 404 || /model|not_found/i.test(lastErr))) break; }
     }
-    return { text:"Ava couldn't reach Claude: " + lastErr + ". Check the key and model in ⚙ Settings.", via:"error" };
+    return { text:"Ava couldn't reach Claude: " + lastErr + (route.mode === "server" ? ". The server's key or the Server access key in ⚙ Settings may be wrong." : ". Check the key and model in ⚙ Settings."), via:"error" };
   }
+  // 2. legacy: a deployed server that only has /api/generate — text-embedded actions, no tools
+  try { const r = await fetch("/api/generate",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key:(S.set.askKey||"").trim(), prompt:`${EDI_SYSTEM}\n${EDI_KN_FALLBACK}\n\nCONTEXT\n${JSON.stringify(ctx)}\n\nCONVERSATION\n${history.map(m=>`${m.role}: ${m.content}`).join("\n")}\nuser: ${question}`, tier:"default"})}); if (r.ok){ const t = await r.text(); if (t && !t.includes("[[SHOPFRONT_ERROR]]") && !t.includes("not_configured")) return {text:t, via:"server"}; } } catch {}
   return { text: ediOffline(question, ctx), via:"offline" };
 }
 function ediMarketRundown(ctx){
@@ -3382,7 +3399,7 @@ function ediMsgEl(m){
 }
 function ediRenderPartial(){ const log = document.getElementById("ediLog"); if (!log) return; let p = log.querySelector(".edi-msg.streaming"); if (!p){ log.querySelector(".edi-busy")?.remove(); p = h("div",{class:"edi-msg a streaming"}); log.append(p); } p.innerHTML = mdLite(EDI.partial || "") + '<span class="edi-cursor"></span>'; log.scrollTop = log.scrollHeight; }
 function ediRender(){
-  const log = document.getElementById("ediLog"); if (!log) return; const key = (S.set.anthropicKey||"").trim();
+  const log = document.getElementById("ediLog"); if (!log) return; const key = avaRoute();
   const msgs = EDI.log.map(ediMsgEl);
   if (!key) msgs.unshift(h("div",{class:"edi-msg a edi-setup"}, h("b",null,"Ava is running without a brain."), " Right now every answer is the app's own rules — instant, canned, not a conversation. Paste an Anthropic API key in ⚙ Settings and she becomes Claude: she reads the screen, the whole scan, your book and your journal, pulls any chain mid-answer, remembers what you tell her, and logs the trades you describe. ", h("a",{href:"https://console.anthropic.com/settings/keys",target:"_blank",rel:"noopener"},"Get a key"), " · cents per conversation.", h("div",{style:{marginTop:"6px"}}, h("button",{class:"btn small gold", type:"button", onclick:()=>document.getElementById("settingsBtn").click()},"Open settings"))));
   if (EDI.showMem){ const notes = avaNotes(); const kinds = ["feedback","fact","plan","lesson","note"]; const label = {feedback:"How you want me to be", fact:"About you and your book", plan:"Plans and things to watch", lesson:"Lessons", note:"Notes"};
@@ -3416,7 +3433,7 @@ function ediInit(){
   try { EDI.log = JSON.parse(localStorage.getItem("kingnode:edi")||"[]"); } catch {}
   try { VOICE.speakOn = localStorage.getItem("kingnode:ava-speak") === "1"; } catch {}
   const panel = document.getElementById("ediPanel"), fab = document.getElementById("ediBtn");
-  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ loadScan(); loadUniverse(); loadMacro(); ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text: (S.set.anthropicKey||"").trim() ? "Hey, I'm Ava. I've got the whole tape in front of me — the scan, your book, your journal — and I can pull any name's chain while we talk. Ask me what caught my eye, tell me what you took, or just think out loud." : "Hey, I'm Ava — running offline right now, so I can only read the screen with the app's math. Add an Anthropic key in ⚙ Settings and we can actually talk."}); ediRender(); } };
+  fab.onclick = () => { panel.hidden = !panel.hidden; fab.hidden = !panel.hidden; if (!panel.hidden){ loadScan(); loadUniverse(); loadMacro(); ediRender(); document.getElementById("ediText").focus(); if (!EDI.log.length) EDI.log.push({role:"assistant", text: avaRoute() ? "Hey, I'm Ava. I've got the whole tape in front of me — the scan, your book, your journal — and I can pull any name's chain while we talk. Ask me what caught my eye, tell me what you took, or just think out loud." : "Hey, I'm Ava — running offline right now, so I can only read the screen with the app's math. Add an Anthropic key in ⚙ Settings and we can actually talk."}); ediRender(); } };
   document.getElementById("ediClose").onclick = () => { panel.hidden = true; fab.hidden = false; };
   document.getElementById("ediClear").onclick = () => { EDI.log = []; try { localStorage.removeItem("kingnode:edi"); } catch {} ediRender(); };
   document.getElementById("ediMem").onclick = () => { EDI.showMem = !EDI.showMem; EDI.showAudit = false; ediRender(); };
@@ -3938,6 +3955,7 @@ window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyL
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
 { const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); S.sym = v; document.getElementById("symIn").value = v; } }
+detectServer().then(() => { if (SRV.data){ loadTape(); loadUniverse(true); } if (SRV.ava) ediRender(); renderStatus(); }); // a Kingnode server of our own? then its data and its key
 load();
 rhStart(); // inside Claude's preview: the viewer's Robinhood connection; everywhere else this returns at once
 let tickTimer = null, nextAt = 0;

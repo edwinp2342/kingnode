@@ -142,3 +142,17 @@ Deploy the same way with `vercel --prod`, add the env vars in the Vercel dashboa
 ## Roadmap ideas (what would justify more than $19)
 
 Real-time flow tape (sweeps, blocks) once you have a licensed feed; intraday history of the walls and flip; a Discord/Telegram bot that posts the morning levels; a watchlist with per-ticker alerts.
+
+## Run it as your own server (Railway)
+
+GitHub Pages is a static copy with a feed that lives in GitHub Actions. The same code also runs as one always-on Node service — the terminal, the feed loop, the streaming hub and Ava's proxy together — which is what `desktop/server.js` does when a host sets `PORT`:
+
+1. railway.app → **New Project → Deploy from GitHub repo → kingnode**. Nixpacks builds it; `railway.json` sets the start command (`node desktop/server.js`) and the health check (`/api/ping`). Every push to `main` redeploys.
+2. **Volume**: add one and mount it at `/data`, so closes, levels history and snapshots survive redeploys. On first start the server seeds it from the public data branch.
+3. **Variables** (Settings → Variables; never paste these anywhere else):
+   - `FEED=1` — run the feed loop in-process (no Actions, no tokens) · `DATA_DIR=/data`
+   - `ANTHROPIC_API_KEY` — Ava through the server · `ASK_KEY` — the password browsers enter in ⚙ Settings → Server access key (required on a public host; without it Ava stays locked)
+   - optional: `MARKET_STREAM=alpaca` + `ALPACA_KEY` + `ALPACA_SECRET` (real-time quotes, bid × ask, bars — free IEX keys) · `DATA_PROVIDER=tradier` + `TRADIER_TOKEN` (real-time chain) · `WS_ORIGINS=https://edwinp2342.github.io` (let the Pages copy use the stream) · `MODEL`
+4. **Generate a domain** (Settings → Networking). Open `https://<domain>/app.html`. The Data health panel's Host row reads `Kingnode server · data same-origin, no CDN · Ava server key · password`.
+
+What changes on the server shape: quotes are read the moment the feed writes them (no 5-minute CDN; the app drops its 30-second safety lag), the stream connects on the same origin without any setting, Ava uses the server's key once the password is entered (nothing to paste on a phone), and `/data/*` is served with `Cache-Control: no-store`. Secrets stay in the environment; the browser only ever sends symbol names and the password. The private tree (`server/`, `desktop/`, `scripts/`, `test/`, dotfiles, `node_modules`, the raw `data/` directory) is never served; `/data/*` has its own read-only route.
