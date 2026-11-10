@@ -438,7 +438,7 @@ body:not(.showhelp) .helptext{display:none !important}
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v47 beta";
+const KN_VERSION = "v48 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -3858,7 +3858,7 @@ function restoreAll(){ const inp = h("input",{type:"file", accept:"application/j
 document.getElementById("backupAll").onclick = backupAll; document.getElementById("restoreAll").onclick = restoreAll;
 document.getElementById("exportFlags").onclick = () => { let log = []; try { log = JSON.parse(localStorage.getItem("kingnode:flags")||"[]"); } catch {} const txt = log.map(f => `${new Date(f.t).toLocaleString()}\n${f.note}\n${f.ctx}\n`).join("\n") || "No flags yet."; const a = h("a",{href:URL.createObjectURL(new Blob([txt],{type:"text/plain"})), download:"kingnode-flags.txt"}); document.body.append(a); a.click(); a.remove(); };
 document.getElementById("openCustomize").onclick = () => { document.getElementById("setDlg").close(); openCustomize(); };
-try { if (!localStorage.getItem("kingnode:seen")){ setTimeout(() => document.getElementById("startDlg").showModal(), 800); } } catch {}
+try { if (!localStorage.getItem("kingnode:seen") && window.self === window.top){ setTimeout(() => document.getElementById("startDlg").showModal(), 800); } } catch {} // not when the landing page frames the terminal
 document.getElementById("startDone").onclick = () => { document.getElementById("startDlg").close(); try { localStorage.setItem("kingnode:seen","1"); } catch {} };
 document.getElementById("layDone").onclick = () => document.getElementById("layDlg").close();
 document.getElementById("layReset").onclick = () => { setLayout({}); applyLayout(); renderTabs(); openCustomize(); };
