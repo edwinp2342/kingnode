@@ -113,6 +113,24 @@ Switching vendors changes nothing in the terminal. If a vendor renames a field, 
 ## Flow (Flowseeker equivalent)
 `collector/flow-collector.mjs` subscribes to Polygon's options trade + quote stream, tags each print sweep/block and ask/bid/mid against the live quote, filters below `MIN_PREMIUM`, and ships batches to `/api/flow`. The **Flow** tab shows the tape with premium/type/side filters, a call-vs-put premium bar, and the most active contracts (click any to open the inspector). See MAINTENANCE.md to run it.
 
+## The closing read (3:50 PM) and suspicious flow
+Two more things the feed computes from data it already has, both graded, both tested (`test/close-read.test.mjs`).
+
+**The closing read** — `scripts/close-read.mjs`. At 3:50 PM ET (a final pass at 3:58) the feed grades which way the close leans and writes `close-read.json`; the app notifies (browser + Discord when the alert rule is on), shows the card at the top of the Flow tab and on the Macro tab, and Ava has it in her context and a `closing_read` tool. It is a *proxy* for the market-on-close imbalance — the exchanges' imbalance feeds cost money and this does not — built from five things the feed measures itself:
+
+| factor | weight | what it measures |
+|---|---|---|
+| core flow | 0.35 | signed dollar volume over the last 30 minutes across the ~70 core names' 1-minute bars (up-bar volume counts as buying, down-bar as selling, flat split; glitch bars capped at 20× the day's median minute) |
+| whole market | 0.25 | the same sign across every optionable stock, from the dollar volume between the 5-minute sweeps in the window |
+| indexes | 0.20 | SPY, QQQ, IWM against their session VWAP and their move over the last 30 minutes |
+| breadth | 0.20 | up-dollar share of the whole market and how it changed over the last half hour, plus advancers vs decliners |
+| pace | multiplier | the median name's last-10-minute volume against the day's per-minute average: 0.85× (nothing happening) to 1.35× (the tape is loud) |
+| gamma | multiplier | SPX positive gamma within 0.35% of a wall damps the score (pinned); negative gamma lifts it (trends into the bell) |
+
+The weights renormalize over the factors that are present. The score runs −100…+100: **BUY** above +15, **SELL** below −15, **BALANCED** between; grade **A** at |score| ≥ 60, **B** ≥ 40, **C** ≥ 20, **D** below. After 4:03 PM the feed scores the 3:50 call against SPY's move from the 3:50 print to the official close (a move inside ±0.03% is flat; a BALANCED call is right on a flat close and otherwise not counted) and keeps a running record by grade in `close-reads.json`, which the card shows — the grades are only worth what that record says they are.
+
+**Suspicious flow** — `scripts/anomalies.mjs`, written to `anomalies.json` with every chain refresh in market hours. Every chain ticker's day is measured against *its own* 20-day median daily premium (from `levels-history.json`), paced for the time of day, so "large" means large for that name. Four kinds: a **surge** (premium ≥ 2.5× the name's pace, with real money behind it), a **block** (one contract carrying ≥ 2% of a normal day's premium when it trades above its open interest, or ≥ 5% regardless — with the aggressor side, at the ask / at the bid / mid), a **one-sided day** (≥ 78% of an unusual day's premium on one side) and a **vol/OI** outlier (≥ 10× open interest on ≥ 500 contracts — B at best on volume alone, A only with money behind it). Indexes and the big ETFs use higher dollar bars. Score 0–100, grade **A ≥ 78, B ≥ 62, C** below; one item per name and kind, the same contract flagged two ways is one item. The app notifies on new A grades (or A+B, in ⚙ Settings), at most one notification per eight minutes, and Ava writes a flow update on her own every half hour at most when something new has landed (`flow_alerts` tool; "Flow update" quick button). Premium is derived from the 15-minute-delayed chain (last × volume), and says so.
+
 ## Daily jobs
 `/api/cron/morning` posts the day's levels to Discord at 9:05 ET; `/api/health` is the endpoint a scheduled Claude Code agent checks (MAINTENANCE.md has the exact prompt and crontab line).
 

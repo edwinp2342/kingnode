@@ -14,6 +14,8 @@ import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import { computeLevels } from "../api/_lib/levels.js";
 import { updateSymbols, sweepMarket, sweepCloses, mostActive, computeBreadth, readJSON, writeJSON } from "./market.mjs";
 import { refreshMacro } from "./macro.mjs";
+import { computeCloseRead, resolveCloseRead, sweepDelta, closeReadRecord } from "./close-read.mjs";
+import { detectAnomalies } from "./anomalies.mjs";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 
@@ -32,7 +34,7 @@ const HANDOFF_MIN = Number(process.env.HANDOFF_MINUTES || 4);   // dispatch the 
 const end = Date.now() + LOOP_MIN * 60e3; const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Start from what the last run left on the data branch (daily bars, chains for names not refreshed yet, the scan), without its
 // history: the branch is force-pushed as a single commit every cycle, so the repo never accumulates a minute-by-minute history.
-const SEED_FILES = ["closes.json", "levels-history.json", "symbols.json", "market.json", "breadth.json", "universe.json", "quotes.json", "scan.json", "macro.json", "index.json", "shortvol.json", "insiders.json"];
+const SEED_FILES = ["closes.json", "levels-history.json", "symbols.json", "market.json", "breadth.json", "universe.json", "quotes.json", "scan.json", "macro.json", "index.json", "shortvol.json", "insiders.json", "close-read.json", "close-reads.json", "anomalies.json", "anomalies-log.json"];
 // a server that is not pushing (Railway, a VPS) starts from the public data branch's current files, so history (closes, levels) survives a redeploy
 async function seedFromPublic() {
   if (fs.existsSync("data/closes.json")) return; const base = process.env.SEED_FROM || "https://raw.githubusercontent.com/edwinp2342/kingnode/data/"; let n = 0;
@@ -138,12 +140,13 @@ function scanRow(c0) {
     contracts.push({ exp, type, K, vol, oi, prem, side: printSide(last, bid, ask), deep: Math.abs(delta || 0) >= 0.9, volOi: oi ? vol / oi : null }); }
   const dir = contracts.filter(x => !x.deep);
   const top = dir.sort((a, b) => b.prem - a.prem).slice(0, 3).map(x => [x.exp, x.type, x.K, x.vol, x.oi, Math.round(x.prem), x.side]);
+  const big = dir.filter(x => x.prem >= 1e6).slice(3, 11).map(x => [x.exp, x.type, x.K, x.vol, x.oi, Math.round(x.prem), x.side]); // the next contracts above $1M, for the anomaly pass
   const exps = [...new Set(c.rows.map(r => r[0]))].sort(); const dte = e => Math.round((Date.parse(e + "T16:00:00-04:00") - Date.now()) / 86400000);
   const byUn = dir.filter(x => x.vol >= 300 && x.oi >= 50).sort((a, b) => (b.volOi || 0) - (a.volOi || 0));
   const un = byUn.find(x => dte(x.exp) >= 4) || byUn[0]; // a brand-new weekly always trades many times its day-old OI; prefer something with a few days on it
   const e30 = exps.find(e => dte(e) >= 20) || exps.at(-1); const near = c.rows.filter(r => r[0] === e30 && r[5] > 0); const atm = near.length ? near.reduce((a, r) => Math.abs(r[2] - spot) < Math.abs(a[2] - spot) ? r : a, near[0]) : null;
   let lv = {}; try { lv = computeLevels(c, 6, 8, "standard"); } catch {}
-  return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), top, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, emExp: lv.nearest || null, gex: lv.total != null ? Math.round(lv.total) : null };
+  return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), top, big: big.length ? big : undefined, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, emExp: lv.nearest || null, gex: lv.total != null ? Math.round(lv.total) : null };
 }
 // One row per ticker per day of the levels the Ideas engine leans on (walls, flip, gamma, expected move, IV, flow) — the branch is force-pushed
 // as a single commit each cycle, so this file is the only history that survives. The last chain of the day wins, so each row is the closing state.
@@ -194,7 +197,8 @@ async function cycle(n, ph) {
   if (!tierBList.length || Date.now() - tierBAt > plan.tierB * 1000) { const market = readJSON("data/market.json", null); const tierB = mostActive(market, new Set(SYMS), Number(process.env.TIER_B || 150)); if (tierB.length) { tierBList = tierB; tierBAt = Date.now(); tierBPos = tierBPos % tierB.length; } }
   if (tierBList.length) { const per = Number(process.env.TIER_B_PER_CYCLE || 12); const slice = []; for (let i = 0; i < Math.min(per, tierBList.length); i++) slice.push(tierBList[(tierBPos + i) % tierBList.length]);
     const r429 = await chainBatch(slice, 6, 0.12, "cb", 1, 350); if (r429 < 3) tierBPos = (tierBPos + slice.length) % tierBList.length; /* rate-limited: the same dozen go again next cycle */ }
-  if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em emExp gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan); }
+  if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] big[…] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em emExp gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan);
+    try { const an = detectAnomalies({ scan: { rows: scan }, history: readJSON("data/levels-history.json", null), log: readJSON("data/anomalies-log.json", null) }); const { log, ...doc } = an; writeJSON("data/anomalies.json", doc); writeJSON("data/anomalies-log.json", log); status.anomalies = { at: an.at, ...an.counts }; if (an.n) console.log(`flow anomalies: ${an.counts.A} A · ${an.counts.B} B · ${an.counts.C} C — ${an.items.slice(0, 3).map(x => x.sym + " " + x.kind).join(", ")}`); } catch (e) { fail.push("anomalies:" + e.message); } }
   if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
   if (Date.now() - macroAt > 3600e3) { try { const m = await refreshMacro(); macroAt = Date.now(); status.macro = { at: macroAt, sources: m.sources }; console.log(`macro: ${Object.entries(m.sources).map(([k, v]) => k + " " + v).join(" · ")} · ${m.releases.length} releases`); } catch (e) { macroAt = Date.now() - 3600e3 + 900e3; fail.push(`macro:${e.message}`); } } // readings (BLS, NY Fed, yields) and the release calendar for Ava, hourly
   const loopEnd = end; const nextIn = plan.every * 1000;
@@ -236,7 +240,7 @@ async function fastTick(ph) {
 async function fastLoop() {
   while (Date.now() < end) {
     const ph = marketPhase(); const every = PLAN[ph].fast * 1000;
-    if (Date.now() - fastAt >= every - 500) { try { await fastTick(ph); writeIndex({}); if (PUSH && ph !== "closed") push(); } catch (e) { console.error("fast", e.message); } }
+    if (Date.now() - fastAt >= every - 500) { try { await fastTick(ph); await closingRead(ph, etNow()); /* the 3:50 read rides the fast loop so it lands within a tick of the clock, not after a market sweep */ writeIndex({}); if (PUSH && ph !== "closed") push(); } catch (e) { console.error("fast", e.message); } }
     await sleep(Math.min(every, Math.max(1000, end - Date.now())));
   }
 }
@@ -248,14 +252,33 @@ async function marketLoop() {
     try {
       if (!symbols || Date.now() - symbolsAt > 3600e3) { symbols = await updateSymbols(symbolsPath); symbolsAt = Date.now(); status.symbols = { at: symbolsAt, n: symbols.n, optionable: symbols.nOptionable, new: symbols.new.length }; console.log(`symbols: ${symbols.n} listed · ${symbols.nOptionable} optionable · ${symbols.new.length} new listings`); if (PUSH) push(); }
       const list = symbols?.optionable || [];
-      if (list.length && Date.now() - sweepAt > PLAN[ph].sweep * 1000) { const m = await sweepMarket(list, { concurrency: ph === "regular" ? 12 : 8, closes: readJSON("data/closes.json", null) }); sweepAt = Date.now(); status.sweep = { at: sweepAt, ms: m.ms, n: m.n, ok: m.ok, fail: m.fail, r429: m.r429 }; console.log(`market sweep: ${m.ok}/${m.n} in ${(m.ms / 1000).toFixed(0)}s${m.r429 ? ` · ${m.r429}×429` : ""}`); if (m.r429 > 20) sweepAt = Date.now() + PLAN[ph].sweep * 1000;
+      if (list.length && Date.now() - sweepAt > PLAN[ph].sweep * 1000) { const m = await sweepMarket(list, { concurrency: ph === "regular" ? 12 : 8, closes: readJSON("data/closes.json", null) }); sweepAt = Date.now();
+        if (ph === "regular" && m?.q) { if (CR.prevQ) { CR.sweeps.push(sweepDelta(CR.prevQ, m.q, sweepAt)); if (CR.sweeps.length > 16) CR.sweeps.shift(); } CR.prevQ = m.q; } /* market-wide dollar flow between sweeps, for the closing read */
+        status.sweep = { at: sweepAt, ms: m.ms, n: m.n, ok: m.ok, fail: m.fail, r429: m.r429 }; console.log(`market sweep: ${m.ok}/${m.n} in ${(m.ms / 1000).toFixed(0)}s${m.r429 ? ` · ${m.r429}×429` : ""}`); if (m.r429 > 20) sweepAt = Date.now() + PLAN[ph].sweep * 1000;
         try { const b = computeBreadth(m, readJSON("data/closes.json", null), symbols); if (b) { status.breadth = { at: b.at, adv: b.adv, dec: b.dec, above50: b.above50 }; console.log(`breadth: ${b.adv} up / ${b.dec} down · ${b.above50}% above the 50-EMA`); } } catch (e) { console.error("breadth", e.message); }
         writeIndex({}); if (PUSH) push(); }
       // 60 closes per optionable name, once per session after the close (or at start when the file is older than the last session)
       const closes = readJSON("data/closes.json", null); const lastSession = closes ? new Date(closes.at).toISOString().slice(0, 10) : ""; const upgrade = !!closes && !/:v/.test(closes.cols || ""); // a closes file from before the average-volume column: redo it once
       if (list.length && (ph === "post" || ph === "overnight" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && (lastSession !== t.date || upgrade)) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
+      await closingRead(ph, t);
     } catch (e) { console.error("market loop", e.message); }
     await sleep(Math.min(60e3, Math.max(1000, end - Date.now())));
+  }
+}
+// ---------- the closing read: 3:50 (the call), 3:58 (final), resolved after the bell against SPY's official close ----------
+const CR = { prevQ: null, sweeps: [], done: {}, resolved: {} };
+async function closingRead(ph, t) {
+  const key = t.date;
+  const build = label => { const bars1m = {}; for (const sym of LIVE_SYMS) { const j = readJSON(`data/${sym}-1m.json`, null); if (j?.bars?.length) bars1m[sym] = j.bars; } const q = readJSON("data/quotes.json", null); const quotes = Object.fromEntries((q?.quotes || []).map(x => [x.symbol, x])); const scan = readJSON("data/scan.json", null);
+    return computeCloseRead({ now: Date.now(), et: t, bars1m, quotes, breadth: readJSON("data/breadth.json", null), sweeps: CR.sweeps, scan: scan?.rows || null, label }); };
+  const record = read => { const hist = readJSON("data/close-reads.json", { reads: [] }); hist.reads = (hist.reads || []).filter(r => !(r.date === read.date && r.label === read.label)); hist.reads.push(read); hist.reads = hist.reads.slice(-80); hist.record = closeReadRecord(hist.reads.filter(r => r.label === "15:50")); hist.at = Date.now(); writeJSON("data/close-reads.json", hist); writeJSON("data/close-read.json", { ...read, record: hist.record }); status.closeRead = { at: read.at, label: read.label, side: read.side, grade: read.grade, score: read.score }; console.log(`closing read ${read.label}: ${read.side} ${read.grade} (${read.score}) — ${read.text.slice(0, 120)}`); };
+  if (ph === "regular" && t.min >= 15 * 60 + 50 && t.min < 15 * 60 + 58 && CR.done[key] !== "15:50") { CR.done[key] = "15:50"; record(build("15:50")); }
+  else if (ph === "regular" && t.min >= 15 * 60 + 58 && CR.done[key] !== "15:58") { if (!CR.done[key]) record(build("15:50")); CR.done[key] = "15:58"; record(build("15:58")); }
+  else if (ph !== "regular" && t.min >= 16 * 60 + 3 && t.min < 20 * 60 && !CR.resolved[key]) {
+    const hist = readJSON("data/close-reads.json", null); if (!hist?.reads?.some(r => r.date === key && !r.outcome)) { CR.resolved[key] = true; return; }
+    const q = readJSON("data/quotes.json", null); const spy = (q?.quotes || []).find(x => x.symbol === "SPY"); const close = spy?.price; if (!(close > 0)) return;
+    let n = 0; for (const r of hist.reads) if (r.date === key && !r.outcome) { r.outcome = resolveCloseRead(r, close); n++; } hist.record = closeReadRecord(hist.reads.filter(r => r.label === "15:50")); hist.at = Date.now(); writeJSON("data/close-reads.json", hist);
+    const latest = hist.reads.filter(r => r.date === key).pop(); if (latest) writeJSON("data/close-read.json", { ...latest, record: hist.record }); CR.resolved[key] = true; console.log(`closing read resolved: SPY ${close} · ${n} read(s) · record ${hist.record.all.hits}/${hist.record.all.n}`);
   }
 }
 let badStreak = 0;
