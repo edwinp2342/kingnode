@@ -16,6 +16,7 @@ import { updateSymbols, sweepMarket, sweepCloses, mostActive, computeBreadth, re
 import { refreshMacro } from "./macro.mjs";
 import { computeCloseRead, resolveCloseRead, sweepDelta, closeReadRecord } from "./close-read.mjs";
 import { detectAnomalies } from "./anomalies.mjs";
+import { refreshHistory } from "./history.mjs";
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 
@@ -82,6 +83,8 @@ async function liveFetch(sym) {
 async function quote(sym) { return (await liveFetch(sym)).quote; }
 // the names the fast loop keeps live: the tape indices plus the whole core chain list (one request each, a dozen in flight)
 const LIVE_SYMS = [...new Set([...TAPE, ...SYMS])].filter(s => s !== "XSP");
+const HIST_SYMS = [...new Set([...LIVE_SYMS, "XSP", ...(process.env.HIST_SYMBOLS || "").split(",").map(s => s.trim().toUpperCase()).filter(Boolean)])]; // the Lab's ten-year daily history: the core list, refreshed weekly in batches
+let histAt = 0, histBackoff = 0;
 const LIVE_BARS_KEEP = Number(process.env.LIVE_BARS || 8);   // minutes of 1-minute bars carried in each live bucket — enough to bridge the CDN's five-minute cache on SYM-1m.json
 
 // ---------- FINRA off-exchange (dark pool / ATS) short volume: real, daily, free ----------
@@ -261,6 +264,8 @@ async function marketLoop() {
       const closes = readJSON("data/closes.json", null); const lastSession = closes ? new Date(closes.at).toISOString().slice(0, 10) : ""; const upgrade = !!closes && !/:v/.test(closes.cols || ""); // a closes file from before the average-volume column: redo it once
       if (list.length && (ph === "post" || ph === "overnight" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && (lastSession !== t.date || upgrade)) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
       await closingRead(ph, t);
+      // the Lab's long daily history: a batch every 15 minutes (small in market hours, bigger when closed) until every symbol is fresh
+      if (Date.now() - histAt > 15 * 60e3 && Date.now() > histBackoff) { histAt = Date.now(); try { const h = await refreshHistory({ syms: HIST_SYMS, maxPerRun: ph === "regular" ? 12 : 60 }); status.history = { at: Date.now(), have: h.have, total: h.total, remaining: h.remaining, limited: h.limited }; if (h.limited) histBackoff = Date.now() + 30 * 60e3; if (h.fetched && PUSH) push(); } catch (e) { console.error("history", e.message); } }
     } catch (e) { console.error("market loop", e.message); }
     await sleep(Math.min(60e3, Math.max(1000, end - Date.now())));
   }
