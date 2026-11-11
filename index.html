@@ -91,7 +91,7 @@ footer p{margin:6px 0; max-width:92ch} footer a{color:var(--muted)}
 </div></nav>
 
 <header class="hero" id="top"><div class="w">
-  <span class="eyebrow">Personal build · v50</span>
+  <span class="eyebrow">Personal build · v51</span>
   <h1>The positioning terminal that shows its work.</h1>
   <p class="lede">Dealer gamma walls and the flip, expected move, fresh positioning, flow, market breadth and a chart that keeps up in every session — for every optionable name in the US market — plus Ava, a desk assistant that reads the same screen you do. Every number on it says where it came from and how old it is.</p>
   <div class="ctas"><a class="btn gold" href="app.html">Open the terminal</a><a class="btn" href="https://github.com/edwinp2342/kingnode" rel="noopener">Source on GitHub</a></div>
@@ -110,6 +110,7 @@ footer p{margin:6px 0; max-width:92ch} footer a{color:var(--muted)}
     <div class="feat"><span class="k">FRESH POSITIONING</span><h3>Volume against open interest</h3><p>Contracts trading 1.5× their OI today — new bets ranked by dollar notional — instead of a firehose of every print.</p></div>
     <div class="feat"><span class="k">FLOW</span><h3>What changed, contract by contract</h3><p>Session flow derived from chain changes, the most active contracts, dealer-side read, FINRA short volume and insider filings, one click from the heatmap. Labelled as derived, because it is.</p></div>
     <div class="feat"><span class="k">CHARTING</span><h3>A chart that keeps up — in every session</h3><p>Candles that move with the tape, pre-market, regular, after hours and the overnight 24-hour print; walls, flip and the expected-move band on price; EMAs, VWAP, Bollinger, RSI, prior-day levels, opening range; one minute to daily; full screen with <span class="kbd">F</span>; your own lines.</p></div>
+    <div class="feat"><span class="k">THE LAB</span><h3>Backtests and probabilities on ten years of data, in your browser</h3><p>Say what you would buy, when, and when you would sell; the engine runs it the honest way — next-open fills, slippage, stops before targets — and then tells you how much to believe it: Wilson intervals next to the base rate, walk-forward out-of-sample, Monte Carlo drawdowns, and a count of how many variants you have tried. A research journal remembers every run and reruns it on today's data.</p></div>
     <div class="feat"><span class="k">THE CLOSING READ</span><h3>3:50 PM: which way the bell leans, graded</h3><p>A notification ten minutes before the close — <b>Buy-side · grade B (+47)</b> — built from the last half hour of signed volume in the core names, the market-wide sweeps, SPY/QQQ/IWM against VWAP, breadth, volume pace and SPX gamma. Scored after the bell against SPY's actual move, grade by grade, so you can see what the grades are worth.</p></div>
     <div class="feat"><span class="k">SUSPICIOUS FLOW</span><h3>Abnormal money, graded against the name's own baseline</h3><p>Premium surges, blocks with the aggressor side, one-sided days and contracts trading many times their open interest — each scored A/B/C against that name's last 20 sessions, paced for the time of day. New A grades notify you; Ava writes the flow update.</p></div>
     <div class="feat"><span class="k">BREADTH</span><h3>The whole market, not just your ticker</h3><p>Advancers and decliners, up- and down-volume, names above their 20- and 50-day, new highs and lows — swept across 5,000+ optionable stocks every five minutes, with an intraday breadth line.</p></div>
@@ -129,6 +130,7 @@ footer p{margin:6px 0; max-width:92ch} footer a{color:var(--muted)}
       <tr><td>Options chains, walls, flip, Heatseeker</td><td>Cboe's delayed quotes, with open interest, volume, IV and greeks</td><td>Every 3 min</td><td><span class="tag delay">15-min delayed</span></td></tr>
       <tr><td>Flow</td><td>Derived from each contract's volume change between chain snapshots, plus FINRA daily short volume and insider filings</td><td>With the chain</td><td><span class="tag delay">derived</span></td></tr>
       <tr><td>Breadth</td><td>A sweep of every optionable US stock over $5</td><td>Every 5 min</td><td><span class="tag delay">snapshot</span></td></tr>
+      <tr><td>Lab history</td><td>Ten years of split- and dividend-adjusted daily bars per core name from Yahoo, refreshed weekly by the feed; the live year from the daily file</td><td>Weekly</td><td><span class="tag delay">daily · adjusted</span></td></tr>
       <tr><td>Closing read</td><td>Computed by the feed from its own 1-minute bars, sweeps, breadth and chain levels — a proxy for the auction imbalance, not the exchanges' MOC feed</td><td>3:50 and 3:58 PM, scored after 4:03</td><td><span class="tag delay">derived · graded</span></td></tr>
       <tr><td>Suspicious flow</td><td>Today's chain volume against each name's 20-day premium baseline from the feed's own history</td><td>With the chain</td><td><span class="tag delay">derived · graded</span></td></tr>
       <tr><td>Macro readings &amp; calendar</td><td>BLS public API, the NY Fed's effective rate, Treasury yields; release dates from the publishers' own schedules</td><td>Hourly</td><td><span class="tag live">official</span></td></tr>
@@ -148,6 +150,7 @@ footer p{margin:6px 0; max-width:92ch} footer a{color:var(--muted)}
       <li><b>Work the journal</b> — log and close trades, grade them, keep notes you tell her to remember.</li>
       <li><b>Check the plumbing</b> — a <span class="mono">data_status</span> tool tells her (and you) whether a number is live, delayed or stale before she quotes it.</li>
       <li><b>Know the calendar</b> — verified release dates and the latest official readings, periods included.</li>
+      <li><b>Run the Lab</b> — she turns "buy when it drops 3% in an uptrend, sell at +5%" into a spec, backtests it, reads the probability study, and reports the validation lines before the returns.</li>
       <li><b>Call the close and the flow</b> — <span class="mono">closing_read</span> gives her the 3:50 lean with its record; <span class="mono">flow_alerts</span> the graded anomalies, new first. She posts a flow update on her own when new A grades land.</li>
     </ul></div>
     <div class="col guard"><h3>Guardrails</h3><ul>
@@ -164,7 +167,7 @@ footer p{margin:6px 0; max-width:92ch} footer a{color:var(--muted)}
   <div class="s-head"><span class="eyebrow">Built to be checked</span><h2>If it can be verified, it is.</h2></div>
   <div class="three">
     <div class="feat"><span class="k">DATA HEALTH</span><h3>One panel, every source, live</h3><p>Session, quote source and age, chain age, feed loop, market sweep, breadth, stream, broker — green, gold or red. A Diagnostics button turns it into one block of text to paste when something looks wrong.</p></div>
-    <div class="feat"><span class="k">TESTS</span><h3>40 automated tests and a smoke run</h3><p>The math, the series engine, the market clock, the streaming hub, the broker parsers, the macro job, the closing read and the anomaly pass are tested on every change; the whole page is driven in a headless browser before it ships.</p></div>
+    <div class="feat"><span class="k">TESTS</span><h3>50 automated tests and a smoke run</h3><p>The math, the series engine, the market clock, the streaming hub, the broker parsers, the macro job, the closing read, the anomaly pass, the history job and the Lab engine (fills, metrics, statistics, walk-forward) are tested on every change; the whole page is driven in a headless browser before it ships.</p></div>
     <div class="feat"><span class="k">BACKTEST HONESTY</span><h3>Costs, net of gross, out of sample</h3><p>The Ideas backtest charges slippage, shows gross against net and runs a quarterly walk-forward. When the walk-forward loses — as it does today — the card says so instead of showing the pretty half.</p></div>
   </div>
 </div></section>
