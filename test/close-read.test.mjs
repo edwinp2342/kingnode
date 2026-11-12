@@ -39,6 +39,9 @@ test("a buy-side close grades BUY with the factors agreeing; a sell-side one SEL
   const rec = closeReadRecord([{ grade: "B", label: "15:50", outcome: hit }, { grade: "B", label: "15:50", outcome: miss }, { grade: "A", label: "15:50", outcome: hit }, { grade: "C", outcome: null }]);
   assert.deepEqual(rec.byGrade, { B: { n: 2, hits: 1 }, A: { n: 1, hits: 1 } }); assert.deepEqual(rec.all, { n: 3, hits: 2 });
   assert.equal(gradeOf(61), "A"); assert.equal(gradeOf(-45), "B"); assert.equal(gradeOf(10), "D"); assert.equal(sideOf(10), "BALANCED");
+  // an index with pseudo-volume never counts as dollar flow, and neither does a name whose half hour would be tens of billions
+  const spx = day(7600, { lateDrift: -0.0004, lateVol: 4e9 }); const junk = day(50, { lateDrift: -0.001, lateVol: 5e9 }); const withIdx = computeCloseRead({ now: at350, et, bars1m: { ...bars1m, SPX: spx, JUNK: junk }, quotes: { SPY: { prev: 750 } }, breadth, sweeps, scan, label: "15:50" });
+  assert.ok(!withIdx.laggards.some(x => x.sym === "SPX") && !withIdx.leaders.some(x => x.sym === "SPX"), "SPX never counts as dollar flow"); const junkRow = withIdx.laggards.find(x => x.sym === "JUNK"); assert.ok(junkRow && Math.abs(junkRow.net) < 5e7, "a glitch-volume name is capped to its own median minute, not counted at face value: " + JSON.stringify(junkRow)); assert.ok(withIdx.factors.flow.total < r.factors.flow.total * 1.5);
   // a missing factor is dropped from the weights, not treated as zero
   const thin = computeCloseRead({ now: at350, et, bars1m: { SPY: day(760, { lateDrift: 0.0004, lateVol: 3000 }) }, quotes: {}, breadth: null, sweeps: [], scan: null, label: "15:50" });
   assert.equal(thin.factors.market, null); assert.equal(thin.factors.breadth, null); assert.ok(thin.score > 0);

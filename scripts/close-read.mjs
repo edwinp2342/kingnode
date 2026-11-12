@@ -17,7 +17,8 @@
 // side  = BUY (> +15) · SELL (< −15) · BALANCED;   grade = A ≥ 60 · B ≥ 40 · C ≥ 20 · D below, on |score|
 // resolve: SPY's move from the 3:50 print to the official close, and whether it went the graded way.
 
-export const CLOSE_READ_VERSION = 1;
+export const CLOSE_READ_VERSION = 2;
+export const INDEX_SYMS = new Set(["SPX", "NDX", "RUT", "VIX", "DJX", "DJI", "XSP", "VIX9D", "SKEW"]);
 const INDEX_ETFS = ["SPY", "QQQ", "IWM", "DIA"];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const round = (v, d = 2) => v == null || !isFinite(v) ? null : +v.toFixed(d);
@@ -58,10 +59,12 @@ export function sideOf(score) { return score > 15 ? "BUY" : score < -15 ? "SELL"
 // the read itself. bars1m: {sym: bars}; quotes: {sym: {price, prev}}; breadth: data/breadth.json; sweeps: sweepDelta() results (oldest first); scan: scan.json rows
 export function computeCloseRead({ now = Date.now(), et, bars1m = {}, quotes = {}, breadth = null, sweeps = [], scan = null, label = "15:50" }) {
   const win = 30 * 60e3, from = now - win; const dayStart = now - ((et?.min ?? 950) - 570) * 60e3; // 09:30 ET today
-  bars1m = Object.fromEntries(Object.entries(bars1m).map(([s, b]) => [s, cleanBars((b || []).filter(x => x[0] < now))]));
+  // indexes carry pseudo-volume (SPX's "volume" is the whole market's shares) — they are not dollar flow; drop them, and drop any name whose
+  // half hour would be a nonsense amount of money (a bad feed day must not grade the close)
+  bars1m = Object.fromEntries(Object.entries(bars1m).filter(([s]) => !INDEX_SYMS.has(s)).map(([s, b]) => [s, cleanBars((b || []).filter(x => x[0] < now))]));
   // 1. flow: the core names, 1-minute bars
   let fUp = 0, fDn = 0, fVol = 0; const perName = [];
-  for (const [sym, bars] of Object.entries(bars1m)) { const f = signedFlow(bars, from, now); if (!f.total) continue; fUp += f.up; fDn += f.dn; fVol += f.vol; perName.push({ sym, net: f.net, total: f.total }); }
+  for (const [sym, bars] of Object.entries(bars1m)) { const f = signedFlow(bars, from, now); if (!f.total || f.total > 5e10) continue; /* > $50B in 30 minutes is not a stock */ fUp += f.up; fDn += f.dn; fVol += f.vol; perName.push({ sym, net: f.net, total: f.total }); }
   const flowRatio = fUp + fDn > 0 ? (fUp - fDn) / (fUp + fDn) : 0; const flowScore = clamp(flowRatio * 250, -100, 100);
   perName.sort((a, b) => b.net - a.net); const leaders = perName.slice(0, 5).filter(x => x.net > 0), laggards = perName.slice(-5).reverse().filter(x => x.net < 0);
   // 2. market: the sweeps inside the window
