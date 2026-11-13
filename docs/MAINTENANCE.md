@@ -48,7 +48,9 @@ most one small improvement from the backlog when everything is clean. Each run a
   purges the weekend rows it already holds; the anomaly pass keys, dates and baselines by session, so nothing re-fires as "new" at midnight.
 - Fixed: macro yields' `*Prev` came from Yahoo's `chartPreviousClose` on a 5-day range — the close before the range, so a week's move read as a
   day's (10y 5.10 vs "prev" 4.86). Prev is now the bar before the last in the daily series.
-- State: 51 tests green, smoke clean; app unchanged (v51); feed redispatched (loop_minutes 330). Backlog untouched this night.
+- State: 51 tests green, smoke clean; app unchanged (v51); feed redispatched (run 43371067156, loop_minutes 330) and verified writing:
+  the levels history dropped its 8 weekend rows (30 → 22 days), anomalies.json is dated 2026-11-12 with the old keys. The `2026-11-13` row
+  the old build wrote at 00:11 ET still holds Thursday's chains until the open overwrites it. Commits 4639ab6, 1a1a359. Backlog untouched.
 - Not verified: github.io (unreachable from here); live Yahoo responses (403 from this sandbox) — the yields fix is covered by the fake upstream only.
 
 ### 2026-11-12 — manual, before the first scheduled run
