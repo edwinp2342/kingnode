@@ -37,6 +37,20 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-13 — scheduled run 1
+- Checked: 50 tests and smoke green before changes. Feed loop in progress on `ad00524` (run 43356383650, overnight cadence, 0 fails,
+  0 429s); index.json fresh; sweep 5056/5056; breadth, scan (351 rows), macro (BLS/NY Fed/yields ok) and hist (77/77, oldest 1.3 days) all
+  sane; anomalies 14 A / 26 B, no symbol dominating. close-read.json still shows the 11-12 15:58 read in trillions (`v:1`): that read was
+  produced before the 16:37 ET fix landed; Friday's read is the first on the fixed code — verify tomorrow night.
+- Fixed: `levels-history.json` recorded a row under every calendar date, so each Saturday and Sunday (and any holiday) became a "session"
+  duplicating Friday — tripling Fridays in the anomaly baselines and handing the expected-move scorecard and IV percentile free zero-move
+  rows. New `sessionDate()` in market-clock.mjs; the levels history now writes only from the open through midnight ET of a trading day and
+  purges the weekend rows it already holds; the anomaly pass keys, dates and baselines by session, so nothing re-fires as "new" at midnight.
+- Fixed: macro yields' `*Prev` came from Yahoo's `chartPreviousClose` on a 5-day range — the close before the range, so a week's move read as a
+  day's (10y 5.10 vs "prev" 4.86). Prev is now the bar before the last in the daily series.
+- State: 51 tests green, smoke clean; app unchanged (v51); feed redispatched (loop_minutes 330). Backlog untouched this night.
+- Not verified: github.io (unreachable from here); live Yahoo responses (403 from this sandbox) — the yields fix is covered by the fake upstream only.
+
 ### 2026-11-12 — manual, before the first scheduled run
 - Fixed: the closing read counted SPX/NDX pseudo-volume as dollar flow and reported trillions; indexes are now excluded and a
   test covers it (CLOSE_READ_VERSION 2). Feed redispatched.

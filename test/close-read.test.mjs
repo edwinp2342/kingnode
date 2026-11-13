@@ -69,4 +69,11 @@ test("anomalies: a premium surge, a fresh block at the ask, a one-sided day and 
   assert.ok(an.items.every((x, i, a) => i === 0 || a[i - 1].score >= x.score), "sorted by score"); assert.ok(an.counts.A >= 1); assert.ok(an.items.every(x => x.firstSeen === at350 && x.key.startsWith("2026-11-11|")));
   // the log keeps first-seen times across runs
   const again = detectAnomalies({ scan, history: { days }, now: at350 + 60e3, et, log: an.log }); assert.ok(again.items.every(x => x.firstSeen === at350));
+  // midnight rolls the calendar, not the session: the same chains at 00:05 ET (and on Saturday) keep Wednesday's date, keys and first-seen times,
+  // so nothing lights up as new at midnight and the day's own row never enters its baseline
+  const midnight = detectAnomalies({ scan, history: { days: { ...days, "2026-11-11": { ACME: [52, 6.1, 55, 48, 50, 1e7, 2, 0.4, 90000, 8000, 27e6, 2e6] } } }, now: at350 + 8 * 3600e3 + 15 * 60e3, et: { date: "2026-11-12", min: 5, dow: 4 }, log: an.log });
+  assert.equal(midnight.date, "2026-11-11"); assert.equal(midnight.frac, 1); assert.ok(midnight.items.length >= 3);
+  assert.ok(midnight.items.every(x => x.key.startsWith("2026-11-11|") && x.firstSeen === at350), JSON.stringify(midnight.items.map(x => [x.key, x.firstSeen])));
+  assert.equal(midnight.items.find(x => x.sym === "ACME" && x.kind === "surge").baseline, 5e6, "Wednesday's own premium is not in Wednesday's baseline");
+  const saturday = detectAnomalies({ scan, history: { days }, now: at350 + 3 * 86400e3, et: { date: "2026-11-14", min: 600, dow: 6 }, log: an.log }); assert.equal(saturday.date, "2026-11-13");
 });

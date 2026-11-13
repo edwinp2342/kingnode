@@ -52,7 +52,7 @@ function seed() {
 }
 seed(); if (!PUSH) await seedFromPublic();
 
-import { marketPhase, etNow } from "./market-clock.mjs";
+import { marketPhase, etNow, sessionDate, isTradingDay } from "./market-clock.mjs";
 // what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all
 const PLAN = {
   regular:   { every: EVERY, chainsEvery: 3, bars: true, fast: Number(process.env.FAST_SEC || 20), sweep: 5 * 60, tierB: 15 * 60 },
@@ -159,9 +159,14 @@ function recordLevels(scan) {
   try {
     let h = { cols: "spot chg cw pw flip gex em iv30 cVol pVol cPrem pPrem emExp", days: {} };
     try { const old = JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8")); if (old && old.days) h = old; } catch {}
-    const t = etNow(); const key = t.date; const row = {};
+    // only a trading day's own session writes its row (from the open through midnight ET); before the open, on weekends and on holidays the
+    // chains still show the last session, and recording that under the calendar date made every Saturday and Sunday a "session" that
+    // duplicated Friday — tripling it in the anomaly baselines and handing the expected-move scorecard free zero-move hits
+    const t = etNow(); const key = sessionDate(t); if (key !== t.date) return;
+    const row = {};
     for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem, r.emExp || null]; // emExp: which expiry the expected move was for, so the app can score it against the next close
     h.days[key] = { ...(h.days[key] || {}), ...row, _at: Date.now() };
+    for (const k of Object.keys(h.days)) if (!isTradingDay(k)) delete h.days[k]; // rows written under non-session dates by earlier builds
     const keys = Object.keys(h.days).sort(); for (const k of keys.slice(0, Math.max(0, keys.length - 420))) delete h.days[k]; // ~20 months, a few hundred KB
     fs.writeFileSync(LEVELS_FILE, JSON.stringify(h));
   } catch (e) { console.error("levels history", e.message); }

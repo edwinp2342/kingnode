@@ -62,7 +62,11 @@ async function effr(out) {
 // ---------- Treasury yields from Yahoo's index quotes ----------
 async function yields(out) {
   const map = { "^IRX": "t3m", "^FVX": "t5y", "^TNX": "t10y", "^TYX": "t30y" }; const y = {}; let okN = 0;
-  await Promise.all(Object.entries(map).map(async ([sym, key]) => { try { const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(12000) }); if (!r.ok) throw new Error("http " + r.status); const j = await r.json(); const m = j.chart?.result?.[0]?.meta; const v = +m?.regularMarketPrice; if (v > 0) { y[key] = +v.toFixed(3); y[key + "Prev"] = +(+m.chartPreviousClose || +m.previousClose || 0).toFixed(3) || null; okN++; } } catch {} }));
+  await Promise.all(Object.entries(map).map(async ([sym, key]) => { try { const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(12000) }); if (!r.ok) throw new Error("http " + r.status); const j = await r.json(); const res0 = j.chart?.result?.[0], m = res0?.meta; const v = +m?.regularMarketPrice; if (v > 0) { y[key] = +v.toFixed(3);
+      // "Prev" is the prior session's close: the bar before the last one in the 5-day series. meta.chartPreviousClose is the close before the
+      // range began (five sessions back), which once made a 24bp week read as a 24bp day
+      const closes = (res0.indicators?.quote?.[0]?.close || []).filter(c => c > 0); const prev = closes.length >= 2 ? closes[closes.length - 2] : (+m.previousClose || +m.chartPreviousClose || 0);
+      y[key + "Prev"] = +(+prev).toFixed(3) || null; okN++; } } catch {} }));
   if (!okN) throw new Error("no yields"); y.asOf = new Date(out.at).toISOString(); y.src = "yahoo"; out.data.yields = y; out.sources.yields = `ok · ${okN}/4`;
 }
 

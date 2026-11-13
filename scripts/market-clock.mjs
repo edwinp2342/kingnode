@@ -8,6 +8,16 @@ export function etNow(now = new Date()) {
   const g = t => p.find(x => x.type === t)?.value;
   return { date: `${g("year")}-${g("month")}-${g("day")}`, min: (Number(g("hour")) % 24) * 60 + Number(g("minute")), dow: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(g("weekday")) };
 }
+export function isTradingDay(date, dow = new Date(date + "T12:00:00Z").getUTCDay()) { return dow !== 0 && dow !== 6 && !NYSE_HOLIDAYS.has(date); }
+// the ET date of the session the live tape belongs to: today once a trading day's regular session has opened, otherwise the last trading
+// day — chains, volume and premium keep showing that session until the next open (the levels history and the anomaly pass key on this,
+// so a Saturday never becomes a session of its own and nothing is "new" at midnight)
+export function sessionDate(et = etNow()) {
+  if (isTradingDay(et.date, et.dow) && et.min >= 9 * 60 + 30) return et.date;
+  const d = new Date(et.date + "T12:00:00Z");
+  for (let i = 0; i < 14; i++) { d.setUTCDate(d.getUTCDate() - 1); const date = d.toISOString().slice(0, 10); if (isTradingDay(date, d.getUTCDay())) return date; }
+  return et.date;
+}
 // pre 04:00–09:30 · regular 09:30–16:00 · post 16:00–20:00 · overnight 20:00–04:00 (Sunday 20:00 through Friday 04:00: the 24-hour session
 // Yahoo reports as fulldayPrice — no bars, a price) · closed otherwise (Friday 20:00 to Sunday 20:00, holidays)
 export function marketPhase(now = new Date()) {

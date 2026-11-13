@@ -38,7 +38,7 @@ test("fetchMacro: every source answers; then every source fails and the file sti
   const answers = {
     bls: { status: "REQUEST_SUCCEEDED", Results: { series: [series("CUSR0000SA0", [["2026", "M09", "322"], ["2026", "M08", "321"], ["2025", "M09", "310"]]), series("LNS14000000", [["2026", "M09", "4.3"], ["2026", "M08", "4.3"]])] } },
     nyfed: { refRates: [{ effectiveDate: "2026-11-02", type: "EFFR", percentRate: 3.88 }] },
-    yahoo: sym => ({ chart: { result: [{ meta: { regularMarketPrice: sym.includes("TNX") ? 4.11 : sym.includes("IRX") ? 3.92 : 4.4, chartPreviousClose: 4.0 } }] } }),
+    yahoo: sym => ({ chart: { result: [{ meta: { regularMarketPrice: sym.includes("TNX") ? 4.11 : sym.includes("IRX") ? 3.92 : 4.4, chartPreviousClose: 4.0 }, indicators: sym.includes("TYX") ? undefined : { quote: [{ close: [4.0, 4.02, null, 4.05, 4.11] }] } }] } }),
   };
   globalThis.fetch = async (url) => { const u = String(url); const ok = body => ({ ok: true, status: 200, json: async () => body }); if (u.includes("api.bls.gov")) return ok(answers.bls); if (u.includes("newyorkfed")) return ok(answers.nyfed); if (u.includes("finance.yahoo")) return ok(answers.yahoo(u)); if (u.includes("stlouisfed")) return ok({ release_dates: [{ release_name: "Employment Situation", date: "2026-12-04" }] }); return { ok: false, status: 404, json: async () => ({}) }; };
   try {
@@ -46,6 +46,7 @@ test("fetchMacro: every source answers; then every source fails and the file sti
     assert.equal(doc.data.cpi.yoy, +((322 / 310 - 1) * 100).toFixed(2)); assert.equal(doc.data.unemployment.rate, 4.3);
     assert.equal(doc.data.effr.rate, 3.88); assert.equal(doc.data.fedFunds.range, "3.75–4.00%"); assert.equal(doc.data.fedFunds.src, "inferred from EFFR");
     assert.equal(doc.data.yields.t10y, 4.11); assert.equal(doc.data.yields.t3m, 3.92);
+    assert.equal(doc.data.yields.t10yPrev, 4.05, "prev is the session before the last bar, not the close before the 5-day range"); assert.equal(doc.data.yields.t30yPrev, 4.0, "no bars: falls back to the meta close");
     assert.match(doc.sources.bls, /^ok/); assert.match(doc.sources.nyfed, /^ok/); assert.match(doc.sources.yields, /^ok · 4\/4/); assert.match(doc.sources.fred, /^ok/); assert.match(doc.sources.calendar, /^static/);
     assert.ok(doc.releases.some(r => r.date === "2026-11-03" && /midterm/i.test(r.name)), "election day is on the calendar");
     assert.ok(doc.releases.some(r => r.date === "2026-11-10" && /CPI/.test(r.name)) && !doc.releases.some(r => r.date === "2026-11-01"), "past dates drop off, CPI Nov 10 is there");

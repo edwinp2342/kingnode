@@ -102,6 +102,21 @@ test("feed market clock: phases, weekends, holidays, half days (ET)", () => {
   assert.equal(marketPhase(new Date("2026-11-27T18:30:00Z")), "post", "Black Friday after the 1pm close");
   assert.ok(NYSE_HOLIDAYS.has("2026-12-25"));
 });
+import { sessionDate, isTradingDay, etNow } from "../scripts/market-clock.mjs";
+test("feed session date: the tape belongs to today only once a trading day has opened; pre-open, weekends and holidays are the last session", () => {
+  const at = iso => sessionDate(etNow(new Date(iso)));
+  assert.equal(at("2026-11-13T05:10:00Z"), "2026-11-12", "Friday 00:10 ET: Thursday's chains");
+  assert.equal(at("2026-11-13T14:00:00Z"), "2026-11-12", "Friday 09:00 ET: still pre-open");
+  assert.equal(at("2026-11-13T14:30:00Z"), "2026-11-13", "Friday 09:30 ET: the session is open");
+  assert.equal(at("2026-11-14T04:59:00Z"), "2026-11-13", "Friday 23:59 ET: still Friday");
+  assert.equal(at("2026-11-14T15:00:00Z"), "2026-11-13", "Saturday is not a session");
+  assert.equal(at("2026-11-16T03:00:00Z"), "2026-11-13", "Sunday evening: still Friday");
+  assert.equal(at("2026-11-26T18:00:00Z"), "2026-11-25", "Thanksgiving: Wednesday's session");
+  assert.equal(at("2026-11-27T15:00:00Z"), "2026-11-27", "Black Friday opens at 9:30");
+  assert.equal(at("2026-01-02T12:00:00Z"), "2025-12-31", "the day after New Year's, pre-open: skips the holiday to the last trading day");
+  assert.ok(isTradingDay("2026-11-13") && !isTradingDay("2026-11-14") && !isTradingDay("2026-11-15") && !isTradingDay("2026-11-26"));
+  assert.ok(isTradingDay("2026-11-13", 5) && !isTradingDay("2026-11-14", 6));
+});
 test("app market clock matches the feed's, and staleness only counts while the market is open", () => {
   const src2 = [grab("marketPhase"), grab("marketOpenNow"), grab("isStale"), grab("NYSE_HOLIDAYS"), grab("NYSE_HALF_DAYS")].join("\n");
   const c2 = { Math, Date, Number, Map, Set, Array, Object, isFinite, String, Intl, marketDate: ctx.marketDate };

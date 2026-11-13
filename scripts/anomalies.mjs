@@ -10,7 +10,7 @@
 //   volOi   a contract trading many times its open interest (the scan's "unusual" row)
 // Each item has a score 0–100 and a grade (A ≥ 78, B ≥ 62, C). Indexes and the big ETFs use higher dollar bars than single names.
 // A block and a vol/OI outlier on the same contract are one observation (the block keeps it); a one-sided day on a name that already surged folds into the surge.
-import { etNow } from "./market-clock.mjs";
+import { etNow, sessionDate } from "./market-clock.mjs";
 
 export const ANOMALIES_VERSION = 1;
 const INDEXISH = new Set(["SPX", "SPY", "QQQ", "IWM", "DIA", "VIX", "XSP", "NDX", "RUT", "TLT", "GLD", "HYG"]);
@@ -30,7 +30,10 @@ export function baselines(history, today) {
 export function sessionFraction(etMin) { return Math.max(0.12, Math.min(1, (etMin - 570) / 390)); }
 
 export function detectAnomalies({ scan, history, now = Date.now(), et = etNow(new Date(now)), log = null }) {
-  const rows = scan?.rows || {}; const base = baselines(history, et.date); const frac = et.min >= 570 && et.min < 960 ? sessionFraction(et.min) : 1; const items = [];
+  // the session the tape belongs to: before the open, overnight and on weekends the chains still show the last session, so the day key,
+  // the baseline cut-off and the first-seen keys follow that session rather than the calendar date (nothing becomes "new" at midnight)
+  const day = sessionDate(et);
+  const rows = scan?.rows || {}; const base = baselines(history, day); const frac = et.min >= 570 && et.min < 960 ? sessionFraction(et.min) : 1; const items = [];
   for (const [sym, r] of Object.entries(rows)) {
     if (!r || !(r.spot > 0)) continue; const idx = INDEXISH.has(sym); const total = (r.cPrem || 0) + (r.pPrem || 0); if (!(total > 0)) continue;
     const b = base[sym]; const paced = total / frac; const ratio = b ? paced / b.median : null; const z = b ? (paced - b.median) / Math.max(b.mad * 1.4826, b.median * 0.25) : null;
@@ -64,6 +67,6 @@ export function detectAnomalies({ scan, history, now = Date.now(), et = etNow(ne
   const list = [...best.values()].map(it => ({ ...it, grade: gradeOf(it.score) })).sort((a, b) => b.score - a.score).slice(0, 40);
   // first-seen times from the log, so the app and Ava can say what is new
   const seenLog = { ...(log?.items || {}) }; const cutoff = now - 2 * 86400e3; for (const [k, t] of Object.entries(seenLog)) if (t < cutoff) delete seenLog[k];
-  for (const it of list) { const k = `${et.date}|${it.sym}|${it.kind}|${it.contract ? it.contract.slice(0, 3).join("/") : ""}`; if (!seenLog[k]) seenLog[k] = now; it.firstSeen = seenLog[k]; it.key = k; }
-  return { v: ANOMALIES_VERSION, at: now, date: et.date, frac: +frac.toFixed(2), n: list.length, counts: { A: list.filter(x => x.grade === "A").length, B: list.filter(x => x.grade === "B").length, C: list.filter(x => x.grade === "C").length }, items: list, log: { items: seenLog } };
+  for (const it of list) { const k = `${day}|${it.sym}|${it.kind}|${it.contract ? it.contract.slice(0, 3).join("/") : ""}`; if (!seenLog[k]) seenLog[k] = now; it.firstSeen = seenLog[k]; it.key = k; }
+  return { v: ANOMALIES_VERSION, at: now, date: day, frac: +frac.toFixed(2), n: list.length, counts: { A: list.filter(x => x.grade === "A").length, B: list.filter(x => x.grade === "B").length, C: list.filter(x => x.grade === "C").length }, items: list, log: { items: seenLog } };
 }
