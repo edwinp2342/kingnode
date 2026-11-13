@@ -162,11 +162,12 @@ function recordLevels(scan) {
     // only a trading day's own session writes its row (from the open through midnight ET); before the open, on weekends and on holidays the
     // chains still show the last session, and recording that under the calendar date made every Saturday and Sunday a "session" that
     // duplicated Friday — tripling it in the anomaly baselines and handing the expected-move scorecard free zero-move hits
-    const t = etNow(); const key = sessionDate(t); if (key !== t.date) return;
-    const row = {};
-    for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem, r.emExp || null]; // emExp: which expiry the expected move was for, so the app can score it against the next close
-    h.days[key] = { ...(h.days[key] || {}), ...row, _at: Date.now() };
-    for (const k of Object.keys(h.days)) if (!isTradingDay(k)) delete h.days[k]; // rows written under non-session dates by earlier builds
+    const t = etNow(); const key = sessionDate(t); const stale = Object.keys(h.days).filter(k => !isTradingDay(k)); // rows earlier builds wrote under weekend dates
+    if (key !== t.date && !stale.length) return;
+    for (const k of stale) delete h.days[k];
+    if (key === t.date) { const row = {};
+      for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem, r.emExp || null]; // emExp: which expiry the expected move was for, so the app can score it against the next close
+      h.days[key] = { ...(h.days[key] || {}), ...row, _at: Date.now() }; }
     const keys = Object.keys(h.days).sort(); for (const k of keys.slice(0, Math.max(0, keys.length - 420))) delete h.days[k]; // ~20 months, a few hundred KB
     fs.writeFileSync(LEVELS_FILE, JSON.stringify(h));
   } catch (e) { console.error("levels history", e.message); }
