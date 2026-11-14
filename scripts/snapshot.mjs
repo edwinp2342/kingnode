@@ -135,12 +135,19 @@ export function withToday(daily, intraday, session) {
 // contract, ATM IV, and the levels. Computed from the full chain while it is in memory, so the app never has to pull 80 files.
 // Which side of the quote a print hit — only when the last price sits inside the current spread; outside it the quote moved since the trade and the side is unknowable.
 function printSide(last, bid, ask) { if (!last || !bid || !ask || ask < bid) return "M"; const tol = Math.max(0.05, last * 0.01); if (last > ask + tol || last < bid - tol) return "M"; if (last >= ask - tol) return "A"; if (last <= bid + tol) return "B"; return "M"; }
+// Today's volume and premium per side from the chain rows, with the deep-in-the-money part (|delta| ≥ 0.9) counted separately: the day before
+// an ex-dividend date, dividend-capture desks trade tens of thousands of deep calls (XOM, COP, MMM, SO on 2026-11-13: 50–70× a normal day,
+// 0% puts), which is not positioning — the anomaly pass measures surges on the premium outside that bucket.
+export function chainPremium(rows) {
+  let cVol = 0, pVol = 0, cPrem = 0, pPrem = 0, cDeep = 0, pDeep = 0; const contracts = [];
+  for (const r of rows) { const [exp, type, K, oi, vol, iv, , delta, bid, ask, last] = r; if (!vol) continue; const mid = bid && ask ? (bid + ask) / 2 : (last || bid || ask); const px = last || mid; if (!px) continue;
+    const prem = px * vol * 100; const deep = Math.abs(delta || 0) >= 0.9; if (type === "C") { cVol += vol; cPrem += prem; if (deep) cDeep += prem; } else { pVol += vol; pPrem += prem; if (deep) pDeep += prem; }
+    contracts.push({ exp, type, K, vol, oi, prem, side: printSide(last, bid, ask), deep, volOi: oi ? vol / oi : null }); }
+  return { cVol, pVol, cPrem, pPrem, cDeep, pDeep, contracts };
+}
 function scanRow(c0) {
   const t = etNow(); const c = { ...c0, rows: c0.rows.filter(r => r[0] > t.date || (r[0] === t.date && t.min < 16 * 60)) }; // settled expiries are not positioning
-  const spot = c.spot; let cVol = 0, pVol = 0, cPrem = 0, pPrem = 0; const contracts = [];
-  for (const r of c.rows) { const [exp, type, K, oi, vol, iv, , delta, bid, ask, last] = r; if (!vol) continue; const mid = bid && ask ? (bid + ask) / 2 : (last || bid || ask); const px = last || mid; if (!px) continue;
-    const prem = px * vol * 100; if (type === "C") { cVol += vol; cPrem += prem; } else { pVol += vol; pPrem += prem; }
-    contracts.push({ exp, type, K, vol, oi, prem, side: printSide(last, bid, ask), deep: Math.abs(delta || 0) >= 0.9, volOi: oi ? vol / oi : null }); }
+  const spot = c.spot; const { cVol, pVol, cPrem, pPrem, cDeep, pDeep, contracts } = chainPremium(c.rows);
   const dir = contracts.filter(x => !x.deep);
   const top = dir.sort((a, b) => b.prem - a.prem).slice(0, 3).map(x => [x.exp, x.type, x.K, x.vol, x.oi, Math.round(x.prem), x.side]);
   const big = dir.filter(x => x.prem >= 1e6).slice(3, 11).map(x => [x.exp, x.type, x.K, x.vol, x.oi, Math.round(x.prem), x.side]); // the next contracts above $1M, for the anomaly pass
@@ -149,7 +156,7 @@ function scanRow(c0) {
   const un = byUn.find(x => dte(x.exp) >= 4) || byUn[0]; // a brand-new weekly always trades many times its day-old OI; prefer something with a few days on it
   const e30 = exps.find(e => dte(e) >= 20) || exps.at(-1); const near = c.rows.filter(r => r[0] === e30 && r[5] > 0); const atm = near.length ? near.reduce((a, r) => Math.abs(r[2] - spot) < Math.abs(a[2] - spot) ? r : a, near[0]) : null;
   let lv = {}; try { lv = computeLevels(c, 6, 8, "standard"); } catch {}
-  return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), top, big: big.length ? big : undefined, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, emExp: lv.nearest || null, gex: lv.total != null ? Math.round(lv.total) : null };
+  return { spot: +spot.toFixed(2), chg: +(+c.changePct || 0).toFixed(2), cVol, pVol, cPrem: Math.round(cPrem), pPrem: Math.round(pPrem), cDeep: Math.round(cDeep), pDeep: Math.round(pDeep), top, big: big.length ? big : undefined, unusual: un ? [un.exp, un.type, un.K, un.vol, un.oi, un.side, +un.volOi.toFixed(1)] : null, iv30: atm ? +(+atm[5]).toFixed(3) : null, pw: lv.putWall ?? null, flip: lv.flip ?? null, cw: lv.callWall ?? null, em: lv.expectedMove != null ? +lv.expectedMove.toFixed(2) : null, emExp: lv.nearest || null, gex: lv.total != null ? Math.round(lv.total) : null };
 }
 // One row per ticker per day of the levels the Ideas engine leans on (walls, flip, gamma, expected move, IV, flow) — the branch is force-pushed
 // as a single commit each cycle, so this file is the only history that survives. The last chain of the day wins, so each row is the closing state.
@@ -157,8 +164,8 @@ function scanRow(c0) {
 const LEVELS_FILE = "data/levels-history.json";
 function recordLevels(scan) {
   try {
-    let h = { cols: "spot chg cw pw flip gex em iv30 cVol pVol cPrem pPrem emExp", days: {} };
-    try { const old = JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8")); if (old && old.days) h = old; } catch {}
+    let h = { cols: "spot chg cw pw flip gex em iv30 cVol pVol cPrem pPrem emExp cDeep pDeep", days: {} };
+    try { const old = JSON.parse(fs.readFileSync(LEVELS_FILE, "utf8")); if (old && old.days) { h = old; h.cols = "spot chg cw pw flip gex em iv30 cVol pVol cPrem pPrem emExp cDeep pDeep"; } } catch {}
     // only a trading day's own session writes its row (from the open through midnight ET); before the open, on weekends and on holidays the
     // chains still show the last session, and recording that under the calendar date made every Saturday and Sunday a "session" that
     // duplicated Friday — tripling it in the anomaly baselines and handing the expected-move scorecard free zero-move hits
@@ -166,7 +173,7 @@ function recordLevels(scan) {
     if (key !== t.date && !stale.length) return;
     for (const k of stale) delete h.days[k];
     if (key === t.date) { const row = {};
-      for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem, r.emExp || null]; // emExp: which expiry the expected move was for, so the app can score it against the next close
+      for (const [sym, r] of Object.entries(scan)) row[sym] = [r.spot, r.chg, r.cw, r.pw, r.flip, r.gex, r.em, r.iv30, r.cVol, r.pVol, r.cPrem, r.pPrem, r.emExp || null, r.cDeep || 0, r.pDeep || 0]; // emExp: which expiry the expected move was for, so the app can score it against the next close; cDeep/pDeep: the deep-ITM premium the anomaly baselines leave out
       h.days[key] = { ...(h.days[key] || {}), ...row, _at: Date.now() }; }
     const keys = Object.keys(h.days).sort(); for (const k of keys.slice(0, Math.max(0, keys.length - 420))) delete h.days[k]; // ~20 months, a few hundred KB
     fs.writeFileSync(LEVELS_FILE, JSON.stringify(h));
@@ -206,7 +213,7 @@ async function cycle(n, ph) {
   if (!tierBList.length || Date.now() - tierBAt > plan.tierB * 1000) { const market = readJSON("data/market.json", null); const tierB = mostActive(market, new Set(SYMS), Number(process.env.TIER_B || 150)); if (tierB.length) { tierBList = tierB; tierBAt = Date.now(); tierBPos = tierBPos % tierB.length; } }
   if (tierBList.length) { const per = Number(process.env.TIER_B_PER_CYCLE || 12); const slice = []; for (let i = 0; i < Math.min(per, tierBList.length); i++) slice.push(tierBList[(tierBPos + i) % tierBList.length]);
     const r429 = await chainBatch(slice, 6, 0.12, "cb", 1, 350); if (r429 < 3) tierBPos = (tierBPos + slice.length) % tierBList.length; /* rate-limited: the same dozen go again next cycle */ }
-  if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem top[exp,type,K,vol,oi,prem,side] big[…] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em emExp gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan);
+  if (ok.length) { chainAt = Date.now(); writeJSON("data/scan.json", { at: Date.now(), phase: ph, cols: "spot chg cVol pVol cPrem pPrem cDeep pDeep top[exp,type,K,vol,oi,prem,side] big[…] unusual[exp,type,K,vol,oi,side,volOi] iv30 pw flip cw em emExp gex", core: SYMS, tierB: tierBList, rows: scan }); recordLevels(scan);
     try { const an = detectAnomalies({ scan: { rows: scan }, history: readJSON("data/levels-history.json", null), log: readJSON("data/anomalies-log.json", null) }); const { log, ...doc } = an; writeJSON("data/anomalies.json", doc); writeJSON("data/anomalies-log.json", log); status.anomalies = { at: an.at, ...an.counts }; if (an.n) console.log(`flow anomalies: ${an.counts.A} A · ${an.counts.B} B · ${an.counts.C} C — ${an.items.slice(0, 3).map(x => x.sym + " " + x.kind).join(", ")}`); } catch (e) { fail.push("anomalies:" + e.message); } }
   if (Date.now() - svAt > 3600e3) { try { const g = await shortVolume(); console.log(`short volume: ${g} days`); } catch (e) { svAt = Date.now() - 3600e3 + 900e3; fail.push(`sv:${e.message}`); } }
   if (Date.now() - macroAt > 3600e3) { try { const m = await refreshMacro(); macroAt = Date.now(); status.macro = { at: macroAt, sources: m.sources }; console.log(`macro: ${Object.entries(m.sources).map(([k, v]) => k + " " + v).join(" · ")} · ${m.releases.length} releases`); } catch (e) { macroAt = Date.now() - 3600e3 + 900e3; fail.push(`macro:${e.message}`); } } // readings (BLS, NY Fed, yields) and the release calendar for Ava, hourly

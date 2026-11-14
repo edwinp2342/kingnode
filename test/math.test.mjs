@@ -327,3 +327,22 @@ test("broker: a Robinhood equity quote, index quote, previous close from daily b
   const deep = JSON.parse(JSON.stringify(f.rhChainRow({ ...oq, implied_volatility: null, delta: null, gamma: null }, { id: "x", exp: "2026-11-06", type: "put", K: 900 }, 760)));
   assert.deepEqual(deep.row.slice(5, 8), [0, 0, -1]); assert.equal(f.rhChainRow(null, { K: 1 }, 1), null);
 });
+test("feed: the scan row splits each side's premium into all and deep-ITM (|delta| ≥ 0.9), from last or mid, skipping unpriced and untraded rows", () => {
+  const src = fs.readFileSync(new URL("../scripts/snapshot.mjs", import.meta.url), "utf8");
+  const grabF = name => { const i = src.indexOf(`function ${name}`); let j = src.indexOf("{", i), d = 0; for (; j < src.length; j++) { if (src[j] === "{") d++; else if (src[j] === "}") { d--; if (!d) break; } } return src.slice(i, j + 1); };
+  const chainPremium = new Function(grabF("printSide") + "\n" + grabF("chainPremium") + "; return chainPremium;")();
+  // [exp, type, K, oi, vol, iv, gamma, delta, bid, ask, last]
+  const rows = [
+    ["2026-11-20", "C", 155, 3260, 18241, 0, 0.002, 0.9958, 14.6, 16.4, 15.25], // deep dividend-capture call: 18,241 × $15.25 × 100
+    ["2026-11-20", "C", 182.5, 1485, 10487, 0.27, 0.03, 0.12, 0.3, 0.35, 0.33],  // an out-of-the-money call bought at the ask
+    ["2026-11-20", "P", 180, 503, 5280, 0.3, 0.02, -0.9104, 9.7, 11.15, 0],      // deep put with no last print → mid
+    ["2026-11-20", "P", 165, 900, 2000, 0.28, 0.02, -0.35, 1.0, 1.2, 1.1],
+    ["2026-11-20", "P", 150, 100, 0, 0.3, 0.01, -0.05, 0.1, 0.15, 0.12],         // no volume → skipped
+    ["2026-11-20", "C", 300, 10, 50, 0.5, 0, 0.01, 0, 0, 0],                      // no price at all → skipped
+  ];
+  const p = chainPremium(rows);
+  assert.equal(p.cVol, 18241 + 10487); assert.equal(p.pVol, 5280 + 2000);
+  assert.ok(Math.abs(p.cPrem - (18241 * 15.25 + 10487 * 0.33) * 100) < 1); assert.ok(Math.abs(p.cDeep - 18241 * 15.25 * 100) < 1);
+  assert.ok(Math.abs(p.pPrem - (5280 * 10.425 + 2000 * 1.1) * 100) < 1); assert.ok(Math.abs(p.pDeep - 5280 * 10.425 * 100) < 1);
+  assert.equal(p.contracts.length, 4); assert.deepEqual(p.contracts.map(c => c.deep), [true, false, true, false]); assert.equal(p.contracts[1].side, "A"); assert.equal(p.contracts[2].side, "M");
+});

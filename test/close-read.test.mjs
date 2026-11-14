@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { signedFlow, vwap, cleanBars, sweepDelta, computeCloseRead, resolveCloseRead, closeReadRecord, gradeOf, sideOf } from "../scripts/close-read.mjs";
-import { detectAnomalies, baselines, sessionFraction } from "../scripts/anomalies.mjs";
+import { detectAnomalies, baselines, sessionFraction, directionalPremium } from "../scripts/anomalies.mjs";
 
 const T0 = Date.parse("2026-11-11T14:30:00Z"); // 09:30 ET
 const at350 = T0 + 380 * 60e3; const et = { date: "2026-11-11", min: 15 * 60 + 50, dow: 3 };
@@ -76,4 +76,20 @@ test("anomalies: a premium surge, a fresh block at the ask, a one-sided day and 
   assert.ok(midnight.items.every(x => x.key.startsWith("2026-11-11|") && x.firstSeen === at350), JSON.stringify(midnight.items.map(x => [x.key, x.firstSeen])));
   assert.equal(midnight.items.find(x => x.sym === "ACME" && x.kind === "surge").baseline, 5e6, "Wednesday's own premium is not in Wednesday's baseline");
   const saturday = detectAnomalies({ scan, history: { days }, now: at350 + 3 * 86400e3, et: { date: "2026-11-14", min: 600, dow: 6 }, log: an.log }); assert.equal(saturday.date, "2026-11-13");
+});
+
+test("anomalies: dividend-capture deep-ITM calls are not a surge — the premium outside |delta| ≥ 0.9 is what gets measured, in the day and in the baseline", () => {
+  // XOM on 2026-11-13, the day before its ex-dividend date: $962M of call premium, 0% puts, against a $19M typical day — almost all of it deep calls
+  const days = {}; for (let i = 1; i <= 20; i++) days[`2026-10-${String(i).padStart(2, "0")}`] = { XOM: [168, 0, 175, 165, 170, 3e7, 4, 0.25, 4e4, 3e4, 11e6, 8e6], DIV: [50, 0, 55, 45, 48, 1e7, 2, 0.3, 2e4, 1e4, 3e6, 2e6, "2026-10-30", 2.5e6, 0] };
+  const xom = { spot: 170.7, chg: 0.48, cVol: 276017, pVol: 8789, cPrem: 962534319, pPrem: 3427238, cDeep: 940e6, pDeep: 0, top: [["2027-03-19", "C", 145, 1623, 1451, 4584975, "M"]], unusual: null };
+  const an = detectAnomalies({ scan: { rows: { XOM: xom } }, history: { days }, now: at350, et });
+  assert.equal(an.items.filter(x => x.sym === "XOM" && (x.kind === "surge" || x.kind === "skew")).length, 0, JSON.stringify(an.items.map(x => [x.sym, x.kind, x.ratio])));
+  // the same tape with the deep bucket missing (a row from before the split) still surges — nothing is lost when the fields are absent
+  const { cDeep, pDeep, ...old } = xom; const legacy = detectAnomalies({ scan: { rows: { XOM: old } }, history: { days }, now: at350, et }); const sg = legacy.items.find(x => x.sym === "XOM" && x.kind === "surge"); assert.ok(sg && sg.ratio > 40); assert.equal(sg.deep, 0);
+  // a real surge on top of a deep-ITM day is still a surge, measured and described on the directional part only
+  const both = detectAnomalies({ scan: { rows: { XOM: { ...xom, cPrem: 1060e6, pPrem: 2e6 } } }, history: { days }, now: at350, et }).items.find(x => x.sym === "XOM" && x.kind === "surge");
+  assert.ok(both, "a $120M directional day on a $19M name is a surge"); assert.ok(both.ratio > 5 && both.ratio < 8, String(both.ratio)); assert.equal(both.putShare, 0.02); assert.match(both.text, /\$940\.0M deep-ITM set aside/); assert.equal(both.prem, 1062e6);
+  // history rows that carry cDeep/pDeep (indexes 13, 14) have them taken out of the baseline; rows without count whole
+  assert.equal(directionalPremium(days["2026-10-01"].DIV), 2.5e6); assert.equal(directionalPremium(days["2026-10-01"].XOM), 19e6); assert.equal(directionalPremium([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1e6, 2e6, null, 5e6, 5e6]), 0);
+  const b = baselines({ days }, "2026-11-11"); assert.equal(b.DIV.median, 2.5e6); assert.equal(b.XOM.median, 19e6);
 });

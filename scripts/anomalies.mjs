@@ -9,20 +9,25 @@
 //   skew    an unusual day that is also one-sided: ≥ 78% puts or ≥ 78% calls by premium
 //   volOi   a contract trading many times its open interest (the scan's "unusual" row)
 // Each item has a score 0–100 and a grade (A ≥ 78, B ≥ 62, C). Indexes and the big ETFs use higher dollar bars than single names.
+// Surge, skew and the baselines measure the premium outside deep-in-the-money contracts (|delta| ≥ 0.9, the scan's cDeep/pDeep): the day
+// before an ex-dividend date the dividend-capture desks put tens of thousands of deep calls through XOM, COP, MMM or SO — 50–70× a normal
+// day, 0% puts — and that is a financing trade, not a view. `prem` on an item is still the whole day; `deep` says how much was set aside.
 // A block and a vol/OI outlier on the same contract are one observation (the block keeps it); a one-sided day on a name that already surged folds into the surge.
 import { etNow, sessionDate } from "./market-clock.mjs";
 
-export const ANOMALIES_VERSION = 1;
+export const ANOMALIES_VERSION = 2;
 const INDEXISH = new Set(["SPX", "SPY", "QQQ", "IWM", "DIA", "VIX", "XSP", "NDX", "RUT", "TLT", "GLD", "HYG"]);
 const money = v => { const a = Math.abs(v); return (v < 0 ? "−$" : "$") + (a >= 1e9 ? (a / 1e9).toFixed(2) + "B" : a >= 1e6 ? (a / 1e6).toFixed(1) + "M" : (a / 1e3).toFixed(0) + "k"); };
 const fmtK = k => Number.isInteger(k) ? String(k) : String(+k.toFixed(2));
 const sideWord = s => s === "A" ? "at the ask (bought)" : s === "B" ? "at the bid (sold)" : "near mid";
 export const gradeOf = score => score >= 78 ? "A" : score >= 62 ? "B" : "C";
 
-// each name's daily total premium for the sessions before today: median and a robust spread
+// each name's daily premium outside deep-ITM contracts for the sessions before today: median and a robust spread
+// (rows written before the split carry no cDeep/pDeep and count whole — the baseline then runs a little high, which only makes a surge harder to call)
+export function directionalPremium(row) { return Math.max(0, (row?.[10] || 0) + (row?.[11] || 0) - (row?.[13] || 0) - (row?.[14] || 0)); }
 export function baselines(history, today) {
   const out = {}; const days = Object.keys(history?.days || {}).filter(d => d < today).sort().slice(-20);
-  for (const d of days) for (const [sym, row] of Object.entries(history.days[d] || {})) { const v = (row?.[10] || 0) + (row?.[11] || 0); if (v > 0) (out[sym] ||= []).push(v); }
+  for (const d of days) for (const [sym, row] of Object.entries(history.days[d] || {})) { const v = directionalPremium(row); if (v > 0) (out[sym] ||= []).push(v); }
   const res = {}; for (const [sym, vals] of Object.entries(out)) { if (vals.length < 5) continue; const s = [...vals].sort((a, b) => a - b); const med = s[Math.floor(s.length / 2)]; const mad = [...s.map(v => Math.abs(v - med))].sort((a, b) => a - b)[Math.floor(s.length / 2)] || med * 0.3; res[sym] = { median: med, mad, n: vals.length, max: s[s.length - 1] }; }
   return res;
 }
@@ -35,15 +40,17 @@ export function detectAnomalies({ scan, history, now = Date.now(), et = etNow(ne
   const day = sessionDate(et);
   const rows = scan?.rows || {}; const base = baselines(history, day); const frac = et.min >= 570 && et.min < 960 ? sessionFraction(et.min) : 1; const items = [];
   for (const [sym, r] of Object.entries(rows)) {
-    if (!r || !(r.spot > 0)) continue; const idx = INDEXISH.has(sym); const total = (r.cPrem || 0) + (r.pPrem || 0); if (!(total > 0)) continue;
+    if (!r || !(r.spot > 0)) continue; const idx = INDEXISH.has(sym); const all = (r.cPrem || 0) + (r.pPrem || 0); if (!(all > 0)) continue;
+    const cDir = Math.max(0, (r.cPrem || 0) - (r.cDeep || 0)), pDir = Math.max(0, (r.pPrem || 0) - (r.pDeep || 0)); const total = cDir + pDir; const deep = Math.round(all - total); if (!(total > 0)) continue;
     const b = base[sym]; const paced = total / frac; const ratio = b ? paced / b.median : null; const z = b ? (paced - b.median) / Math.max(b.mad * 1.4826, b.median * 0.25) : null;
-    const putShare = total > 0 ? (r.pPrem || 0) / total : 0.5; const side = putShare >= 0.65 ? "puts" : putShare <= 0.35 ? "calls" : "both";
+    const putShare = total > 0 ? pDir / total : 0.5; const side = putShare >= 0.65 ? "puts" : putShare <= 0.35 ? "calls" : "both";
     const levels = { cw: r.cw ?? null, pw: r.pw ?? null, flip: r.flip ?? null, em: r.em ?? null, iv30: r.iv30 ?? null };
-    const common = { sym, idx, spot: r.spot, chg: r.chg ?? null, prem: Math.round(total), paced: Math.round(paced), baseline: b ? Math.round(b.median) : null, ratio: ratio != null ? +ratio.toFixed(2) : null, putShare: +putShare.toFixed(2), levels };
+    const deepNote = deep >= 0.25 * all ? ` · ${money(deep)} deep-ITM set aside` : "";
+    const common = { sym, idx, spot: r.spot, chg: r.chg ?? null, prem: Math.round(all), deep, paced: Math.round(paced), baseline: b ? Math.round(b.median) : null, ratio: ratio != null ? +ratio.toFixed(2) : null, putShare: +putShare.toFixed(2), levels };
     // surge
     if (ratio != null && frac >= 0.15 && ratio >= 2.5 && paced >= (idx ? 5e7 : 3e6)) {
       const sizePts = paced >= 1e8 ? 20 : paced >= 3e7 ? 15 : paced >= 1e7 ? 10 : paced >= 5e6 ? 5 : 0; /* a multiple on a small name is not the same as a multiple on $50M */
-      const score = Math.min(100, 35 + Math.min(40, 15 * (ratio - 2.5)) + sizePts + (z >= 6 ? 5 : 0)); items.push({ ...common, kind: "surge", side, score: Math.round(score), text: `${sym} · ${side} · premium ${ratio.toFixed(1)}× its 20-day pace (${money(paced)} projected vs ${money(b.median)} typical; ${Math.round(putShare * 100)}% puts) · spot ${fmtK(r.spot)}${r.chg != null ? ` (${r.chg >= 0 ? "+" : ""}${r.chg}%)` : ""}` });
+      const score = Math.min(100, 35 + Math.min(40, 15 * (ratio - 2.5)) + sizePts + (z >= 6 ? 5 : 0)); items.push({ ...common, kind: "surge", side, score: Math.round(score), text: `${sym} · ${side} · premium ${ratio.toFixed(1)}× its 20-day pace (${money(paced)} projected vs ${money(b.median)} typical; ${Math.round(putShare * 100)}% puts) · spot ${fmtK(r.spot)}${r.chg != null ? ` (${r.chg >= 0 ? "+" : ""}${r.chg}%)` : ""}${deepNote}` });
     }
     // blocks: the biggest contracts (top) plus any the scan kept as big
     const cands = [...(r.top || []), ...(r.big || [])]; const seen = new Set();
