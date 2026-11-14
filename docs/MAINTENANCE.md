@@ -34,8 +34,28 @@ most one small improvement from the backlog when everything is clean. Each run a
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
+- Macro: CPI yoy falls back to a labelled 13-month comparison when the prior-year month was never published (Oct 2025 shutdown gap).
 
 ## Entries
+
+### 2026-11-14 — scheduled run 2
+- Checked: 51 tests and smoke green before changes. Feed loop in progress on `4caa3fd` (run 43549567265, overnight cadence, index.json 2 min old,
+  sweep 5053/5053, 0 429s in the fast loop; tier-B chains hit 429 after 74 — expected at the overnight pace); close-read.json is Friday's 15:58 read
+  in billions (v2: $6.68B net on $27.36B, grade B, outcome resolved 16:03, flat) — the trillions bug from 11-12 is confirmed fixed; macro (EFFR,
+  yields 4/4 with prev now one session back, BLS) ok; breadth 1461/1287; scan 328 rows; hist 77/77, oldest 2.3 days.
+- Found: anomalies.json graded XOM, COP, MMM, SO and BIL as A-grade premium surges (50–134× pace, 0% puts). All were the dividend-capture trade
+  the day before an ex-dividend date — tens of thousands of |delta| ≥ 0.9 calls (XOM: 18k of the Nov-20 155C alone), a financing trade with no view.
+- Fixed: the scan row now carries `cDeep`/`pDeep` (deep-ITM premium, via a new exported `chainPremium()`), the levels history records them at
+  indexes 13/14, and surge, skew and the 20-day baselines measure the premium outside that bucket. Items keep the day's whole premium in `prem`
+  and say how much was set aside (`deep`, and in the text when ≥ 25%). ANOMALIES_VERSION 2. Rows written before the split count whole, so
+  baselines run a little high for up to 20 sessions — conservative. README updated. Commit 2eb5976.
+- State: 53 tests green, smoke clean; app unchanged (v51). Feed redispatched (run 43561108504, loop_minutes 330) after cancelling 43549567265.
+  Verified on the new run's first cycle: XOM's row shows cDeep $948M of $963M and XOM is off the anomaly list; COP/MMM/SO/BIL are tier-B rows
+  still from the old build (tier B refreshes every 6 h while closed) and clear as those chains roll.
+- Observed, not changed: CPI `yoy`/`coreYoy` are null because BLS never published October 2025 CPI (shutdown gap) and the comparison is by exact
+  calendar month — correct behaviour, but the Macro tab shows no CPI yoy until the 2026-11 print. Backlog: consider a labelled 13-month fallback.
+- Not verified: github.io (unreachable from here); the levels-history write path for cDeep/pDeep only runs on a trading day (Saturday tonight) —
+  covered by the unit test, check the 11-16 row has 15 columns tomorrow.
 
 ### 2026-11-13 — scheduled run 1
 - Checked: 50 tests and smoke green before changes. Feed loop in progress on `ad00524` (run 43356383650, overnight cadence, 0 fails,
