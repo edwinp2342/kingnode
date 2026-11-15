@@ -38,6 +38,23 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-15 — scheduled run 3
+- Checked: 53 tests and smoke green before changes. Feed loop in progress on `d836ff0` (run 43670840096, overnight cadence, index.json 3 min old,
+  fast 77/77 with 0 fails, sweep 5057/5057, 0 429s; the "cancelled" runs before it are the designed 5.5-hour handoffs). close-read.json is
+  still Friday's 15:58 read (v2, billions, outcome resolved) — no session since. anomalies.json dated 2026-11-13 (session-keyed, 4 A / 30 B / 6 C);
+  COP is down from a 50×+ A surge to 4.2× with $305M of $324M set aside as deep-ITM — the 11-14 split is working on tier B too. hist 77/77,
+  oldest 3.3 days; macro (EFFR 3.88% on 11-12, yields 4/4 with prev one session back, BLS Oct) ok; scan 228 rows = core 77 + tier B 150 + 1;
+  levels-history 22 session days, no weekend rows.
+- Found: breadth.json said `day: 2026-11-14` (a Saturday) with a 4-point flat series — the series was keyed by the ET calendar date, so weekend
+  heartbeat sweeps formed a "day" of their own, and Monday's 00:00–09:30 sweeps of Friday's closes would have put ~57 flat points in front of
+  the open, squeezing the real session into the right part of the breadth spark.
+- Fixed: `computeBreadth()` keys the series by `sessionDate()` and records a point while the market trades plus one on the first sweep after
+  the close (the 20-hour window is gone — a session's series now lives until the next open). New test/breadth.test.mjs. Commit 82c1bc0.
+- State: 54 tests green, smoke clean; app unchanged (v51); feed redispatched (run 43680207318, loop_minutes 330) after cancelling 43670840096;
+  verified on its first cycle: breadth.json now reads `day: 2026-11-13` with a one-point series.
+- Not verified: github.io (unreachable from here); the levels-history 15-column row (cDeep/pDeep) still needs a trading day — check the 11-16 row
+  tomorrow; the Monday-open series reset is covered by the unit test only. Backlog untouched.
+
 ### 2026-11-14 — scheduled run 2
 - Checked: 51 tests and smoke green before changes. Feed loop in progress on `4caa3fd` (run 43549567265, overnight cadence, index.json 2 min old,
   sweep 5053/5053, 0 429s in the fast loop; tier-B chains hit 429 after 74 — expected at the overnight pace); close-read.json is Friday's 15:58 read
