@@ -8,6 +8,7 @@
 //   market.json   — last / prevClose / change% / volume for every optionable name, swept every few minutes in regular hours
 //   closes.json   — 60 daily closes per optionable name, once per session after the close (trend / RSI for any name)
 import fs from "node:fs";
+import { etNow, sessionDate, marketPhase } from "./market-clock.mjs";
 
 const UA = "Mozilla/5.0 (Kingnode feed; +https://github.com/edwinp2342/kingnode)";
 const YAHOO = { SPX: "^GSPC", NDX: "^NDX", RUT: "^RUT", VIX: "^VIX", DJX: "^DJI", XSP: "^GSPC" };
@@ -115,8 +116,13 @@ export function computeBreadth(market, closes, symbols, { path = "data/breadth.j
     if (v[2] > 0) { adv++; upD += v[0] * (v[3] || 0); } else if (v[2] < 0) { dec++; dnD += v[0] * (v[3] || 0); } else unch++;
     const c = closes?.c?.[sym]; if (c && c.length >= 50) { n50++; const hist = c.slice(0, -1); if (v[0] > emaLast(hist, 20)) a20++; if (v[0] > emaLast(hist, 50)) a50++; if (v[0] > Math.max(...hist)) hi++; if (v[0] < Math.min(...hist)) lo++; }
   }
-  const prev = readJSON(path, null); const day = new Date(now).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-  const series = (prev && prev.day === day ? prev.series || [] : []).filter(p => now - p[0] < 20 * 3600e3); series.push([now, adv, dec, n50 ? +(a50 / n50 * 100).toFixed(1) : null, upD + dnD ? +(upD / (upD + dnD) * 100).toFixed(1) : null]);
+  // The series belongs to a session, not a calendar day: keyed by sessionDate so Saturday's sweeps do not become a "day" of their own and
+  // Monday's pre-open heartbeat sweeps (Friday's closes, every 10 minutes) do not pile flat points in front of the open. A point is recorded
+  // while the session trades, plus one on the first sweep after the close so the series ends at the closing values.
+  const prev = readJSON(path, null); const day = sessionDate(etNow(new Date(now))); const phase = marketPhase(new Date(now));
+  const series = prev && prev.day === day ? [...(prev.series || [])] : []; const last = series[series.length - 1];
+  const record = phase === "regular" || !series.length || (last && marketPhase(new Date(last[0])) === "regular");
+  if (record) series.push([now, adv, dec, n50 ? +(a50 / n50 * 100).toFixed(1) : null, upD + dnD ? +(upD / (upD + dnD) * 100).toFixed(1) : null]);
   const out = { at: now, day, n, adv, dec, unch, upDollar: Math.round(upD), dnDollar: Math.round(dnD), above20: n50 ? +(a20 / n50 * 100).toFixed(1) : null, above50: n50 ? +(a50 / n50 * 100).toFixed(1) : null, n50, hi60: hi, lo60: lo, seriesCols: "t adv dec above50pct upDollarPct", series: series.slice(-240) };
   writeJSON(path, out); return out;
 }
