@@ -675,7 +675,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v51 beta";
+const KN_VERSION = "v52 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -1471,7 +1471,9 @@ async function loadMacroData(force){ if (MAC.loading || (!force && Date.now() - 
 const monthName = p => { const m = /^(\d{4})-(\d{2})/.exec(String(p || "")); return m ? new Date(Date.UTC(+m[1], +m[2]-1, 15)).toLocaleDateString("en-US",{month:"short",year:"numeric",timeZone:"UTC"}) : p; };
 // the readings as one-line facts with their periods — for Ava, the Calendar tab and the Macro tab; nothing here is estimated
 function macroReadings(){ const d = MAC.d?.data; if (!d) return null; const lines = {}; const pc = v => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
-  if (d.cpi) lines.cpi = `CPI ${pc(d.cpi.yoy)} y/y, ${pc(d.cpi.mom)} m/m (${monthName(d.cpi.period)})${d.cpi.coreYoy != null ? ` · core ${pc(d.cpi.coreYoy)} y/y, ${pc(d.cpi.coreMom)} m/m` : ""}`;
+  // y/y when the same month a year earlier exists; otherwise the feed's labelled 13-month change (Oct 2025 CPI was never collected — shutdown)
+  const yy = (yoy, y13, from) => yoy != null ? `${pc(yoy)} y/y` : y13 != null ? `${pc(y13)} over 13 mo vs ${monthName(from)}` : "— y/y";
+  if (d.cpi) lines.cpi = `CPI ${yy(d.cpi.yoy, d.cpi.yoy13, d.cpi.yoyFrom)}, ${pc(d.cpi.mom)} m/m (${monthName(d.cpi.period)})${d.cpi.coreYoy != null || d.cpi.coreYoy13 != null ? ` · core ${yy(d.cpi.coreYoy, d.cpi.coreYoy13, d.cpi.coreYoyFrom)}, ${pc(d.cpi.coreMom)} m/m` : ""}${d.cpi.yoy == null && d.cpi.yoy13 != null ? " · prior-year month never published" : ""}`;
   if (d.unemployment) lines.unemployment = `Unemployment ${d.unemployment.rate}% (${monthName(d.unemployment.period)}${d.unemployment.prior != null ? `, prior ${d.unemployment.prior}%` : ""})`;
   if (d.payrolls) lines.payrolls = `Nonfarm payrolls ${d.payrolls.change != null ? (d.payrolls.change >= 0 ? "+" : "") + fmt(d.payrolls.change) + "k" : "—"} (${monthName(d.payrolls.period)}${d.payrolls.priorChange != null ? `, prior ${d.payrolls.priorChange >= 0 ? "+" : ""}${fmt(d.payrolls.priorChange)}k` : ""})`;
   if (d.hourlyEarnings?.yoy != null) lines.wages = `Avg hourly earnings ${pc(d.hourlyEarnings.yoy)} y/y (${monthName(d.hourlyEarnings.period)})`;

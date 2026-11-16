@@ -20,6 +20,23 @@ test("BLS series become CPI m/m and y/y, unemployment with its prior, payroll ch
   assert.equal(blsSeriesToReadings([series("CUSR0000SA0", [["2026", "M13", "1"]])]).cpi, undefined, "annual averages (M13) are not months");
 });
 
+test("CPI y/y falls back to a labelled 13-month change when the prior-year month was never published", () => {
+  // the October 2025 shutdown gap: Sep 2025 then Nov 2025 onward through Oct 2026 — no 2025-10 row, so y/y for 2026-10 has no base
+  const gap = (id, sep25, rest) => series(id, [["2025", "M09", sep25], ...months(id, "2025-11", rest).data.map(d => [d.year, d.period, d.value])]);
+  const cpi = gap("CUSR0000SA0", 310, [312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323]); // 2025-11 … 2026-10
+  const core = gap("CUSR0000SA0L1E", 320, [322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333]);
+  const d = blsSeriesToReadings([cpi, core]);
+  assert.equal(d.cpi.period, "2026-10"); assert.equal(d.cpi.yoy, null, "a 13-month change is never passed off as y/y");
+  assert.equal(d.cpi.yoy13, +((323 / 310 - 1) * 100).toFixed(2)); assert.equal(d.cpi.yoyFrom, "2025-09");
+  assert.equal(d.cpi.coreYoy, null); assert.equal(d.cpi.coreYoy13, +((333 / 320 - 1) * 100).toFixed(2)); assert.equal(d.cpi.coreYoyFrom, "2025-09");
+  assert.equal(d.cpi.mom, +((323 / 322 - 1) * 100).toFixed(2), "m/m is untouched");
+  // once the prior-year month exists again the fallback fields disappear
+  const full = blsSeriesToReadings([months("CUSR0000SA0", "2025-09", [310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322])]);
+  assert.equal(full.cpi.yoy, +((322 / 310 - 1) * 100).toFixed(2)); assert.equal(full.cpi.yoy13, undefined); assert.equal(full.cpi.yoyFrom, undefined);
+  // a series too short for either comparison just reports null
+  assert.deepEqual({ ...blsSeriesToReadings([months("CUSR0000SA0", "2026-09", [321, 322])]).cpi }, { period: "2026-10", index: 322, mom: +((322 / 321 - 1) * 100).toFixed(2), yoy: null, src: "bls" });
+});
+
 test("the target range is the quarter-point band the effective rate sits in", () => {
   assert.equal(targetRangeFromEffr(3.88), "3.75–4.00%"); assert.equal(targetRangeFromEffr(4.33), "4.25–4.50%"); assert.equal(targetRangeFromEffr(5.33), "5.25–5.50%"); assert.equal(targetRangeFromEffr(0), null);
 });
