@@ -34,9 +34,26 @@ most one small improvement from the backlog when everything is clean. Each run a
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
-- Macro: CPI yoy falls back to a labelled 13-month comparison when the prior-year month was never published (Oct 2025 shutdown gap).
 
 ## Entries
+
+### 2026-11-16 — scheduled run 4
+- Checked: 54 tests and smoke green before changes. Feed loop in progress on `b97aa15` (run 43795445951, overnight cadence, cycle 95, index.json
+  1.3 min old, fast 77/77 with 0 fails, sweep 5057/5057, 0 429s; one tier-B bar miss `b:ROKU` this cycle, transient). close-read.json still Friday's
+  15:58 read (v2, billions, outcome resolved) — no session since. anomalies.json dated 2026-11-13 (4 A / 26 B / 10 C, no symbol more than twice).
+  hist 77/77, oldest 4.3 days; macro (EFFR 3.88% on 11-12, yields 4/4, BLS Oct) ok; breadth `day: 2026-11-13` with a one-point series — the 11-15
+  session-keying fix holding over the weekend; scan 228 rows = core 77 + tier B 150 + 1; levels-history 22 session days, no weekend rows.
+- Found: nothing broken. Took the CPI backlog item instead: CPI y/y showed a dash because BLS never published October 2025 CPI (shutdown gap) and
+  the comparison is by exact calendar month.
+- Improved: `blsSeriesToReadings()` keeps `yoy`/`coreYoy` null when the prior-year month is missing (a 13-month change is never passed off as y/y)
+  and adds `yoy13`/`yoyFrom` (and `coreYoy13`/`coreYoyFrom`) from the month before; the Macro/Calendar readings line prints "CPI +4.1% over
+  13 mo vs Sep 2025 … · prior-year month never published" and goes back to plain y/y on its own once the 2026-11 print lands. New test in
+  test/macro.test.mjs; README line updated. App v52 (KN_VERSION, sw.js CACHE, index.html). Commit df79641.
+- State: 55 tests green, smoke clean; feed redispatched (run 43808963701, loop_minutes 330) after cancelling 43795445951; verified on its first
+  cycle: macro.json carries `yoy13: 4.08, yoyFrom: 2025-09` (core 2.87). Preview artifact republished (version 23).
+- Not verified: github.io (unreachable from here); the levels-history 15-column row (cDeep/pDeep) and the Monday breadth-series reset still
+  need a trading day — check the 11-16 row and breadth `day` tomorrow night. The levels-history `cols` header still reads 12 names until the
+  open rewrites the file (the write path returns early while closed) — expected, not a bug.
 
 ### 2026-11-15 — scheduled run 3
 - Checked: 53 tests and smoke green before changes. Feed loop in progress on `d836ff0` (run 43670840096, overnight cadence, index.json 3 min old,
