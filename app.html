@@ -675,7 +675,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v52 beta";
+const KN_VERSION = "v53 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -1510,6 +1510,15 @@ function onCloseRead(r){ const key = `${r.date}|${r.label}|${r.outcome ? "resolv
   if (settingOn("closeReadAlerts")) fireAlert(`Closing read ${r.label}`, `${line}. ${r.text.split(". ").slice(1, 3).join(". ")}.`); notice(`Closing read ${line} — see the Flow tab.`); }
 function closeReadPoll(){ clearTimeout(CRD.timer); const m = etMinNow(); const hot = m >= 15*60+48 && m <= 16*60+12; if (!rhAvailable()) loadCloseRead(); CRD.timer = setTimeout(closeReadPoll, hot ? 25e3 : 5*60e3); }
 const moneyS = v => { if (v == null || !isFinite(v)) return "—"; const a = Math.abs(v); const s = a >= 1e9 ? (a/1e9).toFixed(2) + "B" : a >= 1e6 ? (a/1e6).toFixed(a >= 1e8 ? 0 : 1) + "M" : (a/1e3).toFixed(0) + "k"; return (v < 0 ? "−$" : "$") + s; };
+// the 3:50 and 3:58 reads of one session: null when the call held (same side and grade), otherwise which scored factors moved between them
+function closeReadShift(first, last){
+  if (!first || !last || first.date !== last.date || first.label === last.label) return null;
+  if (first.side === last.side && first.grade === last.grade) return null;
+  const moved = [];
+  for (const [k, name] of [["flow","Core flow"],["market","Whole market"],["index","Indexes"],["breadth","Breadth"]]){ const a = first.factors?.[k]?.score, b = last.factors?.[k]?.score; if (typeof a !== "number" || typeof b !== "number" || Math.abs(b - a) < 5) continue; moved.push({ k, name, from:a, to:b, d:b - a }); }
+  moved.sort((p, q) => Math.abs(q.d) - Math.abs(p.d));
+  return { dScore:(last.score ?? 0) - (first.score ?? 0), moved };
+}
 function closeReadCard(compact){
   const r = CRD.d; const box = h("div",{class:"card", id:"closeReadCard"}, h("h2",null, "Closing read", h("span",{class:"hint", style:{fontWeight:400, marginLeft:"8px"}}, "3:50 · which way the bell leans, graded")));
   if (rhAvailable()){ box.append(h("p",{class:"hint",style:{margin:0}}, "Not inside Claude's preview — the closing read comes from the feed.")); return box; }
@@ -1520,6 +1529,12 @@ function closeReadCard(compact){
     h("span",{class:"num", style:{color:"var(--muted)"}}, `score ${r.score > 0 ? "+" : ""}${r.score} · ${r.label} ET · ${r.date}${today ? "" : " (last session)"}`));
   box.append(head);
   if (r.outcome) box.append(h("p",{style:{margin:"0 0 6px", color: r.outcome.hit ? "var(--pos)" : r.outcome.hit === false ? "var(--neg)" : "var(--muted)"}}, `Resolved: SPY ${r.spy?.px} → ${r.outcome.close} (${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}%) into the close — ${r.outcome.hit ? "right call" : r.outcome.hit === false ? "wrong call" : "balanced, not judged"}.`));
+  if (r.label !== "15:50"){ // the 3:50 read beside the final one when the call changed between them
+    const first = (CRD.hist?.reads || []).find(x => x.date === r.date && x.label === "15:50"); const sh = closeReadShift(first, r);
+    if (sh){ const sideCol = s => s === "BUY" ? "var(--pos)" : s === "SELL" ? "var(--neg)" : "var(--muted)"; const sideTxt = s => s === "BALANCED" ? "Balanced" : s === "BUY" ? "Buy-side" : "Sell-side";
+      const cell = (x, dim) => h("div",{style:{padding:"5px 8px",border:"1px solid var(--rule)",borderRadius:"6px",opacity: dim ? .72 : 1, minWidth:0}}, h("div",{class:"hint",style:{marginBottom:"2px"}}, `${x.label} ET${dim ? " · first read" : " · final"}`), h("div",{class:"num",style:{fontWeight:700, color:sideCol(x.side), whiteSpace:"nowrap"}}, `${sideTxt(x.side)} · ${x.grade} (${x.score > 0 ? "+" : ""}${x.score})`));
+      box.append(h("div",{style:{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"8px",alignItems:"center",margin:"0 0 6px"}}, cell(first, true), h("span",{class:"hint"}, "→"), cell(r, false)));
+      box.append(h("p",{class:"hint",style:{margin:"0 0 8px"}}, sh.moved.length ? `The call changed between the reads — ${sh.moved.map(m => `${m.name} ${m.from > 0 ? "+" : ""}${m.from} → ${m.to > 0 ? "+" : ""}${m.to}`).join(" · ")}.` : `The call changed between the reads (score ${sh.dScore > 0 ? "+" : ""}${sh.dScore}) without any one factor moving much.`)); } }
   box.append(h("p",{style:{margin:"0 0 8px"}}, r.text));
   if (!compact){ const f = r.factors; const row = (k, v, sc) => h("div",{style:{display:"grid",gridTemplateColumns:"110px 1fr 54px",gap:"8px",padding:"3px 0",borderBottom:"1px solid var(--rule)",fontSize:"12.5px"}}, h("b",null,k), h("span",{class:"num"},v), h("span",{class:"num", style:{textAlign:"right", color: sc > 15 ? "var(--pos)" : sc < -15 ? "var(--neg)" : "var(--muted)"}}, sc == null ? "—" : (sc > 0 ? "+" : "") + sc));
     const grid = h("div",{style:{margin:"4px 0 8px"}});

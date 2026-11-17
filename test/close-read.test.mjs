@@ -93,3 +93,22 @@ test("anomalies: dividend-capture deep-ITM calls are not a surge — the premium
   assert.equal(directionalPremium(days["2026-10-01"].DIV), 2.5e6); assert.equal(directionalPremium(days["2026-10-01"].XOM), 19e6); assert.equal(directionalPremium([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1e6, 2e6, null, 5e6, 5e6]), 0);
   const b = baselines({ days }, "2026-11-11"); assert.equal(b.DIV.median, 2.5e6); assert.equal(b.XOM.median, 19e6);
 });
+
+test("app: closeReadShift puts the 3:50 read beside the 3:58 only when the call changed, naming the factors that moved", async () => {
+  const fs = await import("node:fs"); const vm = await import("node:vm");
+  const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const i = js.indexOf("function closeReadShift("); assert.ok(i >= 0, "closeReadShift lives in app.html"); let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } }
+  const ctx = { Math }; vm.createContext(ctx); // values come back from the vm realm, so compare copies, not prototypes
+  vm.runInContext(js.slice(i, j + 1) + "\nthis.closeReadShift = closeReadShift;", ctx);
+  const read = (label, side, grade, score, f) => ({ date: "2026-11-16", label, side, grade, score, factors: { flow: { score: f[0] }, market: { score: f[1] }, index: { score: f[2] }, breadth: { score: f[3] }, pace: { x: 1 } } });
+  const first = read("15:50", "BUY", "B", 42, [38, 40, 12, 20]);
+  assert.equal(ctx.closeReadShift(first, read("15:58", "BUY", "B", 39, [36, 41, 10, 18])), null, "same side and grade → nothing to show");
+  assert.equal(ctx.closeReadShift(null, first), null); assert.equal(ctx.closeReadShift(first, first), null, "a read beside itself is not a shift");
+  assert.equal(ctx.closeReadShift({ ...first, date: "2026-11-13" }, read("15:58", "SELL", "C", -20, [0, 0, 0, 0])), null, "reads from different sessions never pair");
+  const sh = ctx.closeReadShift(first, read("15:58", "BALANCED", "D", 5, [1, 52, -59, 10]));
+  assert.ok(sh, "side changed → shown"); assert.equal(sh.dScore, -37);
+  assert.deepEqual(Array.from(sh.moved, m => m.k), ["index", "flow", "market", "breadth"], "biggest mover first; every factor that moved 5+ points is listed");
+  assert.deepEqual({ ...sh.moved[0] }, { k: "index", name: "Indexes", from: 12, to: -59, d: -71 });
+  const sh2 = ctx.closeReadShift(first, read("15:58", "BUY", "C", 30, [38, 40, 12, 20])); assert.ok(sh2, "grade changed → shown"); assert.equal(sh2.moved.length, 0, "no factor moved 5 points");
+  assert.ok(ctx.closeReadShift(first, { ...read("15:58", "SELL", "B", -40, [0, 0, 0, 0]), factors: {} }), "missing factors still pair without throwing");
+});

@@ -116,7 +116,7 @@ Switching vendors changes nothing in the terminal. If a vendor renames a field, 
 ## The closing read (3:50 PM) and suspicious flow
 Two more things the feed computes from data it already has, both graded, both tested (`test/close-read.test.mjs`).
 
-**The closing read** — `scripts/close-read.mjs`. At 3:50 PM ET (a final pass at 3:58) the feed grades which way the close leans and writes `close-read.json`; the app notifies (browser + Discord when the alert rule is on), shows the card at the top of the Flow tab and on the Macro tab, and Ava has it in her context and a `closing_read` tool. It is a *proxy* for the market-on-close imbalance — the exchanges' imbalance feeds cost money and this does not — built from five things the feed measures itself:
+**The closing read** — `scripts/close-read.mjs`. At 3:50 PM ET (a final pass at 3:58) the feed grades which way the close leans and writes `close-read.json`; the app notifies (browser + Discord when the alert rule is on), shows the card at the top of the Flow tab and on the Macro tab (when the 3:58 call differs from the 3:50 one, both sit side by side with the factors that moved between them), and Ava has it in her context and a `closing_read` tool. It is a *proxy* for the market-on-close imbalance — the exchanges' imbalance feeds cost money and this does not — built from five things the feed measures itself:
 
 | factor | weight | what it measures |
 |---|---|---|
