@@ -30,12 +30,31 @@ most one small improvement from the backlog when everything is clean. Each run a
 - Lab: ten-year history for the rest of the chain list once the data-branch size is settled (see docs/LAB.md milestone 3).
 - Lab: tag/project field on journal entries and a filter chip row.
 - Lab: a "compare to buy-and-hold of the same names" line in the KPI header.
-- Closing read: show the 3:50 and 3:58 reads side by side on the card when they differ.
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
 
 ## Entries
+
+### 2026-11-17 — scheduled run 5
+- Checked: 55 tests and smoke green before changes. Feed loop in progress on `adae753` (run 44007143054, overnight cadence, cycle 100, index.json
+  1 min old, fast 77/77 with 0 fails, sweep 5055/5055, 0 429s; `fail` carries `b:ROKU` again plus two tier-B 429s — the overnight pace, transient).
+  close-read.json is Monday's 15:58 read (v2, $34.86B core total, $90.2B market, outcome resolved at 16:03: SPY +0.1%, balanced/not judged).
+  anomalies.json dated 2026-11-16 (3 A / 29 B / 8 C, no symbol more than twice). hist 77/77, oldest 5.3 days (weekly refresh due ~11-18). macro
+  (EFFR 3.88% on 11-13, yields 4/4, BLS Oct, `yoy13` 4.08 from 2025-09) ok. breadth `day: 2026-11-16` with 70 points 09:34–16:05 — the Monday
+  session reset works. scan 330 rows (core 77 + tier B 150 + Monday's extras). levels-history: the 11-16 row has 15 columns (cDeep/pDeep) for
+  331 symbols and the `cols` header now lists 15 names — both items deferred from 11-14/11-16 are verified.
+- Found: nothing broken. Took the backlog item "3:50 and 3:58 side by side": close-reads.json already holds both reads of a session.
+- Improved: new `closeReadShift(first, last)` in app.html pairs the day's 15:50 read with the 15:58 when side or grade changed and lists each
+  scored factor (core flow, whole market, indexes, breadth) that moved 5+ points, biggest first; the card shows the two reads as small cells with
+  an arrow and a one-line "what moved" under them. Same call → nothing extra. New test in test/close-read.test.mjs (reads the function out of
+  app.html through vm; the vm-realm arrays need `Array.from`/spread before deepEqual). App v53 (KN_VERSION, sw.js CACHE, index.html); README
+  closing-read paragraph updated. Commit f25ec2a. Rendered the card headlessly with a synthetic 3:50 B(+42) → 3:58 D(+5) pair to check the layout.
+- State: 56 tests green, smoke clean; feed code unchanged, so the loop was left running; preview artifact republished (version 24).
+- Note for future runs: the clone sits on a detached HEAD after `git pull --ff-only origin main`, so `git push origin main` pushes the stale local
+  branch and is rejected — `git branch -f main HEAD && git checkout main` first, then push.
+- Not verified: github.io (unreachable from here); the side-by-side block needs a session where the 3:58 call differs from the 3:50 one to be seen
+  live — covered by the unit test and the headless render only.
 
 ### 2026-11-16 — scheduled run 4
 - Checked: 54 tests and smoke green before changes. Feed loop in progress on `b97aa15` (run 43795445951, overnight cadence, cycle 95, index.json
