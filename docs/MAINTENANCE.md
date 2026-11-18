@@ -35,6 +35,26 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-18 — scheduled run 6
+- Checked: 56 tests and smoke green before changes. Feed loop in progress on `da29dd6` (run 44210647051, overnight cadence, cycle 193, index.json
+  under a minute old, fast 77/77 with 0 fails, sweep 5059/5059, 0 429s; `fail` carries only `b:ROKU`, the usual tier-B miss). close-read.json is
+  Tuesday's 15:58 read (v2, $34.88B core total, $88.9B market, BALANCED grade D +9, outcome resolved at 16:03: SPY +0.18%); close-reads.json holds
+  both 11-17 reads (15:50 D −1 and 15:58 D +9 — same call, so the 11-17 side-by-side block correctly stays hidden). anomalies.json dated 2026-11-17
+  (2 A / 30 B / 8 C, BAC three times at most). hist 77/77, oldest 6.3 days — the weekly refresh (`maxAgeDays` 7, 40 per cycle) is due during
+  11-18; check tomorrow that the oldest age fell. macro (EFFR 3.88% on 11-16, yields 4/4, BLS Oct, `yoy13` 4.08) ok. breadth `day: 2026-11-17`,
+  66 points 09:34–16:00. scan 332 rows (core 77 + tier B 150 + extras); levels-history 24 session days, the 11-17 row has 15 columns for 374 symbols.
+- Found: nothing broken. Took the backlog item "compare to buy-and-hold of the same names".
+- Improved: `universeCurve()` / `curveSummary()` in scripts/lab.mjs — an equal slice of the capital in every name the strategy traded, bought at its
+  first close in range (a slice sits in cash until its name prints), held to the end; `backtest()` returns `names` on the strategy's calendar and
+  `metrics.names {totalReturn, cagr, maxDD, n}`. The KPI header's Total-return cell shows "SPY +6% · the 2 names held +4%", the split-chart note
+  and a new "vs holding the same names" statistics line carry the CAGR and drawdown, and Ava's summary gets `sameNamesBuyAndHold`. New test in
+  test/lab.test.mjs (pair that doubles/halves, a late name in cash, a name without bars left out of the split, the engine's curve equal to the
+  helper's). App v54 (KN_VERSION, sw.js CACHE, index.html); README and docs/LAB.md test counts updated. Commit c8c89b2. Rendered the results card
+  headlessly with synthetic bars: the new text appears, no page errors.
+- State: 57 tests green, smoke clean; feed code unchanged, loop left running; preview artifact republished (version 25).
+- Not verified: github.io (unreachable from here); the names line on a real ten-year run needs the browser with the data branch — covered by the unit
+  test and the headless render only; the hist weekly refresh has not run yet tonight.
+
 ### 2026-11-17 — scheduled run 5
 - Checked: 55 tests and smoke green before changes. Feed loop in progress on `adae753` (run 44007143054, overnight cadence, cycle 100, index.json
   1 min old, fast 77/77 with 0 fails, sweep 5055/5055, 0 429s; `fail` carries `b:ROKU` again plus two tier-B 429s — the overnight pace, transient).
