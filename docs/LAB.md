@@ -20,7 +20,7 @@ build directive asked for — what exists, how it is wired, what it can claim, w
 | Fundamentals / SEC | **partial** | insider filings only; no financial statements |
 | Macro | **working** | BLS, NY Fed, Treasury readings + verified release calendar; FRED optional with a key |
 | Trading / execution | **never** | by design |
-| Tests | **working** | 50 node tests + a headless-browser smoke run |
+| Tests | **working** | 57 node tests + a headless-browser smoke run |
 
 Integration map: `scripts/lab.mjs` (engine, ESM, no imports) → inlined into `app.html` by `scripts/inline-lab.mjs` as `window.KNLab`
 (the test suite fails if the inline copy is stale) → used by the Lab tab (`viewLab`, `labBuilder`, `labResults`, `labJournalView`)

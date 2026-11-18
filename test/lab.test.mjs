@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { sma, ema, rsi, atr, zscore, rollingMax, wilson, twoProportionZ, tTest, bootstrapCI, monteCarloDrawdown, kelly, multipleTesting, makeFeatures, evalRule, backtest, metrics, maxDrawdown, conditionalStudy, walkForward, sensitivity, applyParams, gridCombos, describeSpec, validate, normalizeSpec, TEMPLATES, mulberry32, FEATURE_NAMES } from "../scripts/lab.mjs";
+import { sma, ema, rsi, atr, zscore, rollingMax, wilson, twoProportionZ, tTest, bootstrapCI, monteCarloDrawdown, kelly, multipleTesting, makeFeatures, evalRule, backtest, metrics, maxDrawdown, conditionalStudy, walkForward, sensitivity, applyParams, gridCombos, describeSpec, validate, normalizeSpec, TEMPLATES, mulberry32, FEATURE_NAMES, universeCurve, curveSummary } from "../scripts/lab.mjs";
 
 const DAY = 86400e3; const T0 = Date.UTC(2018, 0, 2, 14, 30);
 // trading-day stamps (skip weekends) so the calendar logic sees real gaps
@@ -57,6 +57,20 @@ test("metrics: a known curve gives the known return, drawdown and trade stats; S
   const m = metrics(eq, trades); assert.ok(Math.abs(m.totalReturn - 33.1) < 1e-6); assert.equal(m.maxDD, -10); assert.equal(m.winRate, 50); assert.equal(m.profitFactor, 3); assert.equal(m.expectancyPct, 5); assert.equal(m.avgWinPct, 15); assert.equal(m.avgLossPct, -5); assert.equal(m.maxConsecLosses, 1); assert.equal(m.trades, 4);
   const flat = ts.map((t, i) => [t, 100 * 1.001 ** i]); assert.equal(metrics(flat, []).sharpe, 0, "constant returns have no variance → Sharpe reported as 0, not Infinity");
   assert.deepEqual(kelly(60, 10, -5), { full: 40, half: 20, payoff: 2 }); // p − q/b = 0.6 − 0.4/2
+});
+
+test("same-names buy-and-hold: an equal slice in every name traded, bought at its first close in range, a late name sits in cash until it prints, and the strategy result carries it", () => {
+  // A doubles, B halves: equal-weight buy-and-hold of the pair ends flat; a lone name that starts three days late holds its slice in cash until then
+  const A = scripted([100, 120, 150, 180, 200], 0.1), B = scripted([50, 40, 30, 25, 25], 0.1); const days = A.map(b => new Date(b[0]).toISOString().slice(0, 10));
+  const pair = universeCurve({ A, B }, ["A", "B"], days, 100000); assert.equal(pair.length, 5); assert.equal(pair[0][1], 100000); assert.equal(pair.at(-1)[1], 50000 * 2 + 50000 * 0.5, "A ×2, B ×0.5 → the pair ends at 125,000");
+  assert.equal(pair[1][1], 50000 * 1.2 + 50000 * 0.8, "day 2: A +20%, B −20%");
+  const late = universeCurve({ A, C: A.slice(3) }, ["A", "C"], days, 100000); assert.equal(late[2][1], 50000 * 1.5 + 50000, "C has no bar yet → its half stays in cash"); assert.ok(Math.abs(late.at(-1)[1] - (50000 * 2 + 50000 * 200 / 180)) < 0.01, "C bought at 180, held to 200 (curve rounds to cents)");
+  assert.equal(universeCurve({ A }, ["Z"], days, 1000), null, "no data for any name → nothing, not a flat line"); assert.equal(universeCurve({ A, Z: [] }, ["A", "Z"], days, 1000).at(-1)[1], 2000, "a name without bars is left out of the split");
+  const sm = curveSummary(pair); assert.equal(sm.totalReturn, 25); assert.equal(sm.maxDD, 0, "the pair never fell below its start"); assert.ok(sm.cagr > 25, "five days to +25% is a huge annualized rate");
+  // through the engine: the result carries the curve on the same calendar and the metric with the count of names traded
+  const r = backtest({ universe: ["A", "B", "Q"], entry: { all: [{ f: "close", op: ">", v: 0 }] }, exit: { time: { bars: 2 } }, sizing: { type: "equal", pct: 40 }, benchmark: "A" }, { A: walk(300, { seed: 7 }), B: walk(300, { seed: 8 }) });
+  assert.equal(r.names.length, r.equity.length); assert.deepEqual(r.missing, ["Q"]); assert.equal(r.metrics.names.n, 2, "Q had no data and is not counted"); assert.equal(typeof r.metrics.names.totalReturn, "number"); assert.ok(r.metrics.names.maxDD <= 0);
+  const half = universeCurve({ A: walk(300, { seed: 7 }), B: walk(300, { seed: 8 }) }, ["A", "B"], r.equity.map(([t]) => new Date(t).toISOString().slice(0, 10)), 100000); assert.deepEqual(r.names, half, "the engine's curve is the same equal-weight hold");
 });
 
 test("statistics: Wilson, two-proportion z, t-test, bootstrap and Monte Carlo are deterministic and honest about small samples", () => {

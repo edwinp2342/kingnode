@@ -29,7 +29,6 @@ most one small improvement from the backlog when everything is clean. Each run a
 ## Backlog (pick at most one per clean night)
 - Lab: ten-year history for the rest of the chain list once the data-branch size is settled (see docs/LAB.md milestone 3).
 - Lab: tag/project field on journal entries and a filter chip row.
-- Lab: a "compare to buy-and-hold of the same names" line in the KPI header.
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
