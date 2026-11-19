@@ -28,12 +28,32 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Backlog (pick at most one per clean night)
 - Lab: ten-year history for the rest of the chain list once the data-branch size is settled (see docs/LAB.md milestone 3).
-- Lab: tag/project field on journal entries and a filter chip row.
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
 
 ## Entries
+
+### 2026-11-19 — scheduled run 7
+- Checked: 57 tests and smoke green before changes. Feed loop in progress on `a634fdf` (run 44455316566, overnight cadence, cycle 54, index.json
+  0.3 min old, fast 77/77 with 0 fails, sweep 5058/5058, 0 429s; `fail` carries only `b:ROKU`). close-read.json is Wednesday's 15:58 read (v2,
+  $29.80B core total, $92.9B market, BUY grade C +40, outcome resolved at 16:03: SPY −0.15%, wrong call); close-reads.json holds both 11-18 reads
+  (15:50 BALANCED D −7 → 15:58 BUY C +40) — the first live session where the call changed, so the 3:50/3:58 side-by-side block from 11-17 is now
+  exercised on real data: `closeReadShift` on the real pair lists Breadth −20→+18, Indexes +9→+46, Whole market −12→+22, Core flow −3→+30 (dScore +47).
+  anomalies.json dated 2026-11-18 (4 A / 29 B / 7 C, no symbol more than twice). hist 77/77, oldest 0.28 days — the weekly refresh ran on 11-18 as
+  expected. macro (EFFR 3.88% on 11-17, yields 4/4 with 10y 5.07 vs prev 5.10, BLS Oct, `yoy13` 4.08) ok. breadth `day: 2026-11-18`, 70 points
+  09:34–16:08. scan 316 rows (core 77 + tier B 150 + extras); levels-history 25 session days, the 11-18 row has 15 columns for 367 symbols.
+- Found: nothing broken. Took the backlog item "tag/project field on journal entries and a filter chip row".
+- Improved: `labParseTags()` (lower-case, spaces → hyphens, `#` stripped, deduped, at most 8 tags of 24 chars), `labTagCounts()` (chip row order:
+  most used first) and `labJournalFilter()` (tag and free text together; the text search reads tags too) in app.html. The save card has a tag input
+  with a datalist of the tags in use; the journal list a chip row ("All · n", each tag with its count, click to toggle), tags as badges under each
+  title (click one to filter) and an Add/Edit tags button on the entry card. Ava's `lab_journal` takes `tag` and lists the tags in use; `lab_save`
+  takes `tags`. Entries saved before tags existed keep working untagged. New test in test/lab.test.mjs. App v55 (KN_VERSION, sw.js CACHE,
+  index.html); README and docs/LAB.md updated (milestone 2 "tags/projects" marked done). Commit cd435d4. Drove the Lab → Research journal view
+  headlessly with three seeded entries: chip row, toggle, badge click, search-over-tags and the entry card all behave, no page errors.
+- State: 58 tests green, smoke clean; feed code unchanged, loop left running; preview artifact republished (version 26).
+- Not verified: github.io (unreachable from here); the datalist suggestions and the prompt()-based tag editor were exercised only through the
+  headless DOM, not by hand.
 
 ### 2026-11-18 — scheduled run 6
 - Checked: 56 tests and smoke green before changes. Feed loop in progress on `da29dd6` (run 44210647051, overnight cadence, cycle 193, index.json
