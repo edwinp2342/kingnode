@@ -115,3 +115,19 @@ test("every template normalizes, describes itself and runs on synthetic data wit
 test("the engine inlined into app.html is the current module (run `node scripts/inline-lab.mjs` after editing scripts/lab.mjs)", async () => {
   const { inlineBlock } = await import("../scripts/inline-lab.mjs"); const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const block = inlineBlock(); assert.ok(html.includes(block), "app.html's Lab engine block is stale or missing");
 });
+
+test("app: journal tags — labParseTags normalises, labTagCounts ranks the chip row, labJournalFilter narrows by tag and text", async () => {
+  const vm = await import("node:vm"); const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const fn = name => { const i = js.indexOf(`function ${name}(`); assert.ok(i >= 0, `${name} lives in app.html`); let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } } return js.slice(i, j + 1); };
+  const ctx = { Map, String }; vm.createContext(ctx); vm.runInContext(["labParseTags", "labTagCounts", "labJournalFilter"].map(fn).join("\n") + "\nthis.p = labParseTags; this.c = labTagCounts; this.f = labJournalFilter;", ctx);
+  assert.deepEqual(Array.from(ctx.p("Mean reversion, #SPY, idea,, spy ;  Q4 Idea\n")), ["mean-reversion", "spy", "idea", "q4-idea"], "lower-case, spaces → hyphens, # stripped, duplicates and blanks dropped");
+  assert.deepEqual(Array.from(ctx.p(null)), []); assert.deepEqual(Array.from(ctx.p("  ,, ##, --- ")), [], "nothing usable → no tags");
+  assert.equal(ctx.p("a".repeat(40))[0].length, 24, "a tag is cut at 24 characters"); assert.equal(ctx.p(Array.from({ length: 12 }, (_, i) => "t" + i).join(",")).length, 8, "at most eight tags");
+  assert.deepEqual(Array.from(ctx.p("semis/ai, v2.0, c++")), ["semis/ai", "v2.0", "c++"], "slashes, dots and plus signs survive");
+  const j = [{ id: "a", title: "RSI dip", note: "buy the dip", tags: ["mean-reversion", "spy"], spec: { universe: ["SPY"] } }, { id: "b", title: "Breakout", tags: ["momentum", "spy"], spec: { universe: ["NVDA"] } }, { id: "c", title: "Old study", spec: { universe: ["QQQ"] } }, { id: "d", title: "Semis", tags: ["momentum"], result: { description: "20-day high on AMD" } }];
+  assert.deepEqual(Array.from(ctx.c(j), x => Array.from(x)), [["momentum", 2], ["spy", 2], ["mean-reversion", 1]], "most used first, ties alphabetical; an entry without tags counts nowhere");
+  assert.deepEqual(Array.from(ctx.c([])), []);
+  const ids = (...a) => Array.from(ctx.f(...a), e => e.id);
+  assert.deepEqual(ids(j, "", ""), ["a", "b", "c", "d"], "no filter → everything, order kept"); assert.deepEqual(ids(j, "", "spy"), ["a", "b"]); assert.deepEqual(ids(j, "nvda", "spy"), ["b"], "tag and text narrow together");
+  assert.deepEqual(ids(j, "momentum", ""), ["b", "d"], "the text search reads tags too"); assert.deepEqual(ids(j, "amd", ""), ["d"], "…and the result description"); assert.deepEqual(ids(j, "", "nothing"), []); assert.deepEqual(ids(j, "QQQ", ""), ["c"], "entries saved before tags existed still match on their tickers");
+});

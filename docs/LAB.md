@@ -20,7 +20,7 @@ build directive asked for — what exists, how it is wired, what it can claim, w
 | Fundamentals / SEC | **partial** | insider filings only; no financial statements |
 | Macro | **working** | BLS, NY Fed, Treasury readings + verified release calendar; FRED optional with a key |
 | Trading / execution | **never** | by design |
-| Tests | **working** | 57 node tests + a headless-browser smoke run |
+| Tests | **working** | 58 node tests + a headless-browser smoke run |
 
 Integration map: `scripts/lab.mjs` (engine, ESM, no imports) → inlined into `app.html` by `scripts/inline-lab.mjs` as `window.KNLab`
 (the test suite fails if the inline copy is stale) → used by the Lab tab (`viewLab`, `labBuilder`, `labResults`, `labJournalView`)
@@ -51,7 +51,8 @@ before-stop share with median days to each, excursions), pooled across symbols.
 span, data notes, exposure — each marked ok / note / warn, repeated verbatim to Ava.
 
 **Research journal** (this browser, included in backups): title, question, note, the spec, market context at save time, metrics,
-sampled equity curves, validation, walk-forward, sensitivity, Monte Carlo; search; side-by-side comparison; **rerun on today's
+sampled equity curves, validation, walk-forward, sensitivity, Monte Carlo; tags (project, theme or ticker — a chip row filters by them,
+Ava's `lab_journal` takes a `tag`); search; side-by-side comparison; **rerun on today's
 data** with the trades since you saved it; export/import JSON; CSV of trades.
 
 **Ava.** Builds specs from plain English with the condition grammar, runs them, reads the journal, saves with consent, and is
@@ -87,7 +88,7 @@ made; the benchmark table above is what can be verified today.
 | Milestone | Scope | Acceptance |
 |---|---|---|
 | **1 — Research foundation** (done, v51) | history job, engine, Lab tab, journal, Ava tools, tests | 50 tests green; a real question runs end to end on feed data and is saved |
-| 2 — Journal depth | tags/projects, notebook-style notes with embedded results, Ava retrieving "my NVDA thesis from last month" across entries, export to PDF | search by tag; Ava answers a journal question with citations to entries |
+| 2 — Journal depth | tags/projects (done, v55), notebook-style notes with embedded results, Ava retrieving "my NVDA thesis from last month" across entries, export to PDF | search by tag; Ava answers a journal question with citations to entries |
 | 3 — Wider data | ten-year history for every optionable name in weekly batches (≈ 800 MB on the data branch — needs a size decision), FRED series as features (rates, CPI) once a key is set, breadth history as a feature | a macro-conditioned study runs ("momentum when CPI > 4%") |
 | 4 — Positioning-conditioned research | levels history ≥ 6 months → the put-wall template and regime filters have a sample; closing-read grades and anomaly grades as features | ≥ 100 events in a positioning study |
 | 5 — Options research | historical options data is the gate: ORATS/Polygon options history ($200–300/month) or a cheaper end-of-day source; then vertical/straddle backtests with real prices, never derived from stock moves | an options backtest cites its data source and spread assumptions |
