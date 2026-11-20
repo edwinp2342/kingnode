@@ -31,8 +31,38 @@ most one small improvement from the backlog when everything is clean. Each run a
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
+- Feed: `chainAt` in index.json resets to 0 when a run starts inside a chain outage — seed it from scan.json's `at` at startup so the app's
+  "last good chain update" never has to fall back to a file it may not have loaded (small; needs a test around snapshot.mjs's startup).
+- Proposal (needs Edwin): if Cboe's 403 (2026-11-19 →) persists, decide between a Tradier sandbox key (free, delayed, greeks) or Polygon in the repo's
+  Actions secrets — the workflow is wired for either via `DATA_PROVIDER`; no code change. Not something a nightly run should pick.
 
 ## Entries
+
+### 2026-11-20 — scheduled run 8
+- Checked: 58 tests and smoke green before changes. Feed loop in progress on `6b9ea6e` (run 44656036363, overnight cadence, cycle 162, index.json
+  1.8 min old, fast 77/77 with 0 fails, sweep 5060/5060, 0 429s, symbols 11402/5060 optionable). close-read.json is Thursday's 15:58 read (v2, $42.00B
+  core total, $98.2B market, SELL grade C −36, outcome resolved 16:03: SPY −0.05%, hit); close-reads.json holds both 11-19 reads (15:50 SELL C −38 →
+  15:58 SELL C −36, same call) and the record is 0/2 on grade C. anomalies.json dated 2026-11-19 (9 A / 31 B, XLP three times at most). hist 77/77,
+  oldest 1.28 days. macro (EFFR 3.88% on 11-18, yields 4/4 with 10y 5.052 vs prev 5.066, BLS Oct, `yoy13` 4.08) ok. breadth `day: 2026-11-19`, 70
+  points. scan 337 rows; levels-history 26 session days, the 11-19 row has 15 columns for 356 symbols.
+- Found: **every option-chain request has failed with `http 403` since 2026-11-19 17:21 ET** (run 44607570032 cycle 85 onward: the whole core batch
+  `c:*:http 403`, every tier-B dozen `cb:*:http 403`; `chains 0` every cycle since). Quotes, bars, the market sweep (www.cboe.com symbol directory
+  still answers), breadth and macro are unaffected, so the loop looks healthy while scan.json (22:21 UTC), the per-symbol chains, levels-history,
+  anomalies and the closing read's gamma factor are frozen at Thursday's close. index.json's `chainAt` reads 0 because the current run started
+  inside the outage. Cause not determinable from here: cdn.cboe.com is unreachable from this sandbox (proxy 403), so whether Cboe is refusing
+  GitHub's runner IPs or the feed's user agent is unverified. Pushed a notification to Edwin.
+- Fixed (app): `chainOutage(feed, lastChainAt)` reads index.json's `fail` list — ten or more chain misses in one cycle sharing one error, or most of
+  the core batch — and `renderFeedBanner()` shows an "Option chains blocked" banner (what was refused, how many of how many, the last good chain
+  write from scan.json's `at`, which parts of the screen are frozen and which are live) with "Switch provider" (docs/MARKET-DATA.md) and
+  "Open Actions" links; the usual handful of misses (b:ROKU, a 429 or two, the rate-limit marker) stays silent. New test/feed-banner.test.mjs.
+  Rendered headlessly with tonight's real index.json: banner text and links correct, hidden again with only `b:ROKU` in the list, no page errors.
+- Fixed (workflow): data.yml passes `DATA_PROVIDER` / `TRADIER_ENV` (repo variables) and `TRADIER_TOKEN` / `POLYGON_KEY` (secrets) to
+  snapshot.mjs, so the chain vendor can be switched without a code change; unset means cboe, exactly as before. docs/MARKET-DATA.md explains the
+  switch; README's index.json line mentions the new banner; docs/LAB.md test count 59. App v56 (KN_VERSION, sw.js CACHE, index.html). Commit 3fe6c46.
+- State: 59 tests green, smoke clean; scripts/*.mjs unchanged, so the loop was left running (the workflow-file change applies at the next handoff);
+  preview artifact republished (version 27).
+- Not verified: github.io (unreachable from here); whether the 403 clears on its own, and the banner on the live site during Friday's session.
+  Backlog item skipped in favour of the outage work.
 
 ### 2026-11-19 — scheduled run 7
 - Checked: 57 tests and smoke green before changes. Feed loop in progress on `a634fdf` (run 44455316566, overnight cadence, cycle 54, index.json
