@@ -10,6 +10,12 @@ Kingnode runs in two shapes. Both use the same app (`app.html`); they differ in 
 | Sessions | pre · regular · after hours · overnight (24-hour price, sampled every minute) | The provider's stream (Alpaca and Polygon carry pre/regular/post; overnight comes from the feed's 24-hour sample) |
 | Options chains | Cboe, 15-minute delayed | Same, or Tradier/Polygon real-time with `DATA_PROVIDER` |
 
+**Switching the feed's chain vendor.** The GitHub Actions feed reads the chains from Cboe's free delayed endpoint by default. When Cboe refuses the
+runner (it answered `http 403` to every chain from 2026-11-19 17:21 ET; the app then shows an "Option chains blocked" banner while quotes and bars keep
+moving), set the repository variable `DATA_PROVIDER` to `tradier` or `polygon` (Settings → Secrets and variables → Actions → Variables) and add the
+matching secret (`TRADIER_TOKEN` — `TRADIER_ENV=prod` as a variable for a real-time key, sandbox otherwise — or `POLYGON_KEY`). The next feed run picks
+it up; no code change. Unset means Cboe, exactly as before.
+
 The architecture of the streaming tier, as built:
 
 ```

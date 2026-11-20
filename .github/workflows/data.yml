@@ -45,4 +45,10 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           FEED_REF: ${{ github.ref_name }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}   # optional: feed watchdog alerts (add the secret in repo settings)
+          # optional: another chain vendor when Cboe refuses us (2026-11-19: 403 on every chain for a day). Repo variable DATA_PROVIDER=tradier|polygon
+          # (Settings → Secrets and variables → Actions → Variables) plus the matching secret; unset = cboe, exactly as before.
+          DATA_PROVIDER: ${{ vars.DATA_PROVIDER }}
+          TRADIER_TOKEN: ${{ secrets.TRADIER_TOKEN }}
+          TRADIER_ENV: ${{ vars.TRADIER_ENV }}
+          POLYGON_KEY: ${{ secrets.POLYGON_KEY }}
         run: node scripts/snapshot.mjs

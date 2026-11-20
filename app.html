@@ -681,7 +681,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v55 beta";
+const KN_VERSION = "v56 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -849,12 +849,32 @@ let feedTimer = null;
 async function loadFeedStatus(){ const j = await snapshotJson("index.json", 6); if (j) S.feed = j; renderFeedBanner(); renderStatus(); clearTimeout(feedTimer); feedTimer = setTimeout(loadFeedStatus, 60000); }
 function feedLastWrite(){ return Math.max(S.feed?.at || 0, S.feedBeat || 0); }
 function feedStale(){ const f = S.feed; if (!f) return false; return isStale(feedLastWrite(), 6); } // the live tape bucket is the heartbeat; index.json alone rides the 5-minute CDN cache
+// The loop is alive but the chains are not: index.json's `fail` list carries one entry per chain miss in the last cycle ("c:SPY:http 403" core,
+// "cb:XLP:http 403" tier B). A few misses are normal (a tier-B name without a Cboe chain, a 429 or two at the overnight pace); ten or more in one
+// cycle sharing the same error — or most of the core batch — is the vendor refusing us (2026-11-19: Cboe answered 403 to every chain for a day),
+// and the walls, scan and flow quietly freeze while quotes and bars keep moving. `lastChainAt` is the newest chain write the app knows of
+// (scan.json's `at`); the loop's own `chainAt` resets to 0 when a run starts inside the outage.
+function chainOutage(feed, lastChainAt = 0){
+  const fails = (feed?.fail || []).map(String).filter(f => /^cb?:[^:]+:/.test(f) && !/rate-limited/.test(f));
+  if (!fails.length) return null;
+  const byErr = {}; for (const f of fails){ const e = f.slice(f.indexOf(":", f.indexOf(":") + 1) + 1); byErr[e] = (byErr[e] || 0) + 1; }
+  const [error, n] = Object.entries(byErr).sort((a, b) => b[1] - a[1])[0];
+  const core = fails.filter(f => f.startsWith("c:")).length, tierB = fails.length - core;
+  if (n < 10 && core < 20) return null;
+  return { error, n, core, tierB, since: Math.max(feed.chainAt || 0, lastChainAt || 0) || null };
+}
 function renderFeedBanner(){
   let b = document.getElementById("feedBanner"); if (!b){ b = h("div",{id:"feedBanner",class:"notice",style:{margin:"0 14px 8px",borderColor:"var(--gold)",color:"var(--gold)",display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}}); document.getElementById("tvChart")?.before(b); }
-  const f = S.feed;
-  if (!f || !feedStale()){ b.hidden = true; return; }
-  b.replaceChildren(h("span",{style:{flex:1,minWidth:"240px"}}, `Feed stale — the data loop last wrote ${ageLabel(feedLastWrite())} (${whenLabel(feedLastWrite())}, ${f.phase||"?"} phase, cycle ${f.cycle}). Everything below is from that moment, not now.`),
-    h("button",{class:"btn small gold", onclick:restartFeed}, "Restart feed"), h("a",{class:"btn small", href:"https://github.com/edwinp2342/kingnode/actions/workflows/data.yml", target:"_blank", rel:"noopener"}, "Open Actions"));
+  const f = S.feed; const actions = h("a",{class:"btn small", href:"https://github.com/edwinp2342/kingnode/actions/workflows/data.yml", target:"_blank", rel:"noopener"}, "Open Actions");
+  if (!f){ b.hidden = true; return; }
+  if (feedStale()){
+    b.replaceChildren(h("span",{style:{flex:1,minWidth:"240px"}}, `Feed stale — the data loop last wrote ${ageLabel(feedLastWrite())} (${whenLabel(feedLastWrite())}, ${f.phase||"?"} phase, cycle ${f.cycle}). Everything below is from that moment, not now.`),
+      h("button",{class:"btn small gold", onclick:restartFeed}, "Restart feed"), actions);
+    b.hidden = false; return; }
+  const o = S.demo ? null : chainOutage(f, SCAN.at);
+  if (!o){ b.hidden = true; return; }
+  b.replaceChildren(h("span",{style:{flex:1,minWidth:"240px"}}, `Option chains blocked — the chain vendor answered "${o.error}" to ${o.n} of ${o.core + o.tierB} chain requests in the feed's last cycle (${f.phase||"?"} phase, cycle ${f.cycle})${o.since ? `; the last good chain update was ${ageLabel(o.since)} (${whenLabel(o.since)})` : ""}. Walls, flip, expected move, the scan and suspicious flow are from that moment; quotes, bars, breadth and the market sweep are current.`),
+    h("a",{class:"btn small", href:"https://github.com/edwinp2342/kingnode/blob/main/docs/MARKET-DATA.md", target:"_blank", rel:"noopener", title:"DATA_PROVIDER=tradier or polygon with a key in the repo's Actions secrets switches the feed's chains to another vendor"}, "Switch provider"), actions);
   b.hidden = false;
 }
 // read-only check of the token in the settings form: can it see the repo's workflows? (a fine-grained token with Actions: write can)
