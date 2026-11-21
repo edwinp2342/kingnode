@@ -31,8 +31,6 @@ most one small improvement from the backlog when everything is clean. Each run a
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
-- Feed: `chainAt` in index.json resets to 0 when a run starts inside a chain outage — seed it from scan.json's `at` at startup so the app's
-  "last good chain update" never has to fall back to a file it may not have loaded (small; needs a test around snapshot.mjs's startup).
 - Proposal (needs Edwin): if Cboe's 403 (2026-11-19 →) persists, decide between a Tradier sandbox key (free, delayed, greeks) or Polygon in the repo's
   Actions secrets — the workflow is wired for either via `DATA_PROVIDER`; no code change. Not something a nightly run should pick.
 

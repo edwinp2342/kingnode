@@ -346,3 +346,16 @@ test("feed: the scan row splits each side's premium into all and deep-ITM (|delt
   assert.ok(Math.abs(p.pPrem - (5280 * 10.425 + 2000 * 1.1) * 100) < 1); assert.ok(Math.abs(p.pDeep - 5280 * 10.425 * 100) < 1);
   assert.equal(p.contracts.length, 4); assert.deepEqual(p.contracts.map(c => c.deep), [true, false, true, false]); assert.equal(p.contracts[1].side, "A"); assert.equal(p.contracts[2].side, "M");
 });
+test("feed: a restart seeds the scan rows under 26 hours old and inherits scan.json's last write as chainAt, so a run started inside a chain outage never publishes chainAt 0", () => {
+  const src = fs.readFileSync(new URL("../scripts/snapshot.mjs", import.meta.url), "utf8");
+  const grabF = name => { const i = src.indexOf(`function ${name}`); let j = src.indexOf("{", i), d = 0; for (; j < src.length; j++) { if (src[j] === "{") d++; else if (src[j] === "}") { d--; if (!d) break; } } return src.slice(i, j + 1); };
+  const seedFromScan = new Function(grabF("seedFromScan") + "; return seedFromScan;")();
+  const now = Date.parse("2026-11-21T05:00:00Z"), lastWrite = Date.parse("2026-11-19T22:21:50Z"); // the 11-19 → outage: the branch's scan.json is 31 hours old
+  const prev = { at: lastWrite, rows: { SPX: { spot: 7175, at: lastWrite }, XLP: { spot: 80, at: now - 3600e3 }, BAD: null } };
+  const s = seedFromScan(prev, now);
+  assert.deepEqual(Object.keys(s.rows), ["XLP"], "rows older than 26 hours are dropped, a null row is skipped"); assert.equal(s.chainAt, lastWrite, "the last good chain write survives the restart even when its rows do not");
+  assert.deepEqual(seedFromScan(null, now), { rows: {}, chainAt: 0 }); assert.deepEqual(seedFromScan({}, now), { rows: {}, chainAt: 0 });
+  assert.equal(seedFromScan({ at: now + 60e3, rows: {} }, now).chainAt, 0, "a write stamped in the future is not trusted");
+  // the normal case: a handoff a few minutes after the last write keeps every row and the timestamp
+  const h = seedFromScan({ at: now - 5 * 60e3, rows: { SPY: { spot: 687, at: now - 5 * 60e3 } } }, now); assert.equal(Object.keys(h.rows).length, 1); assert.equal(h.chainAt, now - 5 * 60e3);
+});

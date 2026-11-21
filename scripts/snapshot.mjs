@@ -111,7 +111,10 @@ async function shortVolume() {
 }
 
 let chainAt = 0, barsAt = 0, dispatched = false; const universe = {}; const lastBars = {}; const scan = {};
-try { const prev = JSON.parse(fs.readFileSync("data/scan.json", "utf8")); const cutoff = Date.now() - 26 * 3600e3; for (const [sym, r] of Object.entries(prev.rows || {})) if (r && r.at > cutoff) scan[sym] = r; console.log(`scan seeded with ${Object.keys(scan).length} rows from the branch`); } catch {} // a restart keeps yesterday's tier-B rows until they roll around again
+// a restart keeps yesterday's tier-B rows until they roll around again, and inherits the last good chain write as chainAt — a run that starts
+// inside a chain outage would otherwise publish chainAt 0 and the app would have to fall back to scan.json's `at` for "last good chain update"
+export function seedFromScan(prev, now = Date.now()) { const rows = {}; const cutoff = now - 26 * 3600e3; for (const [sym, r] of Object.entries(prev?.rows || {})) if (r && r.at > cutoff) rows[sym] = r; const at = prev?.at > 0 && prev.at <= now ? prev.at : 0; return { rows, chainAt: at }; }
+try { const seed = seedFromScan(JSON.parse(fs.readFileSync("data/scan.json", "utf8"))); Object.assign(scan, seed.rows); chainAt = seed.chainAt; console.log(`scan seeded with ${Object.keys(scan).length} rows from the branch${chainAt ? `, last chain write ${new Date(chainAt).toISOString()}` : ""}`); } catch {}
 // The close of the session before the latest one, from the 5-minute bars: Yahoo's chartPreviousClose on a 5-day request is the close
 // before the whole window (five sessions back), which made the movers list show multi-day moves as "today".
 const ET_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
