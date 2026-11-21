@@ -36,6 +36,34 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-21 — scheduled run 9
+- Checked: 59 tests and smoke green before changes. Feed loop in progress on `209bbdc` (run 44868655176, overnight cadence, index.json 9.5 min old
+  at 00:10 ET — the run had just handed off, cycle 0; fast 77/77 with 0 fails, sweep 5056/5056, 0 429s, symbols 11404/5056 optionable, macro
+  hourly ok). close-read.json is Friday's 15:58 read (v2, $66.68B core total, $185.8B market, SELL grade A −100, outcome resolved 16:03: SPY
+  +0.04% from the 15:58 print, miss; the 15:50 read B −42 was a hit, SPY −0.86% into the close; record 1/3 on 15:50 calls). Friday was a −3.96%
+  SPY session (715.84 → 687.52, breadth 434/2265) so the numbers are plausible. anomalies.json still dated 2026-11-19 (frozen by the outage).
+  hist 77/77, oldest 2.3 days. macro (EFFR 3.88% on 11-19, yields 4/4 with 10y 4.912 vs prev 5.052, BLS Oct, `yoy13` 4.08) ok. breadth
+  `day: 2026-11-20`, 69 points. scan 337 rows, `at` 11-19 22:21 UTC (frozen); levels-history 26 session days, no 11-20 row (no chains).
+- Found: **the Cboe `http 403` chain outage is in its third calendar day** — 89 of 90 entries in `fail` are `c:*:http 403` / `cb:*:http 403`;
+  Friday's whole session ran without a single chain, so scan, anomalies, levels-history and the per-symbol chains are all Thursday's.
+  Consequence spotted in the closing read: Friday's 15:58 read applied Thursday's SPX 7176 book (flip, walls, "negative gamma, trends into the
+  bell") to a tape 4% lower, and the negative-gamma 1.1× multiplier amplified the score. Notification pushed (provider decision needed).
+- Fixed (feed + app): `computeCloseRead()` treats the SPX scan row as stale when its `at` is before today's open, or when its spot sits more than
+  1.5% from the live SPX quote; the gamma factor is then `{stale, at, spot, reason}`, no multiplier applies, the read text says "SPX gamma not
+  read (… — chains stale)" and the card's Gamma row shows "not read · chain read before today's open (chain from Nov 19, 5:23 PM ET)". New test
+  in test/close-read.test.mjs (same book stamped today vs the previous afternoon: regime vs stale, the 1.1× difference in score, the spot-drift
+  rule, an unstamped book near the tape still counts). README's factor table updated. App v57 (KN_VERSION, sw.js CACHE, index.html).
+  Rendered the card headlessly with Friday's real close-read.json and a stale gamma: text and row correct, no page errors. Commit e2d0e8f.
+- Improved (backlog): `seedFromScan(prev, now)` in snapshot.mjs — a restart keeps the rows under 26 hours old as before and now inherits
+  scan.json's `at` as `chainAt` (a future-stamped write is ignored), so a run started inside a chain outage no longer publishes `chainAt: 0`.
+  New test in test/math.test.mjs; an offline `--once` cycle on fake-net logged the inherited timestamp. Commit 3dd2ec5. Backlog item removed.
+- State: 61 tests green, smoke clean; feed redispatched (run 44870254725, loop_minutes 330) after cancelling 44868655176; verified on its first
+  cycle: index.json `chainAt` reads 2026-11-19 22:21:50Z (inherited), fast 77/77, sweep 5057/5057, the 403s continue. Preview artifact
+  republished (version 28). docs/LAB.md test count 61.
+- Not verified: github.io (unreachable from here); whether the 403 is IP- or user-agent-based (cdn.cboe.com is unreachable from this sandbox);
+  the stale-gamma text on a live read needs the next session with chains still blocked, or none if the outage clears. The provider switch
+  (Tradier sandbox / Polygon via `DATA_PROVIDER`) still needs a key in the repo's Actions secrets — see the proposal above.
+
 ### 2026-11-20 — scheduled run 8
 - Checked: 58 tests and smoke green before changes. Feed loop in progress on `6b9ea6e` (run 44656036363, overnight cadence, cycle 162, index.json
   1.8 min old, fast 77/77 with 0 fails, sweep 5060/5060, 0 429s, symbols 11402/5060 optionable). close-read.json is Thursday's 15:58 read (v2, $42.00B
