@@ -681,7 +681,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v56 beta";
+const KN_VERSION = "v57 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -1569,7 +1569,8 @@ function closeReadCard(compact){
     if (f.index) grid.append(row("Indexes", ["SPY","QQQ","IWM"].filter(k => f.index[k]).map(k => `${k} ${f.index[k].vsVwapPct >= 0 ? "+" : ""}${f.index[k].vsVwapPct}% vs VWAP`).join(" · "), f.index.score));
     if (f.breadth) grid.append(row("Breadth", `up-dollar ${f.breadth.upDollarPct}%${f.breadth.upDollarPctAgo != null ? ` (was ${f.breadth.upDollarPctAgo}%)` : ""} · ${f.breadth.adv} up / ${f.breadth.dec} down`, f.breadth.score));
     if (f.pace) grid.append(row("Volume pace", `${f.pace.x}× the day's per-minute average, last 10 min (×${f.pace.mult})`, null));
-    if (f.gamma) grid.append(row("Gamma", `SPX ${f.gamma.regime}${f.gamma.pinned ? ` · pinned near ${f.gamma.nearestWall}` : ""} · flip ${f.gamma.flip ?? "—"} · walls ${f.gamma.pw ?? "—"} / ${f.gamma.cw ?? "—"}`, null));
+    if (f.gamma?.stale) grid.append(row("Gamma", `not read · ${f.gamma.reason}${f.gamma.at ? ` (chain from ${new Date(f.gamma.at).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})} ET)` : ""}`, null));
+    else if (f.gamma) grid.append(row("Gamma", `SPX ${f.gamma.regime}${f.gamma.pinned ? ` · pinned near ${f.gamma.nearestWall}` : ""} · flip ${f.gamma.flip ?? "—"} · walls ${f.gamma.pw ?? "—"} / ${f.gamma.cw ?? "—"}`, null));
     box.append(grid);
     if (r.leaders?.length || r.laggards?.length) box.append(h("p",{class:"hint",style:{margin:"0 0 6px"}}, `Buying: ${r.leaders.map(x => `${x.sym} ${moneyS(x.net)}`).join(", ") || "—"} · Selling: ${r.laggards.map(x => `${x.sym} ${moneyS(x.net)}`).join(", ") || "—"}`));
     const rec = r.record || CRD.hist?.record; if (rec?.all?.n) box.append(h("p",{class:"hint",style:{margin:"0 0 6px"}}, `Record (3:50 calls, judged on SPY's move to the close): ${rec.all.hits}/${rec.all.n} right · ${Object.entries(rec.byGrade).map(([g, v]) => `${g}: ${v.hits}/${v.n}`).join(" · ")}`));

@@ -125,7 +125,7 @@ Two more things the feed computes from data it already has, both graded, both te
 | indexes | 0.20 | SPY, QQQ, IWM against their session VWAP and their move over the last 30 minutes |
 | breadth | 0.20 | up-dollar share of the whole market and how it changed over the last half hour, plus advancers vs decliners |
 | pace | multiplier | the median name's last-10-minute volume against the day's per-minute average: 0.85× (nothing happening) to 1.35× (the tape is loud) |
-| gamma | multiplier | SPX positive gamma within 0.35% of a wall damps the score (pinned); negative gamma lifts it (trends into the bell) |
+| gamma | multiplier | SPX positive gamma within 0.35% of a wall damps the score (pinned); negative gamma lifts it (trends into the bell). Only a chain read since today's open counts: during a chain outage the book is reported as stale and no multiplier applies |
 
 The weights renormalize over the factors that are present. The score runs −100…+100: **BUY** above +15, **SELL** below −15, **BALANCED** between; grade **A** at |score| ≥ 60, **B** ≥ 40, **C** ≥ 20, **D** below. After 4:03 PM the feed scores the 3:50 call against SPY's move from the 3:50 print to the official close (a move inside ±0.03% is flat; a BALANCED call is right on a flat close and otherwise not counted) and keeps a running record by grade in `close-reads.json`, which the card shows — the grades are only worth what that record says they are.
 

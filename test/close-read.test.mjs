@@ -47,6 +47,24 @@ test("a buy-side close grades BUY with the factors agreeing; a sell-side one SEL
   assert.equal(thin.factors.market, null); assert.equal(thin.factors.breadth, null); assert.ok(thin.score > 0);
 });
 
+test("a chain read before today's open (a chain outage) never sets the gamma factor or its multiplier; a same-day chain does", () => {
+  // a mild sell-side tape, so the score sits inside the clamp and the 1.1× negative-gamma multiplier is visible
+  const sell = { bars1m: { SPY: day(760, { lateDrift: -0.00005, lateVol: 1200 }), QQQ: day(690, { lateDrift: -0.00005, lateVol: 1200 }), IWM: day(280, { lateDrift: -0.00004, lateVol: 1200 }) }, quotes: {}, breadth: { series: [[at350 - 35 * 60e3, 1500, 1300, 50, 50], [at350 - 60e3, 1350, 1450, 48, 46]] }, sweeps: [{ at: at350 - 5 * 60e3, up: 4e9, dn: 6e9, net: -2e9, total: 10e9, vol: 1, n: 5000 }], label: "15:50" };
+  const book = { spot: 7500, flip: 7600, cw: 7700, pw: 7450, gex: -1e9 };
+  const fresh = computeCloseRead({ now: at350, et, ...sell, scan: { SPX: { ...book, at: T0 + 60e3 } } });
+  assert.equal(fresh.factors.gamma.regime, "negative"); assert.ok(!fresh.factors.gamma.stale); assert.match(fresh.text, /negative gamma/);
+  // the same book stamped the previous afternoon: reported stale, no 1.1× negative-gamma amplification
+  const stale = computeCloseRead({ now: at350, et, ...sell, scan: { SPX: { ...book, at: T0 - 18 * 3600e3 } } });
+  assert.equal(stale.factors.gamma.stale, true); assert.equal(stale.factors.gamma.at, T0 - 18 * 3600e3); assert.match(stale.factors.gamma.reason, /before today's open/);
+  assert.match(stale.text, /SPX gamma not read/); assert.ok(!/negative gamma/.test(stale.text));
+  assert.ok(fresh.score < 0 && fresh.score > -90, "inside the clamp: " + fresh.score); assert.ok(Math.abs(stale.score) < Math.abs(fresh.score), `no multiplier on a stale book: ${stale.score} vs ${fresh.score}`); assert.ok(Math.abs(fresh.score / stale.score - 1.1) < 0.03, `${fresh.score} / ${stale.score}`);
+  // an unstamped book whose spot sits far from the live SPX quote (the book is from another tape) is stale too; a close one is not
+  const drifted = computeCloseRead({ now: at350, et, ...sell, quotes: { SPX: { price: 7200 } }, scan: { SPX: book } });
+  assert.equal(drifted.factors.gamma.stale, true); assert.match(drifted.factors.gamma.reason, /1\.5%/);
+  const near = computeCloseRead({ now: at350, et, ...sell, quotes: { SPX: { price: 7490 } }, scan: { SPX: book } });
+  assert.equal(near.factors.gamma.regime, "negative");
+});
+
 test("anomalies: a premium surge, a fresh block at the ask, a one-sided day and a vol/OI outlier are flagged and graded; a normal name is not", () => {
   const days = {}; for (let i = 1; i <= 20; i++) { const d = `2026-10-${String(i).padStart(2, "0")}`; days[d] = { NVDA: [180, 0, 190, 170, 175, 1e9, 5, 0.5, 1e6, 8e5, 400e6, 350e6], ACME: [50, 0, 55, 45, 48, 1e7, 2, 0.4, 2e4, 1e4, 3e6, 2e6], SPY: [750, 0, 760, 740, 745, 1e9, 4, 0.15, 2e6, 2e6, 600e6, 700e6] }; }
   const scan = { rows: {

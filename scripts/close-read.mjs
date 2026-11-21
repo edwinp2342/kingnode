@@ -82,8 +82,13 @@ export function computeCloseRead({ now = Date.now(), et, bars1m = {}, quotes = {
   // 5. pace: last 10 minutes of core volume against the day's per-minute average
   let pace = null; { const mins = Math.max(1, (now - dayStart) / 60e3); const paces = []; for (const bars of Object.values(bars1m)) { let v10 = 0, vDay = 0; for (const b of bars || []) { if (b[0] < dayStart || !(b[5] > 0)) continue; vDay += b[5]; if (b[0] >= now - 10 * 60e3 && b[0] < now) v10 += b[5]; } if (vDay > 0) paces.push((v10 / 10) / (vDay / mins)); } if (paces.length) { paces.sort((a, b) => a - b); pace = paces[Math.floor(paces.length / 2)]; } } // the median name's pace: no single series can distort it
   const paceMult = pace == null ? 1 : clamp(1 + 0.25 * (pace - 1), 0.85, 1.35); // a heavy last ten minutes makes the lean more believable, a thin one less
-  // 6. gamma: SPX from the scan
-  let gamma = null, pinMult = 1; const spx = scan?.SPX; if (spx?.spot > 0) { const nearest = [spx.cw, spx.pw].filter(k => k > 0).map(k => ({ k, d: Math.abs(spx.spot - k) / spx.spot * 100 })).sort((a, b) => a.d - b.d)[0]; const positive = spx.flip > 0 ? spx.spot > spx.flip : (spx.gex || 0) > 0; const pinned = positive && nearest && nearest.d < 0.35; if (pinned) pinMult = 0.8; if (!positive) pinMult = 1.1;
+  // 6. gamma: SPX from the scan — only a chain read since today's open counts. During a chain outage scan.json keeps the last good book, and
+  // a day-old flip and walls applied to a market that has since moved (11-20: Thursday's SPX 7176 book under a 4% lower tape) would still have
+  // amplified the score; the factor is reported as stale instead, with no multiplier
+  let gamma = null, pinMult = 1; const spx = scan?.SPX; const spxPx = quotes.SPX?.price;
+  const spxStale = spx?.spot > 0 && ((spx.at > 0 && spx.at < dayStart) || (spxPx > 0 && Math.abs(spxPx / spx.spot - 1) > 0.015));
+  if (spxStale) gamma = { stale: true, at: spx.at || null, spot: spx.spot, reason: spx.at > 0 && spx.at < dayStart ? "chain read before today's open" : "chain spot more than 1.5% from the tape" };
+  else if (spx?.spot > 0) { const nearest = [spx.cw, spx.pw].filter(k => k > 0).map(k => ({ k, d: Math.abs(spx.spot - k) / spx.spot * 100 })).sort((a, b) => a.d - b.d)[0]; const positive = spx.flip > 0 ? spx.spot > spx.flip : (spx.gex || 0) > 0; const pinned = positive && nearest && nearest.d < 0.35; if (pinned) pinMult = 0.8; if (!positive) pinMult = 1.1;
     gamma = { regime: positive ? "positive" : "negative", flip: spx.flip, cw: spx.cw, pw: spx.pw, spot: spx.spot, nearestWall: nearest?.k ?? null, distPct: round(nearest?.d, 2), pinned: !!pinned }; }
   // composite: weights renormalized over the factors that exist
   const parts = [["flow", flowScore, 0.35], ["market", marketScore, 0.25], ["index", indexScore, 0.20], ["breadth", breadthScore, 0.20]].filter(p => p[1] != null); const wsum = parts.reduce((a, p) => a + p[2], 0) || 1;
@@ -108,7 +113,8 @@ export function closeReadText(r) {
   if (f.index?.SPY) { const s = f.index.SPY; bits.push(`SPY ${s.px} is ${s.vsVwapPct >= 0 ? "above" : "below"} VWAP (${s.vsVwapPct >= 0 ? "+" : ""}${s.vsVwapPct}%)${s.vs30Pct != null ? `, ${s.vs30Pct >= 0 ? "+" : ""}${s.vs30Pct}% in the last 30 min` : ""}.`); }
   if (f.breadth) bits.push(`Up-dollar share ${f.breadth.upDollarPct}%${f.breadth.upDollarPctAgo != null ? ` (${f.breadth.upDollarPctAgo}% half an hour ago)` : ""}, ${f.breadth.adv} up / ${f.breadth.dec} down.`);
   if (f.pace) bits.push(`Volume running ${f.pace.x}× the day's pace in the last 10 min${f.pace.x >= 1.5 ? " — a big auction footprint" : f.pace.x <= 0.7 ? " — thin" : ""}.`);
-  if (f.gamma) bits.push(`SPX ${f.gamma.regime} gamma${f.gamma.pinned ? `, pinned near ${f.gamma.nearestWall} (damps the move)` : f.gamma.regime === "negative" ? " (trends into the bell)" : ""}.`);
+  if (f.gamma?.stale) bits.push(`SPX gamma not read (${f.gamma.reason} — chains stale).`);
+  else if (f.gamma) bits.push(`SPX ${f.gamma.regime} gamma${f.gamma.pinned ? `, pinned near ${f.gamma.nearestWall} (damps the move)` : f.gamma.regime === "negative" ? " (trends into the bell)" : ""}.`);
   if (r.leaders?.length) bits.push(`Buying: ${r.leaders.map(x => x.sym).join(", ")}.`); if (r.laggards?.length) bits.push(`Selling: ${r.laggards.map(x => x.sym).join(", ")}.`);
   return bits.join(" ");
 }
