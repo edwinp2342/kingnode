@@ -36,6 +36,31 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-22 — scheduled run 10
+- Checked: 61 tests and smoke green before changes. Feed loop in progress on `552d45f` (run 44978894509, overnight cadence, cycle 12, closed phase,
+  index.json 2.7 min old at 00:10 ET; fast 77/77 with 0 fails, sweep 5057/5057, 0 429s, symbols 11404/5057 optionable, macro hourly ok; the
+  cancelled runs before it are the 5.5-hour handoffs). Sunday, so close-read.json is still Friday's 15:58 read (v2, $66.68B core total, $185.8B
+  market, SELL A −100, outcome resolved; no session since). anomalies.json still dated 2026-11-19 (9 A / 31 B, XLP three times at most — frozen).
+  hist 77/77, oldest 3.3 days. macro (EFFR 3.88% on 11-19, yields 4/4 with 10y 4.912 vs prev 5.052, BLS Oct, `yoy13` 4.08) ok. breadth
+  `day: 2026-11-20`, 69 points. scan 337 rows, `at` 11-19 22:21 UTC; index.json `chainAt` inherited from it (seedFromScan working).
+- Found: **the Cboe `http 403` chain outage continues** (89 of 89 chain requests refused this cycle, 54.8 hours since the last chain write);
+  no new information on the cause from here. Nothing else broken. While checking: the Suspicious flow card still said "today's tape against each
+  name's own 20-day baseline" over Thursday's items on a Sunday — only the small "Thu 5:21 PM" age label hinted otherwise, and Ava's `flow_alerts`
+  presented the same items without a warning.
+- Fixed (app): `anomalyStaleness(d, session)` compares anomalies.json's `date` with the session the live tape belongs to (`tapeSessionDate()`:
+  today once a trading day has opened, otherwise the last trading day; 20 minutes of grace after the open so the first chain refresh is not
+  called stale); when behind, the card header reads "the Thu, Nov 19 session's tape — no chain update since" (gold), the counts line carries the
+  session date, and `flow_alerts` gets `stale`, `session` and a warning. Friday's file over Friday's session stays "today's". New test in
+  test/feed-banner.test.mjs. Rendered the Flow tab headlessly with tonight's real anomalies.json (stale text) and the same file re-dated 11-20
+  (normal text); no page errors. App v58 (KN_VERSION, sw.js CACHE, index.html). Commit b84a3ff.
+- Docs (backlog item "keep README's feature list and test counts current"): README's test line now describes `npm test` (62 node tests, what
+  CI actually runs — the math tests plus a syntax check) instead of "math, 14 cases"; the Suspicious flow paragraph mentions the session notice;
+  docs/LAB.md test count 62. Same commit.
+- State: 62 tests green, smoke clean; feed code unchanged, loop left running; preview artifact republished (version 29).
+- Not verified: github.io (unreachable from here); the stale notice on the live site Monday if chains are still blocked (expected: "the Thu, Nov 19
+  session's tape", 4 days behind, from 9:50 ET); whether the 403 is IP- or user-agent-based (cdn.cboe.com unreachable from this sandbox). The
+  provider switch still needs a decision and a key in the repo's Actions secrets — see the proposal above.
+
 ### 2026-11-21 — scheduled run 9
 - Checked: 59 tests and smoke green before changes. Feed loop in progress on `209bbdc` (run 44868655176, overnight cadence, index.json 9.5 min old
   at 00:10 ET — the run had just handed off, cycle 0; fast 77/77 with 0 fails, sweep 5056/5056, 0 429s, symbols 11404/5056 optionable, macro
