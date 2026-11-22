@@ -32,3 +32,22 @@ test("app: chainOutage fires on a cycle of chains all refused with one error, st
   // no chain write anywhere yet → since is null rather than 0, so the banner leaves the "last good update" clause out
   assert.equal(chainOutage({ fail: tierB, chainAt: 0 }, 0).since, null);
 });
+
+test("app: anomalyStaleness says when suspicious flow is a past session's tape, stays quiet while the file is current or the open is minutes old", () => {
+  const anomalyStaleness = appFn("anomalyStaleness");
+  // Sunday 2026-11-22 during the Cboe outage: anomalies.json still dated Thursday, the tape's session is Friday
+  const st = anomalyStaleness({ date: "2026-11-19", at: 1795126910323 }, "2026-11-20");
+  assert.ok(st, "a file one session behind is stale");
+  assert.equal(st.date, "2026-11-19"); assert.equal(st.session, "2026-11-20"); assert.equal(st.days, 1);
+  assert.match(st.title, /Thu, Nov 19 session's tape/); assert.match(st.note, /one day before the current session/);
+  // Monday with chains still blocked: two sessions behind, said in days
+  assert.match(anomalyStaleness({ date: "2026-11-19" }, { date: "2026-11-23", openMin: 45 }).note, /4 days before/);
+  // the ordinary weekend: Friday's file over Friday's session is current; so is today's file during the day
+  assert.equal(anomalyStaleness({ date: "2026-11-20" }, "2026-11-20"), null);
+  assert.equal(anomalyStaleness({ date: "2026-11-23" }, { date: "2026-11-23", openMin: 120 }), null);
+  // 9:35 on a trading day: yesterday's file is simply the last pass — the first chain refresh rewrites it within minutes
+  assert.equal(anomalyStaleness({ date: "2026-11-20" }, { date: "2026-11-23", openMin: 5 }), null);
+  assert.ok(anomalyStaleness({ date: "2026-11-20" }, { date: "2026-11-23", openMin: 25 }), "twenty minutes in with no pass is stale");
+  // nothing to compare → nothing said
+  assert.equal(anomalyStaleness(null, "2026-11-20"), null); assert.equal(anomalyStaleness({ date: "2026-11-20" }, null), null); assert.equal(anomalyStaleness({ date: "today" }, "2026-11-20"), null);
+});

@@ -681,7 +681,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v57 beta";
+const KN_VERSION = "v58 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -1579,6 +1579,20 @@ function closeReadCard(compact){
   return box;
 }
 // ----- suspicious flow -----
+// Suspicious flow is keyed by session (anomalies.json `date`). When the chains stop updating — Cboe's 403 from 2026-11-19 — the file keeps
+// the last session it saw while the tape moves on, and the card would still read "today's tape". `session` is the session the live tape
+// belongs to (today once a trading day has opened, otherwise the last trading day); null while the file is current, else what to say instead.
+function anomalyStaleness(d, session){
+  if (typeof session === "string") session = { date: session, openMin: Infinity };
+  if (!d?.date || !session?.date || !/^\d{4}-\d{2}-\d{2}$/.test(d.date) || d.date >= session.date || session.openMin < 20) return null; /* the first chain refresh after the open rewrites the file within minutes — not stale yet */
+  session = session.date;
+  const day = new Date(d.date + "T12:00:00Z"); const lbl = day.toLocaleDateString("en-US",{ weekday:"short", month:"short", day:"numeric", timeZone:"UTC" });
+  const days = Math.round((new Date(session + "T12:00:00Z") - day) / 864e5);
+  return { date: d.date, session, days, title: `the ${lbl} session's tape — no chain update since`, note: `Suspicious flow is from the ${lbl} session, ${days === 1 ? "one day" : days + " days"} before the current session — the chains have not updated since, so nothing in it is today's` };
+}
+// the ET session the live tape belongs to: today once a trading day's regular session has opened (openMin: minutes since 9:30), otherwise the
+// last trading day (openMin Infinity) — the feed's sessionDate
+function tapeSessionDate(t = Date.now()){ const ymd = marketDate(t); const et = new Date(new Date(t).toLocaleString("en-US",{timeZone:"America/New_York"})); const dow = et.getDay(); const min = et.getHours()*60 + et.getMinutes(); return dow !== 0 && dow !== 6 && !NYSE_HOLIDAYS.has(ymd) && min >= 570 ? { date: ymd, openMin: min - 570 } : { date: prevTradingDay(ymd), openMin: Infinity }; }
 async function loadAnomalies(force){
   if (ANOM.loading || (!force && Date.now() - ANOM.at < 90e3)) return ANOM.d; ANOM.loading = true;
   try { const first = !ANOM.at; const j = await snapshotJson("anomalies.json", 0); ANOM.at = Date.now(); if (!j?.items && first && S.tab === "flow") renderTabs(); if (j?.items){ const prevKeys = ANOM.lastKeys; ANOM.d = j; ANOM.lastKeys = new Set(j.items.map(x => x.key)); const firstLoad = !prevKeys.size; const fresh = j.items.filter(x => !prevKeys.has(x.key) && Date.now() - x.firstSeen < (firstLoad ? 10 : 45)*60e3); if (!firstLoad) ANOM.d.items.forEach(x => { if (!fresh.includes(x)) ANOM.seen.add(x.key); }); onNewAnomalies(fresh); if (S.tab === "flow") renderTabs(); } }
@@ -1593,12 +1607,12 @@ function onNewAnomalies(items){
   if (settingOn("avaFlowAuto") && avaRoute() && marketPhase() === "regular" && Date.now() - ANOM.updateAt > 30*60e3) avaFlowUpdate(true).catch(() => {});
 }
 function anomalyList(limit = 40, filter = "all"){
-  const d = ANOM.d; const box = h("div",{class:"card", id:"anomCard"}, h("h2",null, "Suspicious flow", h("span",{class:"hint", style:{fontWeight:400, marginLeft:"8px"}}, "today's tape against each name's own 20-day baseline")));
+  const d = ANOM.d; const st = d && !rhAvailable() ? anomalyStaleness(d, tapeSessionDate()) : null; const box = h("div",{class:"card", id:"anomCard"}, h("h2",null, "Suspicious flow", h("span",{class: st ? "hint warn" : "hint", style:{fontWeight:400, marginLeft:"8px"}}, st ? st.title : "today's tape against each name's own 20-day baseline")));
   if (rhAvailable()){ box.append(h("p",{class:"hint",style:{margin:0}}, "Not inside Claude's preview — the anomaly pass runs in the feed.")); return box; }
   if (!d){ box.append(h("p",{class:"hint",style:{margin:0}}, ANOM.at ? "Nothing from the feed yet — the pass runs with every chain refresh in market hours." : "Loading…")); return box; }
   const items = d.items.filter(x => filter === "all" ? true : filter === "idx" ? x.idx : filter === "names" ? !x.idx : filter === "new" ? Date.now() - x.firstSeen < 45*60e3 : x.kind === filter).slice(0, limit);
   const ctl = h("div",{class:"ctl", style:{marginBottom:"6px"}}, h("label",null, "Show", h("select",{onchange:e => { S.anomFilter = e.target.value; renderTabs(); }}, [["all","All"],["new","New (45 min)"],["idx","Indexes & ETFs"],["names","Single names"],["surge","Premium surges"],["block","Blocks"],["skew","One-sided"],["volOi","Vol / OI"]].map(([v,l]) => h("option",{value:v, selected:(S.anomFilter||"all")===v}, l)))),
-    h("span",{class:"hint"}, `${d.counts.A} A · ${d.counts.B} B · ${d.counts.C} C · ${Math.round(d.frac*100)}% of the session in · ${ageLabel(d.at)}`), avaRoute() ? h("button",{class:"btn small", style:{marginLeft:"auto"}, onclick:() => { if (document.getElementById("ediPanel")?.hidden !== false) document.getElementById("ediBtn")?.click(); avaFlowUpdate(false); }, title:"Ava writes a short brief on the flagged items"}, "Ava: flow update") : null);
+    h("span",{class: st ? "hint warn" : "hint"}, `${st ? st.date + " session · " : ""}${d.counts.A} A · ${d.counts.B} B · ${d.counts.C} C · ${Math.round(d.frac*100)}% of the session in · ${ageLabel(d.at)}`), avaRoute() ? h("button",{class:"btn small", style:{marginLeft:"auto"}, onclick:() => { if (document.getElementById("ediPanel")?.hidden !== false) document.getElementById("ediBtn")?.click(); avaFlowUpdate(false); }, title:"Ava writes a short brief on the flagged items"}, "Ava: flow update") : null);
   box.append(ctl);
   if (!items.length){ box.append(h("p",{class:"hint",style:{margin:0}}, "Nothing unusual on this filter.")); return box; }
   const kindWord = { surge:"surge", block:"block", skew:"one-sided", volOi:"vol/OI" };
@@ -1629,7 +1643,7 @@ function closeReadForAva(brief){ const r = CRD.d; if (rhAvailable()) return null
   return o; }
 function flowAlertsForAva({ limit = 12, filter = "all", grade = "all", sym = null } = {}){ const d = ANOM.d; if (rhAvailable()) return null; if (!d) return ANOM.at ? { none:true, note:"nothing from the anomaly pass yet — it runs with every chain refresh in market hours" } : null;
   const want = String(sym || "").toUpperCase(); const items = d.items.filter(x => want ? x.sym === want : true).filter(x => filter === "idx" ? x.idx : filter === "names" ? !x.idx : filter === "new" ? Date.now() - x.firstSeen < 45*60e3 : ["surge","block","skew","volOi"].includes(filter) ? x.kind === filter : true).filter(x => grade === "all" ? true : grade === "B" ? x.grade !== "C" : x.grade === grade).slice(0, Math.min(40, limit));
-  return { at: whenLabel(d.at), date:d.date, sessionIn: `${Math.round(d.frac*100)}%`, counts:d.counts, shown: items.length, items: items.map(x => `${x.grade} · ${x.kind}${x.aggr ? " " + (x.aggr === "A" ? "bought" : x.aggr === "B" ? "sold" : "mid") : ""} · ${x.text}${x.levels?.cw || x.levels?.pw ? ` · walls ${x.levels.pw ?? "—"}/${x.levels.cw ?? "—"}` : ""}${Date.now() - x.firstSeen < 45*60e3 ? " · NEW " + ageLabel(x.firstSeen) : " · first seen " + whenLabel(x.firstSeen)}`), note:"premium is derived from the 15-minute-delayed chain (last × volume) against the name's own 20-day daily median, paced for the time of day; grade A ≥75, B ≥55, C below; 'fresh' means volume above open interest; the aggressor side is the last print against the quote" }; }
+  const st = anomalyStaleness(d, tapeSessionDate()); return { at: whenLabel(d.at), date:d.date, ...(st ? { stale:true, session: st.session, warning: st.note } : {}), sessionIn: `${Math.round(d.frac*100)}%`, counts:d.counts, shown: items.length, items: items.map(x => `${x.grade} · ${x.kind}${x.aggr ? " " + (x.aggr === "A" ? "bought" : x.aggr === "B" ? "sold" : "mid") : ""} · ${x.text}${x.levels?.cw || x.levels?.pw ? ` · walls ${x.levels.pw ?? "—"}/${x.levels.cw ?? "—"}` : ""}${Date.now() - x.firstSeen < 45*60e3 ? " · NEW " + ageLabel(x.firstSeen) : " · first seen " + whenLabel(x.firstSeen)}`), note:"premium is derived from the 15-minute-delayed chain (last × volume) against the name's own 20-day daily median, paced for the time of day; grade A ≥75, B ≥55, C below; 'fresh' means volume above open interest; the aggressor side is the last print against the quote" }; }
 // ---------- The Lab: research on the feed's ten-year history, in this browser ----------
 // Strategies are specs (window.KNLab, the same engine the tests run); results are deterministic; everything saved goes to the research
 // journal in this browser (backups include it). Nothing here is a model's guess: the engine either computed it or says it could not.
