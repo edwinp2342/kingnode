@@ -33,8 +33,35 @@ most one small improvement from the backlog when everything is clean. Each run a
 - Docs: keep README's feature list and test counts current.
 - Proposal (needs Edwin): if Cboe's 403 (2026-11-19 →) persists, decide between a Tradier sandbox key (free, delayed, greeks) or Polygon in the repo's
   Actions secrets — the workflow is wired for either via `DATA_PROVIDER`; no code change. Not something a nightly run should pick.
+  First, one click: Actions → "source probe" → Run workflow (scripts/probe.mjs is set up for the question since c60017f). It fetches the SPY
+  chain from a runner with the feed's user agent, no user agent, curl's, a browser's, and a browser's with referer/origin headers, and writes
+  `probe/probe.json` on the `probe` branch. All 403 → the runner's IP range is blocked and only a provider switch helps; browser shape 200 →
+  the fix is the request headers in `api/_lib/data.js` (Edwin's call whether to send them — it is a block on non-browser clients).
+- Suspicious flow per-sector roll-up needs a symbol → sector map the repo does not have (only the halal universe carries sectors). Proposal:
+  the feed's weekly `symbols` pass could pull `sector` from Yahoo's quoteSummary (`assetProfile`) for the chain list and write `sectors.json`;
+  the card then sums premium by sector. Two nights' work (feed + app), not one.
 
 ## Entries
+
+### 2026-11-23 — scheduled run 11
+- Checked: 62 tests and smoke green before changes. Feed loop in progress on `aac813e` (run 45091046004, overnight cadence, cycle 198, index.json
+  1.2 min old at 00:12 ET; fast 77/77 with 0 fails, sweep 5057/5057, 0 429s, symbols 11404/5057 optionable, macro hourly ok; the cancelled runs
+  before it are the 5.5-hour handoffs). close-read.json still Friday's 15:58 read (v2, SELL A −100, outcome resolved; no session since).
+  anomalies.json still dated 2026-11-19 (9 A / 31 B, XLP three times at most — frozen). hist 77/77, oldest 4.3 days. macro (EFFR 3.88% on
+  11-19, yields 4/4 with 10y 4.912 vs prev 5.052, BLS Oct: CPI index 337.476, unemployment 4.1%, payrolls +165k; `yoy13` 4.08) ok. breadth
+  `day: 2026-11-20`, 69 points. scan 337 rows, `at` 11-19 22:21 UTC; index.json `chainAt` inherited from it.
+- Found: **the Cboe `http 403` chain outage is in its fourth calendar day** (78.8 hours since the last chain write; this overnight cycle's `fail`
+  list is the tier-B dozen `cb:*:http 403` plus `b:ROKU`). Monday's session will run without chains unless something changes. Nothing else broken.
+- Done: scripts/probe.mjs retargeted at the open question — the SPY chain URL fetched five ways (feed UA `Mozilla/5.0 (Kingnode)`, empty UA, curl,
+  browser UA, browser UA + referer/origin/sec-fetch headers), plus `_SPX`, the intraday chart, the symbol directory and Yahoo as controls; the
+  result records `server`/`cf-ray`/`x-cache`-style headers to name the WAF. Commit c60017f. **Not run:** dispatching a workflow (gh and the GitHub
+  tool alike) was refused by this session's permission layer tonight, so the probe is waiting for one click in Actions ("source probe" → Run
+  workflow); the backlog proposal above says how to read the result. The same refusal would have blocked a feed redispatch, so no feed-code
+  change was attempted (the loop's own 5.5-hour handoff picks up `main` anyway, next around 01:15 ET).
+- Backlog: the per-sector roll-up item now carries a concrete proposal (no sector map exists in the repo; the feed would have to fetch one).
+- State: 62 tests green, smoke clean; app.html unchanged (still v58), no preview republish; feed loop left running.
+- Not verified: github.io (unreachable from here); the probe result; in-progress job logs are not readable through the API, so chain counts
+  for this cycle come from index.json's `fail` list rather than the log.
 
 ### 2026-11-22 — scheduled run 10
 - Checked: 61 tests and smoke green before changes. Feed loop in progress on `552d45f` (run 44978894509, overnight cadence, cycle 12, closed phase,
