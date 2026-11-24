@@ -1,0 +1,206 @@
+{
+ "at": "2026-11-24T05:11:22.134Z",
+ "et": "11/24, 24:11:22",
+ "results": {
+  "cboeChainFeedUA": {
+   "status": 403,
+   "ms": 238,
+   "bytes": 4545,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+    "content-type": "text/html; charset=UTF-8",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e99cbda5ffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": null,
+    "x-served-by": null,
+    "via": null,
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta"
+  },
+  "cboeChainNoUA": {
+   "status": 403,
+   "ms": 27,
+   "bytes": 4545,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+    "content-type": "text/html; charset=UTF-8",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e99cfeb8ffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": null,
+    "x-served-by": null,
+    "via": null,
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta"
+  },
+  "cboeChainCurlUA": {
+   "status": 403,
+   "ms": 29,
+   "bytes": 4545,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+    "content-type": "text/html; charset=UTF-8",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e99d1f84ffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": null,
+    "x-served-by": null,
+    "via": null,
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta"
+  },
+  "cboeChainBrowserUA": {
+   "status": 403,
+   "ms": 25,
+   "bytes": 4545,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+    "content-type": "text/html; charset=UTF-8",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e99d485bffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": null,
+    "x-served-by": null,
+    "via": null,
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta"
+  },
+  "cboeChainBrowserHeaders": {
+   "status": 200,
+   "ms": 405,
+   "bytes": 5676802,
+   "headers": {
+    "access-control-allow-origin": "https://www.cboe.com",
+    "cache-control": "max-age=0, s-maxage=5, stale-while-revalidate=5",
+    "content-type": "application/json",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e99d791fffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": "Miss from cloudfront",
+    "x-served-by": null,
+    "via": "1.1 185e69fae2e25450e587a1fae1f63962.cloudfront.net (CloudFront)",
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "{\"timestamp\":\"2026-11-24 01:04:58\",\"data\":{\"options\":[{\"option\":\"B1SPY261127C00695000\",\"bid\":0,\"bid_size\":0,\"ask\":0,\"ask_size\":0,\"iv\":0,\"open_interest\":0,\"volume\":0,\"delta\":0.0081,\"gamma\":-0.0004,\"vega\":-0.0072,\"theta\":0.0346,\"rho\":0.0008,\"theo\":0.9171,\"change\":0,\"open\":0,\"high\":0,\"low\":0,\"tick\":\"no_change\",\"last_trade_price\":0,\"last_trade_time\":null,\"percent_change\":0,\"prev_day_close\":0.534999996423721},{\"option\":\"B1SPY261127P00695000\",\"bid\":0,\"bid_size\":0,\"ask\":0,\"ask_size\":0,\"iv\":0,\"open_interest\":0,\"volume\":0,\"delta\":-0.0081,\"gamma\":0.0004,\"vega\":0.0072,\"theta\":-0.0346,\"rho\":-0.001,\"theo\":"
+  },
+  "cboeChainSPXBrowserHeaders": {
+   "status": 200,
+   "ms": 1338,
+   "bytes": 14889763,
+   "headers": {
+    "access-control-allow-origin": "https://www.cboe.com",
+    "cache-control": "max-age=0, s-maxage=5, stale-while-revalidate=5",
+    "content-type": "application/json",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e99ffbfeffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": "Hit from cloudfront",
+    "x-served-by": null,
+    "via": "1.1 1fbbcee3d0a9a9f2dd5bf10778d22654.cloudfront.net (CloudFront)",
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "{\"timestamp\":\"2026-11-24 01:04:47\",\"data\":{\"options\":[{\"option\":\"SPX261218C00200000\",\"bid\":7033.9,\"bid_size\":5,\"ask\":7048.9,\"ask_size\":5,\"iv\":5.115,\"open_interest\":2612,\"volume\":5,\"delta\":0.9999,\"gamma\":0,\"vega\":0.0018,\"theta\":0,\"rho\":0.1503,\"theo\":7046.0065,\"change\":363.92,\"open\":6970.07,\"high\":7071.92,\"low\":6964.85,\"tick\":\"up\",\"last_trade_price\":7071.92,\"last_trade_time\":\"2026-11-23T10:28:32\",\"percent_change\":5.42516,\"prev_day_close\":6708},{\"option\":\"SPX261218P00200000\",\"bid\":0,\"bid_size\":0,\"ask\":0.05,\"ask_size\":2021,\"iv\":3.7488,\"open_interest\":16854,\"volume\":0,\"delta\":0,\"gamma\":0,\"vega\":0.0"
+  },
+  "cboeIntradayFeedUA": {
+   "status": 403,
+   "ms": 28,
+   "bytes": 4545,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0",
+    "content-type": "text/html; charset=UTF-8",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e9a859f6ffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": null,
+    "x-served-by": null,
+    "via": null,
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta"
+  },
+  "cboeIntradayBrowserHeaders": {
+   "status": 200,
+   "ms": 281,
+   "bytes": 98260,
+   "headers": {
+    "access-control-allow-origin": "https://www.cboe.com",
+    "cache-control": "max-age=0, s-maxage=5, stale-while-revalidate=5",
+    "content-type": "application/json",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e9a89b00ffae-MSP",
+    "cf-mitigated": null,
+    "x-cache": "Miss from cloudfront",
+    "x-served-by": null,
+    "via": "1.1 7e97d85a4b3d0a615c3f29474cdc72b0.cloudfront.net (CloudFront)",
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "{\"timestamp\":\"2026-11-23 21:14:24\",\"data\":[{\"datetime\":\"2026-11-23T09:31:00\",\"sequence_number\":49357662,\"price\":{\"open\":724.33,\"high\":724.81,\"low\":722.175,\"close\":722.3875},\"volume\":{\"stock_volume\":1661771,\"calls_volume\":81480,\"puts_volume\":42286,\"total_options_volume\":123766}},{\"datetime\":\"2026-11-23T09:32:00\",\"sequence_number\":49453527,\"price\":{\"open\":722.43,\"high\":723.38,\"low\":721.01,\"close\":721.34},\"volume\":{\"stock_volume\":695050,\"calls_volume\":59293,\"puts_volume\":31831,\"total_options_volume\":91124}},{\"datetime\":\"2026-11-23T09:33:00\",\"sequence_number\":49549393,\"price\":{\"open\":721.28,\"high\""
+  },
+  "cboeDirFeedUA": {
+   "status": 200,
+   "ms": 9470,
+   "bytes": 397632,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=5, s-maxage=30, stale-while-revalidate=30",
+    "content-type": "application/octet-stream",
+    "content-length": null,
+    "server": "cloudflare",
+    "cf-ray": "a5f5e9b70d72179d-MSP",
+    "cf-mitigated": null,
+    "x-cache": null,
+    "x-served-by": null,
+    "via": null,
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "Company Name, Stock Symbol, DPM Name, Post/Station, Global Trading Hours DPM\n\"-1x Short VIX Futures ETF\",\"SVIX\",\"Citadel Securities LLC\",\"9/1\",\"-\"\n\"1 800 FLOWERS COM INC CL A\",\"FLWS\",\"Belvedere Trading LLC\",\"8/1\",\"-\"\n\"10X GENOMICS INC CL A COM\",\"TXG\",\"Susquehanna Securities, LLC\",\"8/1\",\"-\"\n\"17 ED & TECHNOLOGY GROUP INC SPONSORED ADR\",\"YQ\",\"Belvedere Trading LLC\",\"8/1\",\"-\"\n\"1ST FINL BANCORP COM\",\"F"
+  },
+  "yahooSPY": {
+   "status": 200,
+   "ms": 274,
+   "bytes": 57650,
+   "headers": {
+    "access-control-allow-origin": null,
+    "cache-control": "public, max-age=10, stale-while-revalidate=20",
+    "content-type": "application/json;charset=utf-8",
+    "content-length": null,
+    "server": "ATS",
+    "cf-ray": null,
+    "cf-mitigated": null,
+    "x-cache": null,
+    "x-served-by": null,
+    "via": null,
+    "x-akamai-request-id": null,
+    "x-reference-error": null
+   },
+   "sample": "{\"metaKeys\":[\"currency\",\"symbol\",\"exchangeName\",\"fullExchangeName\",\"instrumentType\",\"firstTradeDate\",\"regularMarketTime\",\"hasPrePostMarketData\",\"gmtoffset\",\"timezone\",\"exchangeTimezoneName\",\"regularMarketPrice\",\"regularMarketChangePercent\",\"fulldayPrice\",\"fulldayChange\",\"fulldayChangePercent\",\"fiftyTwoWeekHigh\",\"fiftyTwoWeekLow\",\"regularMarketDayHigh\",\"regularMarketDayLow\",\"regularMarketVolume\",\"longName\",\"shortName\",\"chartPreviousClose\",\"previousClose\",\"scale\",\"priceHint\",\"currentTradingPeriod\",\"tradingPeriods\",\"dataGranularity\",\"range\",\"validRanges\"],\"ctp\":{\"pre\":{\"timezone\":\"EST\",\"start\":1795510800,\"end\":1795530600,\"gmtoffset\":-18000},\"regular\":{\"timezone\":\"EST\",\"start\":1795530600,\"end\":1795554000,\"gmtoffset\":-18000},\"post\":{\"timezone\":\"EST\",\"start\":1795554000,\"end\":1795568400,\"gmtoffset\":-18000}},\"tradingPeriodsKeys\":[\"pre\",\"post\",\"regular\"],\"nBars\":935,\"firstET\":\"11/23, 04:00:00\",\"lastET\":\"11/23, 19:59:55\",\"lastClose\":724.18,\"regularMarketPrice\":722.29,\"fulldayPrice\":724.42,\"fulldayChange\":34.61,\"fulldayChangePercent\":5.017,\"chartPreviousClose\":689.81,\"previousClose\":689.81,\"tradingPeriods\":{\"pre\":[[{\"timezone\":\"EST\",\"start\":1795424400,\"end\":1795444200,\"gmtoffset\":-18000}]],\"post\":[[{\"timezone\":\"EST\",\"start\":1795467600,\"end\":1795482000,\"gmtoffset\":-18000}]],\"regular\":[[{\"timezone\":\"EST\",\"start\":1795444200,\"end\":1795467600,\"gmtoffset\":-18000}]]},\"regularMarketTime\":\"11/23, 16:00:00\",\"hasPrePost\":true}"
+  }
+ }
+}
