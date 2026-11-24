@@ -31,17 +31,49 @@ most one small improvement from the backlog when everything is clean. Each run a
 - Suspicious flow: per-sector roll-up (which sectors are drawing the money today).
 - Macro tab: FRED series as Lab features once a FRED key is configured.
 - Docs: keep README's feature list and test counts current.
-- Proposal (needs Edwin): if Cboe's 403 (2026-11-19 →) persists, decide between a Tradier sandbox key (free, delayed, greeks) or Polygon in the repo's
-  Actions secrets — the workflow is wired for either via `DATA_PROVIDER`; no code change. Not something a nightly run should pick.
-  First, one click: Actions → "source probe" → Run workflow (scripts/probe.mjs is set up for the question since c60017f). It fetches the SPY
-  chain from a runner with the feed's user agent, no user agent, curl's, a browser's, and a browser's with referer/origin headers, and writes
-  `probe/probe.json` on the `probe` branch. All 403 → the runner's IP range is blocked and only a provider switch helps; browser shape 200 →
-  the fix is the request headers in `api/_lib/data.js` (Edwin's call whether to send them — it is a block on non-browser clients).
+- Proposal (needs Edwin): **the Cboe 403 is a request-shape block, answered by the probe on 2026-11-24** (run 45331499016, `probe/probe.json` on the
+  `probe` branch): the SPY chain returns 403 (a Cloudflare "Attention Required" page) for the feed's user agent, an empty one, curl's and a plain
+  browser UA alike, and 200 with the real 5.7 MB chain once the browser-shaped headers go with it (`accept: application/json`, `accept-language`,
+  `referer: https://www.cboe.com/`, `origin: https://www.cboe.com`, `sec-fetch-dest: empty`, `sec-fetch-mode: cors`, `sec-fetch-site: same-site`);
+  same for `_SPX` and the intraday chart; the symbol directory and Yahoo were never affected. So the runner's IP is fine and the fix is one fetch
+  line in `api/_lib/data.js` (the chain fetch, line 28) sending those headers — but it is a block on non-browser clients, so whether to send them is
+  Edwin's call, not a nightly run's. The alternative stays a provider switch via `DATA_PROVIDER` + a Tradier sandbox or Polygon key in the repo's
+  Actions secrets (docs/MARKET-DATA.md), no code change. A reply of "send the browser headers" or "switch to Tradier/Polygon" in the nightly
+  session, or a note here, settles it.
 - Suspicious flow per-sector roll-up needs a symbol → sector map the repo does not have (only the halal universe carries sectors). Proposal:
   the feed's weekly `symbols` pass could pull `sector` from Yahoo's quoteSummary (`assetProfile`) for the chain list and write `sectors.json`;
   the card then sums premium by sector. Two nights' work (feed + app), not one.
 
 ## Entries
+
+### 2026-11-24 — scheduled run 12
+- Checked: 62 tests and smoke green before changes. Feed loop in progress on `e85250f` (run 45323549839, overnight cadence, cycle 54, index.json
+  0.5 min old at 00:10 ET; fast 77/77 with 0 fails, sweep 5065/5065, 0 429s, symbols 11423/5065 optionable, macro hourly ok). Monday was a session:
+  close-read.json is the 15:58 read (v2, SELL C −27, −$6.27B on $43.28B core, −$20.28B market, outcome resolved 16:03 SPY +0.07%, miss; the 15:50
+  read was BUY C +27, also a miss — the call flipped between the reads, so the side-by-side block is live). anomalies.json still 2026-11-19 (frozen,
+  9 A / 31 B). hist 77/77, oldest 5.3 days. macro (EFFR 3.88% on 11-20, yields 4/4 with 10y 4.918 vs prev 4.912, BLS Oct, `yoy13` 4.08) ok. breadth
+  `day: 2026-11-23`, 67 points. scan 337 rows, `at` 11-19 (frozen); chainAt 102.8 h old, the `fail` list is the tier-B dozen `cb:*:http 403` + `b:ROKU`.
+- Found 1 (feed): **the closing read's verdict used a pre-auction price.** Friday's reads were resolved at 16:03 against 687.52, but SPY's official
+  close was 689.81 (Robinhood's settled close and Monday's `chartPreviousClose` agree) — Yahoo's price at 16:03 was still the last continuous trade on
+  an expiration Friday with a big MOC print. Monday's 722.31 vs 722.29 official shows the usual gap is a cent or two; Friday's 0.33% is the case that
+  matters. Verdicts did not flip this time (15:50 B still a hit at −0.53%, 15:58 A still a miss, now +0.37% instead of "flat").
+- Fixed: `settleCloseReads(hist, prevClose, prevSession)` in close-read.mjs and `prevTradingDay()` in market-clock.mjs — once the SPY quote's chart
+  is on a later session (the ET date of its `regT`), its `prev` is the settled close of the trading day before, and that day's reads are judged again,
+  once (`outcome.official`, `settledAt`; the first verdict kept as `outcome.provisional` when the close moved ≥ 1¢; a read the 16:03 pass never
+  resolved is judged there for the first time); the record is rebuilt and close-read.json carries it. `settleAgainstOfficialClose()` runs at the top of
+  `closingRead()` each cycle, one pass per chart session. The card's Resolved line now ends "Provisional — judged on the 4:03 PM price…", "Official
+  close." or "Official close 689.81; the 4:03 PM print was 687.52 (+0.04%)". Two new tests (the pure function on Friday's real numbers incl. the
+  Thanksgiving skip, and the app note through vm); headless render of the card with both texts, no page errors; an offline one-minute loop on
+  fake-net logged "closing read settled: 2026-11-20 × 2". README (closing-read paragraph, test count 64), docs/LAB.md. App v59 (KN_VERSION, sw.js
+  CACHE, index.html). Commit 68c00a3.
+- Found 2 (answered, decision pending): the source probe ran tonight (dispatch was allowed this time; run 45331499016) — the 403 is Cloudflare refusing
+  non-browser request shapes, not the runner's IP: browser UA alone 403, browser UA + referer/origin/sec-fetch headers 200 with real chain data. Notification
+  pushed with the two options; the Backlog proposal above carries the exact headers and the line to change. Not implemented on purpose (Edwin's call).
+- State: 64 tests green, smoke clean; feed redispatched (run 45332949048, loop_minutes 330) after cancelling 45323549839; verified on its first cycle:
+  close-reads.json shows Friday's two reads `official: true, close 689.81, provisional.close 687.52`, record unchanged 1/4. Preview artifact republished
+  (version 30).
+- Not verified: github.io (unreachable from here); the "Provisional" text on a live read before the next session's quote arrives (Tuesday's 4:03 PM
+  read will show it until Wednesday's premarket quote); whether the browser-shaped headers keep working past one request (the probe fetched each URL once).
 
 ### 2026-11-23 — scheduled run 11
 - Checked: 62 tests and smoke green before changes. Feed loop in progress on `aac813e` (run 45091046004, overnight cadence, cycle 198, index.json
