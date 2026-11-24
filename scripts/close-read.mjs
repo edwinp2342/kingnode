@@ -126,6 +126,25 @@ export function resolveCloseRead(read, closePx) {
   const hit = read.side === "BALANCED" ? (dir === "flat" ? true : null) : read.side === "BUY" ? dir === "up" : dir === "down";
   return { close: round(closePx), movePct: round(movePct, 3), dir, hit, resolvedAt: Date.now() };
 }
+// The official close arrives late: at 16:03 Yahoo's price can still be the last continuous trade while the closing auction's print lands
+// minutes later (2026-11-20, an expiration Friday: the reads were judged against 687.52, the settled close was 689.81, +0.33%). The next
+// session's chartPreviousClose is the settled close, so once the quote's chart has moved on to a later session (chartSession, the ET date of
+// its regularMarketTime) the reads of the trading day before it are judged again, once, against `prevClose`; the first verdict is kept
+// as `provisional` when the close differed (a read the 16:03 pass never resolved is judged here). Returns how many reads were settled;
+// the record is rebuilt when any were.
+export function settleCloseReads(hist, prevClose, prevSession, now = Date.now()) {
+  if (!hist?.reads?.length || !(prevClose > 0) || !prevSession) return 0;
+  let n = 0;
+  for (const r of hist.reads) {
+    if (r.date !== prevSession || r.outcome?.official) continue;
+    const o = resolveCloseRead(r, prevClose); if (!o) continue;
+    const was = r.outcome; r.outcome = { ...o, official: true, resolvedAt: was?.resolvedAt ?? now, settledAt: now }; // a read the 16:03 pass missed is judged here for the first time
+    if (was && Math.abs((was.close ?? 0) - o.close) >= 0.01) r.outcome.provisional = { close: was.close, movePct: was.movePct, dir: was.dir, hit: was.hit };
+    n++;
+  }
+  if (n) hist.record = closeReadRecord(hist.reads.filter(r => r.label === "15:50"));
+  return n;
+}
 // the record the grade is judged on: hits per grade over the kept history (reads with hit === null are not counted)
 export function closeReadRecord(history) {
   const out = {}; for (const r of history || []) { if (!r.outcome || r.outcome.hit == null) continue; const g = r.grade; out[g] = out[g] || { n: 0, hits: 0 }; out[g].n++; if (r.outcome.hit) out[g].hits++; }

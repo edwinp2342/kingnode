@@ -1,7 +1,8 @@
 // The closing read and the anomaly pass, on synthetic days built to lean one way.   `node --test test/close-read.test.mjs`
 import test from "node:test";
 import assert from "node:assert/strict";
-import { signedFlow, vwap, cleanBars, sweepDelta, computeCloseRead, resolveCloseRead, closeReadRecord, gradeOf, sideOf } from "../scripts/close-read.mjs";
+import { signedFlow, vwap, cleanBars, sweepDelta, computeCloseRead, resolveCloseRead, closeReadRecord, settleCloseReads, gradeOf, sideOf } from "../scripts/close-read.mjs";
+import { prevTradingDay } from "../scripts/market-clock.mjs";
 import { detectAnomalies, baselines, sessionFraction, directionalPremium } from "../scripts/anomalies.mjs";
 
 const T0 = Date.parse("2026-11-11T14:30:00Z"); // 09:30 ET
@@ -45,6 +46,31 @@ test("a buy-side close grades BUY with the factors agreeing; a sell-side one SEL
   // a missing factor is dropped from the weights, not treated as zero
   const thin = computeCloseRead({ now: at350, et, bars1m: { SPY: day(760, { lateDrift: 0.0004, lateVol: 3000 }) }, quotes: {}, breadth: null, sweeps: [], scan: null, label: "15:50" });
   assert.equal(thin.factors.market, null); assert.equal(thin.factors.breadth, null); assert.ok(thin.score > 0);
+});
+
+test("settleCloseReads: the next session's previous close re-judges the day before it (2026-11-20: 687.52 at 16:03, 689.81 settled); other days and settled reads are left alone", () => {
+  const read = (date, label, side, grade, px, outcome) => ({ date, label, side, grade, score: side === "BUY" ? 40 : -40, spy: { px, prev: 715.87 }, outcome });
+  const hist = { reads: [
+    read("2026-11-19", "15:50", "SELL", "C", 715.97, { close: 715.84, movePct: -0.018, dir: "flat", hit: false, resolvedAt: 1, official: true }),
+    read("2026-11-20", "15:50", "SELL", "B", 693.5, { close: 687.52, movePct: -0.862, dir: "down", hit: true, resolvedAt: 2 }),
+    read("2026-11-20", "15:58", "SELL", "A", 687.25, { close: 687.52, movePct: 0.04, dir: "up", hit: false, resolvedAt: 2 }),
+    read("2026-11-20", "16:05", "BUY", "C", 688, null), // a read the 16:03 pass never resolved
+    read("2026-11-23", "15:50", "BUY", "C", 724.37, { close: 722.31, movePct: -0.284, dir: "down", hit: false, resolvedAt: 3 }) ] };
+  assert.equal(prevTradingDay("2026-11-23"), "2026-11-20", "Monday's previous session is Friday"); assert.equal(prevTradingDay("2026-11-27"), "2026-11-25", "Thanksgiving is skipped");
+  // Monday's quote: chart on 2026-11-23, chartPreviousClose 689.81 — Friday's three reads settle, Thursday (already official) and Monday do not
+  assert.equal(settleCloseReads(hist, 689.81, prevTradingDay("2026-11-23"), 100), 3);
+  const [thu, fri350, fri358, late, mon] = hist.reads;
+  assert.equal(thu.outcome.close, 715.84); assert.equal(mon.outcome.official, undefined, "Monday waits for Tuesday's quote");
+  assert.equal(fri350.outcome.close, 689.81); assert.equal(fri350.outcome.hit, true, "693.5 → 689.81 is still a sell-side hit"); assert.equal(fri350.outcome.movePct, -0.532);
+  assert.deepEqual(fri350.outcome.provisional, { close: 687.52, movePct: -0.862, dir: "down", hit: true }); assert.equal(fri350.outcome.resolvedAt, 2); assert.equal(fri350.outcome.settledAt, 100);
+  assert.equal(fri358.outcome.dir, "up"); assert.equal(fri358.outcome.movePct, 0.372); assert.equal(fri358.outcome.hit, false);
+  assert.equal(late.outcome.official, true); assert.equal(late.outcome.hit, true, "688 → 689.81 judges the unresolved BUY read for the first time"); assert.equal(late.outcome.provisional, undefined); assert.equal(late.outcome.resolvedAt, 100);
+  assert.deepEqual(hist.record, closeReadRecord(hist.reads.filter(r => r.label === "15:50")), "the record is rebuilt");
+  // a second pass with the same quote does nothing; a close within a cent keeps no provisional copy
+  assert.equal(settleCloseReads(hist, 689.81, "2026-11-20", 101), 0); assert.equal(fri350.outcome.settledAt, 100);
+  const same = { reads: [read("2026-11-19", "15:50", "SELL", "C", 715.97, { close: 715.87, movePct: -0.014, dir: "flat", hit: false, resolvedAt: 1 })] };
+  assert.equal(settleCloseReads(same, 715.87, "2026-11-19"), 1); assert.equal(same.reads[0].outcome.official, true); assert.equal(same.reads[0].outcome.provisional, undefined);
+  assert.equal(settleCloseReads(same, 0, "2026-11-19"), 0); assert.equal(settleCloseReads(same, 700, null), 0); assert.equal(settleCloseReads(null, 700, "2026-11-19"), 0);
 });
 
 test("a chain read before today's open (a chain outage) never sets the gamma factor or its multiplier; a same-day chain does", () => {
@@ -110,6 +136,19 @@ test("anomalies: dividend-capture deep-ITM calls are not a surge — the premium
   // history rows that carry cDeep/pDeep (indexes 13, 14) have them taken out of the baseline; rows without count whole
   assert.equal(directionalPremium(days["2026-10-01"].DIV), 2.5e6); assert.equal(directionalPremium(days["2026-10-01"].XOM), 19e6); assert.equal(directionalPremium([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 1e6, 2e6, null, 5e6, 5e6]), 0);
   const b = baselines({ days }, "2026-11-11"); assert.equal(b.DIV.median, 2.5e6); assert.equal(b.XOM.median, 19e6);
+});
+
+test("app: closeReadSettledNote says whether a verdict is provisional, official, or re-judged from a different 4:03 print", async () => {
+  const fs = await import("node:fs"); const vm = await import("node:vm");
+  const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const i = js.indexOf("function closeReadSettledNote("); assert.ok(i >= 0, "closeReadSettledNote lives in app.html"); let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } }
+  const ctx = {}; vm.createContext(ctx); vm.runInContext(js.slice(i, j + 1) + "\nthis.note = closeReadSettledNote;", ctx);
+  assert.equal(ctx.note(null), "");
+  assert.match(ctx.note({ close: 722.31, hit: false }), /Provisional — judged on the 4:03 PM price/);
+  assert.equal(ctx.note({ close: 715.87, hit: false, official: true }), " Official close.");
+  const re = ctx.note({ close: 689.81, movePct: 0.372, hit: false, official: true, provisional: { close: 687.52, movePct: 0.04, hit: false } });
+  assert.match(re, /Official close 689.81; the 4:03 PM print was 687.52 \(\+0.04%\)\./);
+  assert.match(ctx.note({ close: 689.81, movePct: 0.372, hit: false, official: true, provisional: { close: 687.5, movePct: -0.2, hit: true } }), /first judged a right call/);
 });
 
 test("app: closeReadShift puts the 3:50 read beside the 3:58 only when the call changed, naming the factors that moved", async () => {

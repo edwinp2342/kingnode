@@ -18,6 +18,12 @@ export function sessionDate(et = etNow()) {
   for (let i = 0; i < 14; i++) { d.setUTCDate(d.getUTCDate() - 1); const date = d.toISOString().slice(0, 10); if (isTradingDay(date, d.getUTCDay())) return date; }
   return et.date;
 }
+// the trading day before an ET date (a Monday's is the Friday before, a holiday is skipped)
+export function prevTradingDay(date) {
+  const d = new Date(date + "T12:00:00Z");
+  for (let i = 0; i < 14; i++) { d.setUTCDate(d.getUTCDate() - 1); const x = d.toISOString().slice(0, 10); if (isTradingDay(x, d.getUTCDay())) return x; }
+  return null;
+}
 // pre 04:00–09:30 · regular 09:30–16:00 · post 16:00–20:00 · overnight 20:00–04:00 (Sunday 20:00 through Friday 04:00: the 24-hour session
 // Yahoo reports as fulldayPrice — no bars, a price) · closed otherwise (Friday 20:00 to Sunday 20:00, holidays)
 export function marketPhase(now = new Date()) {

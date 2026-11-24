@@ -681,7 +681,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v58 beta";
+const KN_VERSION = "v59 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -1526,6 +1526,9 @@ async function loadCloseRead(force){
   finally { CRD.loading = false; }
   return CRD.d;
 }
+// the 16:03 verdict uses the price Yahoo shows then, which can be the last continuous trade; the feed re-judges against the official close once the next
+// session's quote carries it (outcome.official), keeping the first verdict as outcome.provisional when the close moved
+function closeReadSettledNote(o){ if (!o) return ""; if (!o.official) return " Provisional — judged on the 4:03 PM price; the official close is checked at the next session."; const p = o.provisional; if (!p) return " Official close."; return ` Official close ${o.close}; the 4:03 PM print was ${p.close} (${p.movePct >= 0 ? "+" : ""}${p.movePct}%${p.hit === o.hit ? "" : p.hit ? ", first judged a right call" : p.hit === false ? ", first judged a wrong call" : ""}).`; }
 function onCloseRead(r){ const key = `${r.date}|${r.label}|${r.outcome ? "resolved" : "open"}`; if (CRD.announced.has(key)) return; CRD.announced.add(key); const today = etDayNow() === r.date;
   if (S.tab === "flow" || S.tab === "macro") renderTabs(); renderEvents?.();
   if (!today || Date.now() - r.at > 20*60e3) return; // only a fresh read is news
@@ -1554,7 +1557,7 @@ function closeReadCard(compact){
     h("span",{style:{font:"800 26px/1 var(--mono)", color:col}}, r.side === "BALANCED" ? "BALANCED" : r.side + "-SIDE"), h("span",{class:"badge", style:{background:col, color:"#000", fontSize:"14px", padding:"3px 9px"}}, "grade " + r.grade),
     h("span",{class:"num", style:{color:"var(--muted)"}}, `score ${r.score > 0 ? "+" : ""}${r.score} · ${r.label} ET · ${r.date}${today ? "" : " (last session)"}`));
   box.append(head);
-  if (r.outcome) box.append(h("p",{style:{margin:"0 0 6px", color: r.outcome.hit ? "var(--pos)" : r.outcome.hit === false ? "var(--neg)" : "var(--muted)"}}, `Resolved: SPY ${r.spy?.px} → ${r.outcome.close} (${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}%) into the close — ${r.outcome.hit ? "right call" : r.outcome.hit === false ? "wrong call" : "balanced, not judged"}.`));
+  if (r.outcome) box.append(h("p",{style:{margin:"0 0 6px", color: r.outcome.hit ? "var(--pos)" : r.outcome.hit === false ? "var(--neg)" : "var(--muted)"}}, `Resolved: SPY ${r.spy?.px} → ${r.outcome.close} (${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}%) into the close — ${r.outcome.hit ? "right call" : r.outcome.hit === false ? "wrong call" : "balanced, not judged"}.${closeReadSettledNote(r.outcome)}`));
   if (r.label !== "15:50"){ // the 3:50 read beside the final one when the call changed between them
     const first = (CRD.hist?.reads || []).find(x => x.date === r.date && x.label === "15:50"); const sh = closeReadShift(first, r);
     if (sh){ const sideCol = s => s === "BUY" ? "var(--pos)" : s === "SELL" ? "var(--neg)" : "var(--muted)"; const sideTxt = s => s === "BALANCED" ? "Balanced" : s === "BUY" ? "Buy-side" : "Sell-side";

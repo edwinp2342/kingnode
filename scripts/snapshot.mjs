@@ -14,7 +14,7 @@ import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import { computeLevels } from "../api/_lib/levels.js";
 import { updateSymbols, sweepMarket, sweepCloses, mostActive, computeBreadth, readJSON, writeJSON } from "./market.mjs";
 import { refreshMacro } from "./macro.mjs";
-import { computeCloseRead, resolveCloseRead, sweepDelta, closeReadRecord } from "./close-read.mjs";
+import { computeCloseRead, resolveCloseRead, sweepDelta, closeReadRecord, settleCloseReads } from "./close-read.mjs";
 import { detectAnomalies } from "./anomalies.mjs";
 import { refreshHistory } from "./history.mjs";
 import fs from "node:fs";
@@ -52,7 +52,7 @@ function seed() {
 }
 seed(); if (!PUSH) await seedFromPublic();
 
-import { marketPhase, etNow, sessionDate, isTradingDay } from "./market-clock.mjs";
+import { marketPhase, etNow, sessionDate, isTradingDay, prevTradingDay } from "./market-clock.mjs";
 // what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all
 const PLAN = {
   regular:   { every: EVERY, chainsEvery: 3, bars: true, fast: Number(process.env.FAST_SEC || 20), sweep: 5 * 60, tierB: 15 * 60 },
@@ -287,9 +287,22 @@ async function marketLoop() {
   }
 }
 // ---------- the closing read: 3:50 (the call), 3:58 (final), resolved after the bell against SPY's official close ----------
-const CR = { prevQ: null, sweeps: [], done: {}, resolved: {} };
+// once the SPY quote's chart is on a later session, its chartPreviousClose is the settled close of the session before — the reads judged
+// at 16:03 against a possibly pre-auction price are judged again against it (see settleCloseReads); one pass per chart session
+function settleAgainstOfficialClose() {
+  const q = readJSON("data/quotes.json", null); const spy = (q?.quotes || []).find(x => x.symbol === "SPY"); if (!spy?.regT || !(spy.prev > 0)) return;
+  const chartSession = etNow(new Date(spy.regT)).date; if (CR.settled[chartSession]) return;
+  const prevSession = prevTradingDay(chartSession); const hist = readJSON("data/close-reads.json", null);
+  const n = settleCloseReads(hist, spy.prev, prevSession); CR.settled[chartSession] = true; if (!n) return;
+  hist.at = Date.now(); writeJSON("data/close-reads.json", hist);
+  const cur = readJSON("data/close-read.json", null); const same = cur && hist.reads.find(r => r.date === cur.date && r.label === cur.label);
+  if (same) writeJSON("data/close-read.json", { ...same, record: hist.record }); else if (cur) writeJSON("data/close-read.json", { ...cur, record: hist.record });
+  console.log(`closing read settled: ${prevSession} × ${n} against the official close ${spy.prev} · record ${hist.record.all.hits}/${hist.record.all.n}`);
+}
+const CR = { prevQ: null, sweeps: [], done: {}, resolved: {}, settled: {} };
 async function closingRead(ph, t) {
   const key = t.date;
+  settleAgainstOfficialClose();
   const build = label => { const bars1m = {}; for (const sym of LIVE_SYMS) { const j = readJSON(`data/${sym}-1m.json`, null); if (j?.bars?.length) bars1m[sym] = j.bars; } const q = readJSON("data/quotes.json", null); const quotes = Object.fromEntries((q?.quotes || []).map(x => [x.symbol, x])); const scan = readJSON("data/scan.json", null);
     return computeCloseRead({ now: Date.now(), et: t, bars1m, quotes, breadth: readJSON("data/breadth.json", null), sweeps: CR.sweeps, scan: scan?.rows || null, label }); };
   const record = read => { const hist = readJSON("data/close-reads.json", { reads: [] }); hist.reads = (hist.reads || []).filter(r => !(r.date === read.date && r.label === read.label)); hist.reads.push(read); hist.reads = hist.reads.slice(-80); hist.record = closeReadRecord(hist.reads.filter(r => r.label === "15:50")); hist.at = Date.now(); writeJSON("data/close-reads.json", hist); writeJSON("data/close-read.json", { ...read, record: hist.record }); status.closeRead = { at: read.at, label: read.label, side: read.side, grade: read.grade, score: read.score }; console.log(`closing read ${read.label}: ${read.side} ${read.grade} (${read.score}) — ${read.text.slice(0, 120)}`); };
