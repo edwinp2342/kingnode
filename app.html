@@ -1532,7 +1532,7 @@ function closeReadSettledNote(o){ if (!o) return ""; if (!o.official) return " P
 function onCloseRead(r){ const key = `${r.date}|${r.label}|${r.outcome ? "resolved" : "open"}`; if (CRD.announced.has(key)) return; CRD.announced.add(key); const today = etDayNow() === r.date;
   if (S.tab === "flow" || S.tab === "macro") renderTabs(); renderEvents?.();
   if (!today || Date.now() - r.at > 20*60e3) return; // only a fresh read is news
-  if (r.outcome){ if (settingOn("closeReadAlerts")) notice(`Closing read resolved: SPY ${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}% from the ${r.label === "15:58" ? "3:58" : "3:50"} print —${r.outcome.hit ? "the call was right" : r.outcome.hit === false ? "the call was wrong" : "no call to judge"}.`); return; }
+  if (r.outcome){ if (settingOn("closeReadAlerts")) notice(`Closing read resolved: SPY ${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}% from the ${r.label === "15:58" ? "3:58" : "3:50"} print — ${r.outcome.hit ? "the call was right" : r.outcome.hit === false ? "the call was wrong" : "no call to judge"}.`); return; }
   const line = `${r.label} · ${r.side === "BALANCED" ? "Balanced" : r.side === "BUY" ? "Buy-side" : "Sell-side"} · grade ${r.grade} (${r.score > 0 ? "+" : ""}${r.score})`;
   if (r.label !== "15:50"){ const first = (CRD.hist?.reads || []).find(x => x.date === r.date && x.label === "15:50") || CRD.prev; if (first && first.side === r.side && first.grade === r.grade){ notice(`Closing read ${r.label}: unchanged — ${line}.`); return; } }
   CRD.prev = r;
