@@ -46,6 +46,30 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-25 — scheduled run 13
+- Checked: 64 tests and smoke green before changes. Feed loop in progress on `e7e601c` (run 45537923478, overnight cadence, cycle 95, index.json
+  1.0 min old at 00:11 ET; fast 77/77 with 0 fails, sweep 5070/5070, 0 429s, symbols 11421/5070 optionable, macro hourly ok; the cancelled run
+  before it is the 5.5-hour handoff). Tuesday was a session: close-read.json is the 15:58 read (v2, BUY B +47, $6.20B net on $32.19B core,
+  $10.52B on $103.89B market, SPY 718.31 → 718.57 at 16:03, +0.036%, hit; the 15:50 read was BALANCED D −6, not judged; gamma stale as expected).
+  Monday's two reads now carry `official: true` (722.51 vs the 722.31 print, verdicts unchanged) — the settle pass works on a live day. anomalies.json
+  still 2026-11-19 (frozen, 9 A / 31 B). hist 77/77, oldest 6.28 days (weekly refresh due during 11-25). macro (EFFR 3.88% on 11-23, yields 4/4 with
+  10y 4.904 vs prev 4.918, BLS Oct, `yoy13` 4.08) ok. breadth `day: 2026-11-24`, 67 points. scan 337 rows, `at` 11-19 (frozen); chainAt 126.8 h old,
+  `fail` is the tier-B dozen `cb:*:http 403` + `b:ROKU` — the Cboe outage's sixth calendar day, no decision on the Backlog proposal yet (no new
+  commits or issues from Edwin).
+- Found: nothing broken. Two small things in the closing-read card: the record line and badge row covered the 3:50 calls only, while the 3:58 read is
+  the one close-read.json carries and the alert fires on (tonight 3:50 calls 1/4, 3:58 calls 2/7 — a different picture); and the "Closing read
+  resolved" notice said "from the 3:50 print" for a resolved 3:58 read.
+- Improved (app): `closeReadRecords(reads)` builds hits per grade for each read time from close-reads.json (balanced reads not counted, grades A → D);
+  the card's line reads "Record, judged on SPY's move from each read's print to the close — 3:50 calls 1/4 right (B 1/1 · C 0/3) · 3:58 calls 2/7
+  right (A 0/2 · B 1/2 · C 1/3)" with a labelled badge row per read time; Ava's `close_read` gets `recordByRead`; the notice names the right print.
+  New test in test/close-read.test.mjs (the real 11-24 shape, the 3:50 half equal to the feed's `closeReadRecord`). Rendered the Flow tab headlessly
+  with tonight's real close-read.json + close-reads.json: both records, both rows and the "Provisional — judged on the 4:03 PM price…" note (last
+  night's unverified item) all show, no page errors. README, docs/LAB.md test count 65. App v60 (KN_VERSION, sw.js CACHE, index.html). Commits
+  7d3d274, 4b2c0eb (a space the first commit dropped from the notice text).
+- State: 65 tests green, smoke clean; feed code unchanged, loop left running; preview artifact republished (version 31).
+- Not verified: github.io (unreachable from here); the resolved notice text on a live 4:03 PM pass (unit-level only); the hist weekly refresh
+  (due today — check tomorrow that the oldest age fell).
+
 ### 2026-11-24 — scheduled run 12
 - Checked: 62 tests and smoke green before changes. Feed loop in progress on `e85250f` (run 45323549839, overnight cadence, cycle 54, index.json
   0.5 min old at 00:10 ET; fast 77/77 with 0 fails, sweep 5065/5065, 0 429s, symbols 11423/5065 optionable, macro hourly ok). Monday was a session:
