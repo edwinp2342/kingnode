@@ -169,3 +169,23 @@ test("app: closeReadShift puts the 3:50 read beside the 3:58 only when the call 
   const sh2 = ctx.closeReadShift(first, read("15:58", "BUY", "C", 30, [38, 40, 12, 20])); assert.ok(sh2, "grade changed → shown"); assert.equal(sh2.moved.length, 0, "no factor moved 5 points");
   assert.ok(ctx.closeReadShift(first, { ...read("15:58", "SELL", "B", -40, [0, 0, 0, 0]), factors: {} }), "missing factors still pair without throwing");
 });
+
+test("app: closeReadRecords keeps a record per read time — the 3:58 read earns its own, balanced reads are not counted, grades sort A → D", async () => {
+  const fs = await import("node:fs"); const vm = await import("node:vm");
+  const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const i = js.indexOf("function closeReadRecords("); assert.ok(i >= 0, "closeReadRecords lives in app.html"); let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } }
+  const k = js.indexOf("const closeReadRecordText ="); assert.ok(k > j, "closeReadRecordText follows it"); const kEnd = js.indexOf("\n", k);
+  const ctx = { Object }; vm.createContext(ctx); vm.runInContext(js.slice(i, j + 1) + "\n" + js.slice(k, kEnd) + "\nthis.recs = closeReadRecords; this.txt = closeReadRecordText;", ctx);
+  // the real shape of close-reads.json on 2026-11-24: the feed's record (3:50 calls) read 1/4, the 3:58 reads 2/7
+  const hit = (date, label, side, grade, h) => ({ date, label, side, grade, score: side === "SELL" ? -40 : 40, outcome: h == null ? { close: 1, movePct: 0.1, dir: "up", hit: null } : { close: 1, movePct: 0.1, dir: "up", hit: h } });
+  const reads = [hit("11-12", "15:50", "SELL", "C", false), hit("11-12", "15:58", "SELL", "A", false), hit("11-13", "15:50", "BALANCED", "D", null), hit("11-13", "15:58", "BUY", "B", false),
+    hit("11-18", "15:50", "BALANCED", "D", null), hit("11-18", "15:58", "BUY", "C", false), hit("11-19", "15:50", "SELL", "C", false), hit("11-19", "15:58", "SELL", "C", true),
+    hit("11-20", "15:50", "SELL", "B", true), hit("11-20", "15:58", "SELL", "A", false), hit("11-23", "15:50", "BUY", "C", false), hit("11-23", "15:58", "SELL", "C", false),
+    hit("11-24", "15:50", "BALANCED", "D", null), { date: "11-24", label: "15:58", side: "BUY", grade: "B", score: 47, outcome: { close: 1, movePct: 0.04, dir: "up", hit: true } }, { date: "11-25", label: "15:50", side: "BUY", grade: "B", score: 30 } /* open, no outcome */];
+  const r = ctx.recs(reads);
+  assert.deepEqual(JSON.parse(JSON.stringify(r["15:50"])), closeReadRecord(reads.filter(x => x.label === "15:50")), "the 3:50 record equals the feed's closeReadRecord on the same reads");
+  assert.deepEqual(JSON.parse(JSON.stringify(r["15:50"].all)), { n: 4, hits: 1 }); assert.deepEqual(JSON.parse(JSON.stringify(r["15:58"].all)), { n: 7, hits: 2 });
+  assert.deepEqual(JSON.parse(JSON.stringify(r["15:58"].byGrade)), { A: { n: 2, hits: 0 }, B: { n: 2, hits: 1 }, C: { n: 3, hits: 1 } });
+  assert.equal(ctx.txt(r["15:58"]), "2/7 right (A 0/2 · B 1/2 · C 1/3)"); assert.equal(ctx.txt(r["15:50"]), "1/4 right (B 1/1 · C 0/3)", "grades in A → D order, not insertion order");
+  assert.equal(ctx.txt(undefined), "no judged calls yet"); assert.deepEqual({ ...ctx.recs(null) }, {}); assert.deepEqual({ ...ctx.recs([{ label: "15:58" }]) }, {}, "reads without a grade or outcome are skipped");
+});
