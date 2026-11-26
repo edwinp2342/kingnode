@@ -4,7 +4,7 @@ A personal options terminal. It reads the options chain the way a dealer desk do
 
 **Run it:** https://edwinp2342.github.io/kingnode/app.html (install from the browser as an app; see DESKTOP.md). Data: a GitHub Actions loop snapshots Cboe (chains, 15-min delayed) and Yahoo (bars/quotes, near real-time, pre/after-hours) about once a minute to the `data` branch; the site reads from there. Options: a Cloudflare proxy (proxy/), the desktop server (desktop/), or a vendor key for real-time (LIVE.md).
 
-**Tests:** `npm test` (65 node tests across `test/*.test.mjs`: math, macro, breadth, history, the Lab, the closing read, the feed banner, the stream and the local server) and `python3 test/smoke.py` (every tab in a headless browser). CI runs the math tests and a syntax check of every script on push. `node scripts/backtest.mjs` re-runs the Ideas validation (v2: regime, relative-strength and ATR-stop variants; `DATA_DIR=<local copy of the data branch>` to run offline).
+**Tests:** `npm test` (66 node tests across `test/*.test.mjs`: math, macro, breadth, history, the Lab, the closing read, the feed banner, the stream and the local server) and `python3 test/smoke.py` (every tab in a headless browser). CI runs the math tests and a syntax check of every script on push. `node scripts/backtest.mjs` re-runs the Ideas validation (v2: regime, relative-strength and ATR-stop variants; `DATA_DIR=<local copy of the data branch>` to run offline).
 
 ## Files
 
@@ -116,7 +116,7 @@ Switching vendors changes nothing in the terminal. If a vendor renames a field, 
 ## The closing read (3:50 PM) and suspicious flow
 Two more things the feed computes from data it already has, both graded, both tested (`test/close-read.test.mjs`).
 
-**The closing read** — `scripts/close-read.mjs`. At 3:50 PM ET (a final pass at 3:58) the feed grades which way the close leans and writes `close-read.json`; the app notifies (browser + Discord when the alert rule is on), shows the card at the top of the Flow tab and on the Macro tab (when the 3:58 call differs from the 3:50 one, both sit side by side with the factors that moved between them), and Ava has it in her context and a `closing_read` tool. It is a *proxy* for the market-on-close imbalance — the exchanges' imbalance feeds cost money and this does not — built from five things the feed measures itself:
+**The closing read** — `scripts/close-read.mjs`. At 3:50 PM ET (a final pass at 3:58; on a 1 PM half day — the day after Thanksgiving, Christmas Eve — 12:50 and 12:58, scored from 1:03) the feed grades which way the close leans and writes `close-read.json`; the app notifies (browser + Discord when the alert rule is on), shows the card at the top of the Flow tab and on the Macro tab (when the 3:58 call differs from the 3:50 one, both sit side by side with the factors that moved between them), and Ava has it in her context and a `closing_read` tool. It is a *proxy* for the market-on-close imbalance — the exchanges' imbalance feeds cost money and this does not — built from five things the feed measures itself:
 
 | factor | weight | what it measures |
 |---|---|---|

@@ -14,7 +14,7 @@ import { fetchChain, fetchBars } from "../api/_lib/data.js";
 import { computeLevels } from "../api/_lib/levels.js";
 import { updateSymbols, sweepMarket, sweepCloses, mostActive, computeBreadth, readJSON, writeJSON } from "./market.mjs";
 import { refreshMacro } from "./macro.mjs";
-import { computeCloseRead, resolveCloseRead, sweepDelta, closeReadRecord, settleCloseReads } from "./close-read.mjs";
+import { computeCloseRead, resolveCloseRead, sweepDelta, closeReadRecord, settleCloseReads, closeReadDue, isCallRead } from "./close-read.mjs";
 import { detectAnomalies } from "./anomalies.mjs";
 import { refreshHistory } from "./history.mjs";
 import fs from "node:fs";
@@ -52,7 +52,7 @@ function seed() {
 }
 seed(); if (!PUSH) await seedFromPublic();
 
-import { marketPhase, etNow, sessionDate, isTradingDay, prevTradingDay } from "./market-clock.mjs";
+import { marketPhase, etNow, sessionDate, isTradingDay, prevTradingDay, sessionCloseMin } from "./market-clock.mjs";
 // what this cycle does, by phase: cadence in seconds, chains every Nth cycle, whether to pull bars at all
 const PLAN = {
   regular:   { every: EVERY, chainsEvery: 3, bars: true, fast: Number(process.env.FAST_SEC || 20), sweep: 5 * 60, tierB: 15 * 60 },
@@ -149,7 +149,7 @@ export function chainPremium(rows) {
   return { cVol, pVol, cPrem, pPrem, cDeep, pDeep, contracts };
 }
 function scanRow(c0) {
-  const t = etNow(); const c = { ...c0, rows: c0.rows.filter(r => r[0] > t.date || (r[0] === t.date && t.min < 16 * 60)) }; // settled expiries are not positioning
+  const t = etNow(); const c = { ...c0, rows: c0.rows.filter(r => r[0] > t.date || (r[0] === t.date && t.min < sessionCloseMin(t.date))) }; // settled expiries are not positioning (13:00 on a half day)
   const spot = c.spot; const { cVol, pVol, cPrem, pPrem, cDeep, pDeep, contracts } = chainPremium(c.rows);
   const dir = contracts.filter(x => !x.deep);
   const top = dir.sort((a, b) => b.prem - a.prem).slice(0, 3).map(x => [x.exp, x.type, x.K, x.vol, x.oi, Math.round(x.prem), x.side]);
@@ -278,7 +278,7 @@ async function marketLoop() {
         writeIndex({}); if (PUSH) push(); }
       // 60 closes per optionable name, once per session after the close (or at start when the file is older than the last session)
       const closes = readJSON("data/closes.json", null); const lastSession = closes ? new Date(closes.at).toISOString().slice(0, 10) : ""; const upgrade = !!closes && !/:v/.test(closes.cols || ""); // a closes file from before the average-volume column: redo it once
-      if (list.length && (ph === "post" || ph === "overnight" || ph === "closed") && t.min >= 16 * 60 + 15 && closesFor !== t.date && (lastSession !== t.date || upgrade)) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
+      if (list.length && (ph === "post" || ph === "overnight" || ph === "closed") && t.min >= sessionCloseMin(t.date) + 15 && closesFor !== t.date && (lastSession !== t.date || upgrade)) { closesFor = t.date; const c = await sweepCloses(list, { concurrency: 8 }); status.closes = { at: Date.now(), ms: c.ms, ok: c.ok, fail: c.fail }; console.log(`closes: ${c.ok}/${c.n} in ${(c.ms / 1000).toFixed(0)}s`); writeIndex({}); if (PUSH) push(); }
       await closingRead(ph, t);
       // the Lab's long daily history: a batch every 15 minutes (small in market hours, bigger when closed) until every symbol is fresh
       if (Date.now() - histAt > 15 * 60e3 && Date.now() > histBackoff) { histAt = Date.now(); try { const h = await refreshHistory({ syms: HIST_SYMS, maxPerRun: ph === "regular" ? 12 : 60 }); status.history = { at: Date.now(), have: h.have, total: h.total, remaining: h.remaining, limited: h.limited }; if (h.limited) histBackoff = Date.now() + 30 * 60e3; if (h.fetched && PUSH) push(); } catch (e) { console.error("history", e.message); } }
@@ -303,15 +303,15 @@ const CR = { prevQ: null, sweeps: [], done: {}, resolved: {}, settled: {} };
 async function closingRead(ph, t) {
   const key = t.date;
   settleAgainstOfficialClose();
-  const build = label => { const bars1m = {}; for (const sym of LIVE_SYMS) { const j = readJSON(`data/${sym}-1m.json`, null); if (j?.bars?.length) bars1m[sym] = j.bars; } const q = readJSON("data/quotes.json", null); const quotes = Object.fromEntries((q?.quotes || []).map(x => [x.symbol, x])); const scan = readJSON("data/scan.json", null);
-    return computeCloseRead({ now: Date.now(), et: t, bars1m, quotes, breadth: readJSON("data/breadth.json", null), sweeps: CR.sweeps, scan: scan?.rows || null, label }); };
-  const record = read => { const hist = readJSON("data/close-reads.json", { reads: [] }); hist.reads = (hist.reads || []).filter(r => !(r.date === read.date && r.label === read.label)); hist.reads.push(read); hist.reads = hist.reads.slice(-80); hist.record = closeReadRecord(hist.reads.filter(r => r.label === "15:50")); hist.at = Date.now(); writeJSON("data/close-reads.json", hist); writeJSON("data/close-read.json", { ...read, record: hist.record }); status.closeRead = { at: read.at, label: read.label, side: read.side, grade: read.grade, score: read.score }; console.log(`closing read ${read.label}: ${read.side} ${read.grade} (${read.score}) — ${read.text.slice(0, 120)}`); };
-  if (ph === "regular" && t.min >= 15 * 60 + 50 && t.min < 15 * 60 + 58 && CR.done[key] !== "15:50") { CR.done[key] = "15:50"; record(build("15:50")); }
-  else if (ph === "regular" && t.min >= 15 * 60 + 58 && CR.done[key] !== "15:58") { if (!CR.done[key]) record(build("15:50")); CR.done[key] = "15:58"; record(build("15:58")); }
-  else if (ph !== "regular" && t.min >= 16 * 60 + 3 && t.min < 20 * 60 && !CR.resolved[key]) {
+  const build = (label, kind) => { const bars1m = {}; for (const sym of LIVE_SYMS) { const j = readJSON(`data/${sym}-1m.json`, null); if (j?.bars?.length) bars1m[sym] = j.bars; } const q = readJSON("data/quotes.json", null); const quotes = Object.fromEntries((q?.quotes || []).map(x => [x.symbol, x])); const scan = readJSON("data/scan.json", null);
+    return computeCloseRead({ now: Date.now(), et: t, bars1m, quotes, breadth: readJSON("data/breadth.json", null), sweeps: CR.sweeps, scan: scan?.rows || null, label, kind }); };
+  const record = read => { const hist = readJSON("data/close-reads.json", { reads: [] }); hist.reads = (hist.reads || []).filter(r => !(r.date === read.date && r.label === read.label)); hist.reads.push(read); hist.reads = hist.reads.slice(-80); hist.record = closeReadRecord(hist.reads.filter(isCallRead)); hist.at = Date.now(); writeJSON("data/close-reads.json", hist); writeJSON("data/close-read.json", { ...read, record: hist.record }); status.closeRead = { at: read.at, label: read.label, side: read.side, grade: read.grade, score: read.score }; console.log(`closing read ${read.label}: ${read.side} ${read.grade} (${read.score}) — ${read.text.slice(0, 120)}`); };
+  const due = closeReadDue(ph, t.min, { closeMin: sessionCloseMin(key), done: CR.done[key], resolved: CR.resolved[key] }); if (!due) return; // 15:50 / 15:58 / 16:03, or 12:50 / 12:58 / 13:03 on a half day
+  if (due.step === "call" || due.step === "final") { if (due.call) record(build(due.call.label, due.call.kind)); CR.done[key] = due.label; record(build(due.label, due.kind)); }
+  else if (due.step === "resolve") {
     const hist = readJSON("data/close-reads.json", null); if (!hist?.reads?.some(r => r.date === key && !r.outcome)) { CR.resolved[key] = true; return; }
     const q = readJSON("data/quotes.json", null); const spy = (q?.quotes || []).find(x => x.symbol === "SPY"); const close = spy?.price; if (!(close > 0)) return;
-    let n = 0; for (const r of hist.reads) if (r.date === key && !r.outcome) { r.outcome = resolveCloseRead(r, close); n++; } hist.record = closeReadRecord(hist.reads.filter(r => r.label === "15:50")); hist.at = Date.now(); writeJSON("data/close-reads.json", hist);
+    let n = 0; for (const r of hist.reads) if (r.date === key && !r.outcome) { r.outcome = resolveCloseRead(r, close); n++; } hist.record = closeReadRecord(hist.reads.filter(isCallRead)); hist.at = Date.now(); writeJSON("data/close-reads.json", hist);
     const latest = hist.reads.filter(r => r.date === key).pop(); if (latest) writeJSON("data/close-read.json", { ...latest, record: hist.record }); CR.resolved[key] = true; console.log(`closing read resolved: SPY ${close} · ${n} read(s) · record ${hist.record.all.hits}/${hist.record.all.n}`);
   }
 }

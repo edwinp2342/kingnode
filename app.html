@@ -681,7 +681,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v60 beta";
+const KN_VERSION = "v61 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -1519,8 +1519,14 @@ const CRD = { d:null, hist:null, at:0, histAt:0, announced:new Set(), timer:null
 const ANOM = { d:null, at:0, seen:new Set(), announcedAt:0, loading:false, updateAt:0, lastKeys:new Set() };
 const settingOn = (k, def = "on") => (S.set[k] || def) !== "off";
 const etMinNow = () => etNowParts().min; const etDayNow = () => etNowParts().ymd;
+// the closing read keys on the session's close: 16:00, or 13:00 on a half day (2026-11-27, 12-24), when the reads land at 12:50 / 12:58 instead
+const etCloseMin = () => NYSE_HALF_DAYS.has(etDayNow()) ? 13*60 : 16*60;
+const crKind = r => r?.kind ? r.kind : r?.label === "15:50" ? "call" : "final"; // reads written before `kind` existed are told apart by the label
+const crClock = lbl => { const m = /^(\d{2}):(\d{2})$/.exec(lbl || ""); if (!m) return lbl || ""; const hh = Number(m[1]); return `${hh > 12 ? hh - 12 : hh}:${m[2]}`; }; // "15:58" → "3:58", "12:50" → "12:50"
+const crHot = (m = etMinNow(), c = etCloseMin()) => m >= c - 12 && m <= c + 12;
+const crTimesText = (c = etCloseMin()) => `${crClock(`${String(Math.floor((c-10)/60)).padStart(2,"0")}:${String((c-10)%60).padStart(2,"0")}`)} PM ET, a final one at ${crClock(`${String(Math.floor((c-2)/60)).padStart(2,"0")}:${String((c-2)%60).padStart(2,"0")}`)}`;
 async function loadCloseRead(force){
-  if (CRD.loading) return CRD.d; const m = etMinNow(); const hot = m >= 15*60+48 && m <= 16*60+12; const every = hot ? 25e3 : 15*60e3; if (!force && Date.now() - CRD.at < every) return CRD.d; CRD.loading = true;
+  if (CRD.loading) return CRD.d; const hot = crHot(); const every = hot ? 25e3 : 15*60e3; if (!force && Date.now() - CRD.at < every) return CRD.d; CRD.loading = true;
   try { const first = !CRD.at; const j = await snapshotJson("close-read.json", 0); CRD.at = Date.now(); if (j?.at && j.side){ const fresh = !CRD.d || j.at !== CRD.d.at; CRD.d = j; if (fresh) onCloseRead(j); } else { CRD.at = Date.now() - every + 2*60e3; if (first && (S.tab === "flow" || S.tab === "macro")) renderTabs(); } /* a miss retries in two minutes */
     if (Date.now() - CRD.histAt > 10*60e3){ const hh = await snapshotJson("close-reads.json", 0); CRD.histAt = Date.now(); if (hh?.reads) CRD.hist = hh; } }
   finally { CRD.loading = false; }
@@ -1532,19 +1538,20 @@ function closeReadSettledNote(o){ if (!o) return ""; if (!o.official) return " P
 function onCloseRead(r){ const key = `${r.date}|${r.label}|${r.outcome ? "resolved" : "open"}`; if (CRD.announced.has(key)) return; CRD.announced.add(key); const today = etDayNow() === r.date;
   if (S.tab === "flow" || S.tab === "macro") renderTabs(); renderEvents?.();
   if (!today || Date.now() - r.at > 20*60e3) return; // only a fresh read is news
-  if (r.outcome){ if (settingOn("closeReadAlerts")) notice(`Closing read resolved: SPY ${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}% from the ${r.label === "15:58" ? "3:58" : "3:50"} print — ${r.outcome.hit ? "the call was right" : r.outcome.hit === false ? "the call was wrong" : "no call to judge"}.`); return; }
+  if (r.outcome){ if (settingOn("closeReadAlerts")) notice(`Closing read resolved: SPY ${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}% from the ${crClock(r.label)} print — ${r.outcome.hit ? "the call was right" : r.outcome.hit === false ? "the call was wrong" : "no call to judge"}.`); return; }
   const line = `${r.label} · ${r.side === "BALANCED" ? "Balanced" : r.side === "BUY" ? "Buy-side" : "Sell-side"} · grade ${r.grade} (${r.score > 0 ? "+" : ""}${r.score})`;
-  if (r.label !== "15:50"){ const first = (CRD.hist?.reads || []).find(x => x.date === r.date && x.label === "15:50") || CRD.prev; if (first && first.side === r.side && first.grade === r.grade){ notice(`Closing read ${r.label}: unchanged — ${line}.`); return; } }
+  if (crKind(r) !== "call"){ const first = (CRD.hist?.reads || []).find(x => x.date === r.date && crKind(x) === "call") || CRD.prev; if (first && first.side === r.side && first.grade === r.grade){ notice(`Closing read ${r.label}: unchanged — ${line}.`); return; } }
   CRD.prev = r;
   if (settingOn("closeReadAlerts")) fireAlert(`Closing read ${r.label}`, `${line}. ${r.text.split(". ").slice(1, 3).join(". ")}.`); notice(`Closing read ${line} — see the Flow tab.`); }
-function closeReadPoll(){ clearTimeout(CRD.timer); const m = etMinNow(); const hot = m >= 15*60+48 && m <= 16*60+12; if (!rhAvailable()) loadCloseRead(); CRD.timer = setTimeout(closeReadPoll, hot ? 25e3 : 5*60e3); }
+function closeReadPoll(){ clearTimeout(CRD.timer); const hot = crHot(); if (!rhAvailable()) loadCloseRead(); CRD.timer = setTimeout(closeReadPoll, hot ? 25e3 : 5*60e3); }
 const moneyS = v => { if (v == null || !isFinite(v)) return "—"; const a = Math.abs(v); const s = a >= 1e9 ? (a/1e9).toFixed(2) + "B" : a >= 1e6 ? (a/1e6).toFixed(a >= 1e8 ? 0 : 1) + "M" : (a/1e3).toFixed(0) + "k"; return (v < 0 ? "−$" : "$") + s; };
 // the record per read time, from close-reads.json: the feed's `record` covers the 3:50 calls only, but the 3:58 read is the one close-read.json
 // carries and the alert fires on, so each read time earns its own record (hits per grade, judged on SPY's move from that read's print to the
-// close; a balanced read, hit === null, is not counted). Grades sort A → D.
+// close; a balanced read, hit === null, is not counted). Keyed by the read's kind — "call" (3:50, 12:50 on a half day) and "final" (3:58 /
+// 12:58) — so a half day's reads count with the rest. Grades sort A → D.
 function closeReadRecords(reads){
   const out = {};
-  for (const r of reads || []){ if (!r?.label || !r.grade || !r.outcome || r.outcome.hit == null) continue; const o = out[r.label] = out[r.label] || { byGrade:{}, all:{ n:0, hits:0 } }; const g = o.byGrade[r.grade] = o.byGrade[r.grade] || { n:0, hits:0 }; g.n++; o.all.n++; if (r.outcome.hit){ g.hits++; o.all.hits++; } }
+  for (const r of reads || []){ if (!r?.label || !r.grade || !r.outcome || r.outcome.hit == null) continue; const k = crKind(r); const o = out[k] = out[k] || { byGrade:{}, all:{ n:0, hits:0 } }; const g = o.byGrade[r.grade] = o.byGrade[r.grade] || { n:0, hits:0 }; g.n++; o.all.n++; if (r.outcome.hit){ g.hits++; o.all.hits++; } }
   return out;
 }
 const closeReadRecordText = rec => !rec?.all?.n ? "no judged calls yet" : `${rec.all.hits}/${rec.all.n} right (${Object.keys(rec.byGrade).sort().map(g => `${g} ${rec.byGrade[g].hits}/${rec.byGrade[g].n}`).join(" · ")})`;
@@ -1560,15 +1567,15 @@ function closeReadShift(first, last){
 function closeReadCard(compact){
   const r = CRD.d; const box = h("div",{class:"card", id:"closeReadCard"}, h("h2",null, "Closing read", h("span",{class:"hint", style:{fontWeight:400, marginLeft:"8px"}}, "3:50 · which way the bell leans, graded")));
   if (rhAvailable()){ box.append(h("p",{class:"hint",style:{margin:0}}, "Not inside Claude's preview — the closing read comes from the feed.")); return box; }
-  if (!r){ box.append(h("p",{class:"hint",style:{margin:0}}, CRD.at ? "No closing read yet today. It lands at 3:50 PM ET, a final one at 3:58, and is scored after the bell." : "Loading…")); return box; }
+  if (!r){ box.append(h("p",{class:"hint",style:{margin:0}}, CRD.at ? `No closing read yet today. It lands at ${crTimesText()}, and is scored after the bell.` : "Loading…")); return box; }
   const today = etDayNow() === r.date; const col = r.side === "BUY" ? "var(--pos)" : r.side === "SELL" ? "var(--neg)" : "var(--muted)";
   const head = h("div",{style:{display:"flex",alignItems:"baseline",gap:"10px",flexWrap:"wrap",margin:"4px 0 6px"}},
     h("span",{style:{font:"800 26px/1 var(--mono)", color:col}}, r.side === "BALANCED" ? "BALANCED" : r.side + "-SIDE"), h("span",{class:"badge", style:{background:col, color:"#000", fontSize:"14px", padding:"3px 9px"}}, "grade " + r.grade),
     h("span",{class:"num", style:{color:"var(--muted)"}}, `score ${r.score > 0 ? "+" : ""}${r.score} · ${r.label} ET · ${r.date}${today ? "" : " (last session)"}`));
   box.append(head);
   if (r.outcome) box.append(h("p",{style:{margin:"0 0 6px", color: r.outcome.hit ? "var(--pos)" : r.outcome.hit === false ? "var(--neg)" : "var(--muted)"}}, `Resolved: SPY ${r.spy?.px} → ${r.outcome.close} (${r.outcome.movePct >= 0 ? "+" : ""}${r.outcome.movePct}%) into the close — ${r.outcome.hit ? "right call" : r.outcome.hit === false ? "wrong call" : "balanced, not judged"}.${closeReadSettledNote(r.outcome)}`));
-  if (r.label !== "15:50"){ // the 3:50 read beside the final one when the call changed between them
-    const first = (CRD.hist?.reads || []).find(x => x.date === r.date && x.label === "15:50"); const sh = closeReadShift(first, r);
+  if (crKind(r) !== "call"){ // the 3:50 read beside the final one when the call changed between them
+    const first = (CRD.hist?.reads || []).find(x => x.date === r.date && crKind(x) === "call"); const sh = closeReadShift(first, r);
     if (sh){ const sideCol = s => s === "BUY" ? "var(--pos)" : s === "SELL" ? "var(--neg)" : "var(--muted)"; const sideTxt = s => s === "BALANCED" ? "Balanced" : s === "BUY" ? "Buy-side" : "Sell-side";
       const cell = (x, dim) => h("div",{style:{padding:"5px 8px",border:"1px solid var(--rule)",borderRadius:"6px",opacity: dim ? .72 : 1, minWidth:0}}, h("div",{class:"hint",style:{marginBottom:"2px"}}, `${x.label} ET${dim ? " · first read" : " · final"}`), h("div",{class:"num",style:{fontWeight:700, color:sideCol(x.side), whiteSpace:"nowrap"}}, `${sideTxt(x.side)} · ${x.grade} (${x.score > 0 ? "+" : ""}${x.score})`));
       box.append(h("div",{style:{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:"8px",alignItems:"center",margin:"0 0 6px"}}, cell(first, true), h("span",{class:"hint"}, "→"), cell(r, false)));
@@ -1585,9 +1592,9 @@ function closeReadCard(compact){
     else if (f.gamma) grid.append(row("Gamma", `SPX ${f.gamma.regime}${f.gamma.pinned ? ` · pinned near ${f.gamma.nearestWall}` : ""} · flip ${f.gamma.flip ?? "—"} · walls ${f.gamma.pw ?? "—"} / ${f.gamma.cw ?? "—"}`, null));
     box.append(grid);
     if (r.leaders?.length || r.laggards?.length) box.append(h("p",{class:"hint",style:{margin:"0 0 6px"}}, `Buying: ${r.leaders.map(x => `${x.sym} ${moneyS(x.net)}`).join(", ") || "—"} · Selling: ${r.laggards.map(x => `${x.sym} ${moneyS(x.net)}`).join(", ") || "—"}`));
-    const recs = closeReadRecords(CRD.hist?.reads); const rec50 = recs["15:50"] || r.record || CRD.hist?.record, rec58 = recs["15:58"];
+    const recs = closeReadRecords(CRD.hist?.reads); const rec50 = recs.call || r.record || CRD.hist?.record, rec58 = recs.final;
     if (rec50?.all?.n || rec58?.all?.n) box.append(h("p",{class:"hint",style:{margin:"0 0 6px"}}, `Record, judged on SPY's move from each read's print to the close — 3:50 calls ${closeReadRecordText(rec50)} · 3:58 calls ${closeReadRecordText(rec58)}.`));
-    if (CRD.hist?.reads?.length) for (const lbl of ["15:50","15:58"]){ const rows = CRD.hist.reads.filter(x => x.label === lbl).slice(-8).reverse(); if (rows.length > 1) box.append(h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"4px",alignItems:"center"}}, h("span",{class:"hint",style:{minWidth:"30px"}}, lbl === "15:50" ? "3:50" : "3:58"), ...rows.map(x => h("span",{class:"badge " + (x.outcome?.hit ? "up" : x.outcome?.hit === false ? "dn" : ""), title: x.text}, `${x.date.slice(5)} ${x.side[0]}${x.grade}${x.outcome ? (x.outcome.hit ? " ✓" : x.outcome.hit === false ? " ✗" : "") : ""}`)))); }
+    if (CRD.hist?.reads?.length) for (const kind of ["call","final"]){ const rows = CRD.hist.reads.filter(x => crKind(x) === kind).slice(-8).reverse(); if (rows.length > 1) box.append(h("div",{style:{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"4px",alignItems:"center"}}, h("span",{class:"hint",style:{minWidth:"30px"}}, kind === "call" ? "3:50" : "3:58"), ...rows.map(x => h("span",{class:"badge " + (x.outcome?.hit ? "up" : x.outcome?.hit === false ? "dn" : ""), title: `${crClock(x.label)} ET · ${x.text}`}, `${x.date.slice(5)} ${x.side[0]}${x.grade}${x.outcome ? (x.outcome.hit ? " ✓" : x.outcome.hit === false ? " ✗" : "") : ""}`)))); }
     box.append(h("p",{class:"hint",style:{margin:"8px 0 0"}}, r.note || "")); }
   return box;
 }
@@ -1650,9 +1657,9 @@ async function avaFlowUpdate(auto){
   return text;
 }
 // what Ava sees: the read as a compact object (and the record), the flagged items as lines
-function closeReadForAva(brief){ const r = CRD.d; if (rhAvailable()) return null; if (!r) return CRD.at ? { none:true, note:"no closing read yet today — it lands at 3:50 PM ET (final at 3:58), scored after the bell" } : null;
+function closeReadForAva(brief){ const r = CRD.d; if (rhAvailable()) return null; if (!r) return CRD.at ? { none:true, note:`no closing read yet today — it lands at ${crTimesText().replace(", a final one at", " (final at")}), scored after the bell` } : null;
   const o = { at: whenLabel(r.at), date:r.date, label:r.label, side:r.side, grade:r.grade, score:r.score, confidence:r.confidence ?? null, text:r.text, spy:r.spy || null, outcome:r.outcome || null, record:r.record || CRD.hist?.record || null, recordByRead:(() => { const x = closeReadRecords(CRD.hist?.reads); return Object.keys(x).length ? { note:"hits per grade for each read time (the `record` field is the 3:50 calls)", ...x } : null; })(), note:"a proxy for the closing auction imbalance built from the last 30 minutes of signed volume, the market-wide sweeps, index position vs VWAP, breadth, volume pace and SPX gamma — not the exchange's MOC feed" };
-  if (!brief){ o.factors = r.factors; o.leaders = r.leaders; o.laggards = r.laggards; o.recent = (CRD.hist?.reads || []).filter(x => x.label === "15:50").slice(-10).map(x => `${x.date} ${x.side} ${x.grade} (${x.score > 0 ? "+" : ""}${x.score})${x.outcome ? ` → SPY ${x.outcome.movePct >= 0 ? "+" : ""}${x.outcome.movePct}% ${x.outcome.hit ? "✓" : x.outcome.hit === false ? "✗" : "flat"}` : " (open)"}`); }
+  if (!brief){ o.factors = r.factors; o.leaders = r.leaders; o.laggards = r.laggards; o.recent = (CRD.hist?.reads || []).filter(x => crKind(x) === "call").slice(-10).map(x => `${x.date} ${x.side} ${x.grade} (${x.score > 0 ? "+" : ""}${x.score})${x.outcome ? ` → SPY ${x.outcome.movePct >= 0 ? "+" : ""}${x.outcome.movePct}% ${x.outcome.hit ? "✓" : x.outcome.hit === false ? "✗" : "flat"}` : " (open)"}`); }
   return o; }
 function flowAlertsForAva({ limit = 12, filter = "all", grade = "all", sym = null } = {}){ const d = ANOM.d; if (rhAvailable()) return null; if (!d) return ANOM.at ? { none:true, note:"nothing from the anomaly pass yet — it runs with every chain refresh in market hours" } : null;
   const want = String(sym || "").toUpperCase(); const items = d.items.filter(x => want ? x.sym === want : true).filter(x => filter === "idx" ? x.idx : filter === "names" ? !x.idx : filter === "new" ? Date.now() - x.firstSeen < 45*60e3 : ["surge","block","skew","volOi"].includes(filter) ? x.kind === filter : true).filter(x => grade === "all" ? true : grade === "B" ? x.grade !== "C" : x.grade === grade).slice(0, Math.min(40, limit));

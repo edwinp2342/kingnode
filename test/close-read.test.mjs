@@ -1,8 +1,8 @@
 // The closing read and the anomaly pass, on synthetic days built to lean one way.   `node --test test/close-read.test.mjs`
 import test from "node:test";
 import assert from "node:assert/strict";
-import { signedFlow, vwap, cleanBars, sweepDelta, computeCloseRead, resolveCloseRead, closeReadRecord, settleCloseReads, gradeOf, sideOf } from "../scripts/close-read.mjs";
-import { prevTradingDay } from "../scripts/market-clock.mjs";
+import { signedFlow, vwap, cleanBars, sweepDelta, computeCloseRead, resolveCloseRead, closeReadRecord, settleCloseReads, gradeOf, sideOf, closeReadDue, isCallRead } from "../scripts/close-read.mjs";
+import { prevTradingDay, sessionCloseMin, marketPhase } from "../scripts/market-clock.mjs";
 import { detectAnomalies, baselines, sessionFraction, directionalPremium } from "../scripts/anomalies.mjs";
 
 const T0 = Date.parse("2026-11-11T14:30:00Z"); // 09:30 ET
@@ -175,7 +175,8 @@ test("app: closeReadRecords keeps a record per read time — the 3:58 read earns
   const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   const i = js.indexOf("function closeReadRecords("); assert.ok(i >= 0, "closeReadRecords lives in app.html"); let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } }
   const k = js.indexOf("const closeReadRecordText ="); assert.ok(k > j, "closeReadRecordText follows it"); const kEnd = js.indexOf("\n", k);
-  const ctx = { Object }; vm.createContext(ctx); vm.runInContext(js.slice(i, j + 1) + "\n" + js.slice(k, kEnd) + "\nthis.recs = closeReadRecords; this.txt = closeReadRecordText;", ctx);
+  const c = js.indexOf("const crKind ="); assert.ok(c >= 0, "crKind lives in app.html"); const cEnd = js.indexOf("\n", c);
+  const ctx = { Object }; vm.createContext(ctx); vm.runInContext(js.slice(c, cEnd) + "\n" + js.slice(i, j + 1) + "\n" + js.slice(k, kEnd) + "\nthis.recs = closeReadRecords; this.txt = closeReadRecordText;", ctx);
   // the real shape of close-reads.json on 2026-11-24: the feed's record (3:50 calls) read 1/4, the 3:58 reads 2/7
   const hit = (date, label, side, grade, h) => ({ date, label, side, grade, score: side === "SELL" ? -40 : 40, outcome: h == null ? { close: 1, movePct: 0.1, dir: "up", hit: null } : { close: 1, movePct: 0.1, dir: "up", hit: h } });
   const reads = [hit("11-12", "15:50", "SELL", "C", false), hit("11-12", "15:58", "SELL", "A", false), hit("11-13", "15:50", "BALANCED", "D", null), hit("11-13", "15:58", "BUY", "B", false),
@@ -183,9 +184,40 @@ test("app: closeReadRecords keeps a record per read time — the 3:58 read earns
     hit("11-20", "15:50", "SELL", "B", true), hit("11-20", "15:58", "SELL", "A", false), hit("11-23", "15:50", "BUY", "C", false), hit("11-23", "15:58", "SELL", "C", false),
     hit("11-24", "15:50", "BALANCED", "D", null), { date: "11-24", label: "15:58", side: "BUY", grade: "B", score: 47, outcome: { close: 1, movePct: 0.04, dir: "up", hit: true } }, { date: "11-25", label: "15:50", side: "BUY", grade: "B", score: 30 } /* open, no outcome */];
   const r = ctx.recs(reads);
-  assert.deepEqual(JSON.parse(JSON.stringify(r["15:50"])), closeReadRecord(reads.filter(x => x.label === "15:50")), "the 3:50 record equals the feed's closeReadRecord on the same reads");
-  assert.deepEqual(JSON.parse(JSON.stringify(r["15:50"].all)), { n: 4, hits: 1 }); assert.deepEqual(JSON.parse(JSON.stringify(r["15:58"].all)), { n: 7, hits: 2 });
-  assert.deepEqual(JSON.parse(JSON.stringify(r["15:58"].byGrade)), { A: { n: 2, hits: 0 }, B: { n: 2, hits: 1 }, C: { n: 3, hits: 1 } });
-  assert.equal(ctx.txt(r["15:58"]), "2/7 right (A 0/2 · B 1/2 · C 1/3)"); assert.equal(ctx.txt(r["15:50"]), "1/4 right (B 1/1 · C 0/3)", "grades in A → D order, not insertion order");
+  assert.deepEqual(JSON.parse(JSON.stringify(r.call)), closeReadRecord(reads.filter(x => x.label === "15:50")), "the 3:50 record equals the feed's closeReadRecord on the same reads");
+  assert.deepEqual(JSON.parse(JSON.stringify(r.call.all)), { n: 4, hits: 1 }); assert.deepEqual(JSON.parse(JSON.stringify(r.final.all)), { n: 7, hits: 2 });
+  assert.deepEqual(JSON.parse(JSON.stringify(r.final.byGrade)), { A: { n: 2, hits: 0 }, B: { n: 2, hits: 1 }, C: { n: 3, hits: 1 } });
+  assert.equal(ctx.txt(r.final), "2/7 right (A 0/2 · B 1/2 · C 1/3)"); assert.equal(ctx.txt(r.call), "1/4 right (B 1/1 · C 0/3)", "grades in A → D order, not insertion order");
+  // a half day's reads (12:50 / 12:58, carrying `kind`) count with the rest instead of opening a third bucket
+  const half = ctx.recs([...reads, { ...hit("11-27", "12:50", "SELL", "B", true), kind: "call" }, { ...hit("11-27", "12:58", "SELL", "A", true), kind: "final" }]);
+  assert.deepEqual(Object.keys(half).sort(), ["call", "final"]); assert.deepEqual(JSON.parse(JSON.stringify(half.call.all)), { n: 5, hits: 2 }); assert.deepEqual(JSON.parse(JSON.stringify(half.final.byGrade.A)), { n: 3, hits: 1 });
   assert.equal(ctx.txt(undefined), "no judged calls yet"); assert.deepEqual({ ...ctx.recs(null) }, {}); assert.deepEqual({ ...ctx.recs([{ label: "15:58" }]) }, {}, "reads without a grade or outcome are skipped");
+});
+
+test("half day: the closing read keys on the session's close — 12:50 / 12:58 / 13:03 on 2026-11-27, 15:50 / 15:58 / 16:03 otherwise", () => {
+  assert.equal(sessionCloseMin("2026-11-27"), 13 * 60); assert.equal(sessionCloseMin("2026-12-24"), 13 * 60); assert.equal(sessionCloseMin("2026-11-30"), 16 * 60);
+  assert.equal(marketPhase(new Date("2026-11-27T17:55:00Z")), "regular", "12:55 ET on the half day"); assert.equal(marketPhase(new Date("2026-11-27T18:05:00Z")), "post", "13:05 ET: closed for the day");
+  assert.equal(marketPhase(new Date("2026-11-26T15:00:00Z")), "closed", "Thanksgiving");
+  const half = { closeMin: 13 * 60 };
+  // before the fix the loop asked for ph === "regular" && min >= 15:50, which a half day never reaches
+  assert.deepEqual(closeReadDue("regular", 12 * 60 + 49, half), null, "a minute early: nothing");
+  assert.deepEqual(closeReadDue("regular", 12 * 60 + 50, half), { step: "call", label: "12:50", kind: "call" });
+  assert.deepEqual(closeReadDue("regular", 12 * 60 + 53, { ...half, done: "12:50" }), null, "the call is taken once");
+  assert.deepEqual(closeReadDue("regular", 12 * 60 + 58, { ...half, done: "12:50" }), { step: "final", label: "12:58", kind: "final", call: null });
+  assert.deepEqual(closeReadDue("regular", 12 * 60 + 59, { ...half, done: null }), { step: "final", label: "12:58", kind: "final", call: { label: "12:50", kind: "call" } }, "a missed call is built with the final");
+  assert.deepEqual(closeReadDue("regular", 12 * 60 + 59, { ...half, done: "12:58" }), null);
+  assert.deepEqual(closeReadDue("post", 13 * 60 + 2, half), null, "the verdict waits three minutes"); assert.deepEqual(closeReadDue("post", 13 * 60 + 3, half), { step: "resolve" });
+  assert.deepEqual(closeReadDue("post", 15 * 60 + 50, half), { step: "resolve" }, "15:50 on a half day is after the bell — no read, the verdict is still owed"); assert.deepEqual(closeReadDue("post", 15 * 60 + 50, { ...half, resolved: true }), null);
+  assert.deepEqual(closeReadDue("post", 20 * 60, half), null, "the verdict is not taken overnight");
+  // a normal day is exactly what it was
+  assert.deepEqual(closeReadDue("regular", 15 * 60 + 50, {}), { step: "call", label: "15:50", kind: "call" }); assert.deepEqual(closeReadDue("regular", 15 * 60 + 49, {}), null);
+  assert.deepEqual(closeReadDue("regular", 15 * 60 + 58, { done: "15:50" }), { step: "final", label: "15:58", kind: "final", call: null });
+  assert.deepEqual(closeReadDue("post", 16 * 60 + 3, { done: "15:58" }), { step: "resolve" }); assert.deepEqual(closeReadDue("post", 16 * 60 + 3, { done: "15:58", resolved: true }), null);
+  assert.deepEqual(closeReadDue("pre", 9 * 60, {}), null); assert.deepEqual(closeReadDue("closed", 15 * 60 + 50, {}), null, "no read on a holiday");
+  // the record keys on the read's kind; reads written before `kind` existed are told apart by the 15:50 label
+  assert.equal(isCallRead({ label: "15:50" }), true); assert.equal(isCallRead({ label: "15:58" }), false); assert.equal(isCallRead({ label: "12:50", kind: "call" }), true); assert.equal(isCallRead({ label: "12:58", kind: "final" }), false);
+  const read = computeCloseRead({ now: Date.UTC(2026, 10, 27, 17, 50), et: { date: "2026-11-27", min: 12 * 60 + 50 }, label: "12:50", kind: "call" }); assert.equal(read.kind, "call"); assert.equal(read.label, "12:50");
+  assert.equal(computeCloseRead({ now: Date.now(), label: "15:58" }).kind, "final", "the kind follows the label when the caller gives none");
+  const hist = { reads: [{ date: "2026-11-27", label: "12:50", kind: "call", side: "SELL", grade: "B", spy: { px: 700 } }, { date: "2026-11-27", label: "12:58", kind: "final", side: "SELL", grade: "A", spy: { px: 699 } }] };
+  assert.equal(settleCloseReads(hist, 697, "2026-11-27", 1), 2); assert.deepEqual(hist.record, { byGrade: { B: { n: 1, hits: 1 } }, all: { n: 1, hits: 1 } }, "the half day's call joins the record, its final does not");
 });

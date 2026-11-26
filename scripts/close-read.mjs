@@ -57,7 +57,7 @@ export function gradeOf(score) { const a = Math.abs(score); return a >= 60 ? "A"
 export function sideOf(score) { return score > 15 ? "BUY" : score < -15 ? "SELL" : "BALANCED"; }
 
 // the read itself. bars1m: {sym: bars}; quotes: {sym: {price, prev}}; breadth: data/breadth.json; sweeps: sweepDelta() results (oldest first); scan: scan.json rows
-export function computeCloseRead({ now = Date.now(), et, bars1m = {}, quotes = {}, breadth = null, sweeps = [], scan = null, label = "15:50" }) {
+export function computeCloseRead({ now = Date.now(), et, bars1m = {}, quotes = {}, breadth = null, sweeps = [], scan = null, label = "15:50", kind = null }) {
   const win = 30 * 60e3, from = now - win; const dayStart = now - ((et?.min ?? 950) - 570) * 60e3; // 09:30 ET today
   // indexes carry pseudo-volume (SPX's "volume" is the whole market's shares) — they are not dollar flow; drop them, and drop any name whose
   // half hour would be a nonsense amount of money (a bad feed day must not grade the close)
@@ -94,7 +94,7 @@ export function computeCloseRead({ now = Date.now(), et, bars1m = {}, quotes = {
   const parts = [["flow", flowScore, 0.35], ["market", marketScore, 0.25], ["index", indexScore, 0.20], ["breadth", breadthScore, 0.20]].filter(p => p[1] != null); const wsum = parts.reduce((a, p) => a + p[2], 0) || 1;
   const raw = parts.reduce((a, p) => a + p[1] * p[2], 0) / wsum; const score = clamp(raw * paceMult * pinMult, -100, 100);
   const side = sideOf(score), grade = gradeOf(score);
-  const read = { v: CLOSE_READ_VERSION, at: now, label, date: et?.date || null, side, grade, score: round(score, 0), confidence: round(Math.abs(score), 0),
+  const read = { v: CLOSE_READ_VERSION, at: now, label, kind: kind || (label === "15:50" ? "call" : "final"), date: et?.date || null, side, grade, score: round(score, 0), confidence: round(Math.abs(score), 0),
     factors: { flow: { net: Math.round(fUp - fDn), total: Math.round(fUp + fDn), ratio: round(flowRatio, 3), names: perName.length, score: round(flowScore, 0) },
       market: marketRatio == null ? null : { net: Math.round(mUp - mDn), total: Math.round(mUp + mDn), ratio: round(marketRatio, 3), names: mN, sweeps: sw.length, score: round(marketScore, 0) },
       index: iN ? { ...idx, score: round(indexScore, 0) } : null, breadth: br ? { ...br, score: round(breadthScore, 0) } : null,
@@ -119,6 +119,21 @@ export function closeReadText(r) {
   return bits.join(" ");
 }
 
+// Which closing-read step the loop owes at this minute, relative to the session's close (closeMin: 16:00, or 13:00 on a half day — before
+// 2026-11-26 the times were fixed at 15:50 / 15:58 / 16:03, so a half day's session ended without a read). The call lands ten minutes before the
+// close, the final two minutes before (building the call first if it was missed), the verdict three minutes after. `done` is the label of the
+// last read taken that day, `resolved` whether the verdict ran. Labels are the clock times; `kind` ("call" / "final") is what the record keys on.
+export const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+export function closeReadDue(ph, min, { closeMin = 16 * 60, done = null, resolved = false } = {}) {
+  const call = hhmm(closeMin - 10), fin = hhmm(closeMin - 2);
+  if (ph === "regular" && min >= closeMin - 10 && min < closeMin - 2 && done !== call) return { step: "call", label: call, kind: "call" };
+  if (ph === "regular" && min >= closeMin - 2 && done !== fin) return { step: "final", label: fin, kind: "final", call: done ? null : { label: call, kind: "call" } };
+  if (ph !== "regular" && min >= closeMin + 3 && min < 20 * 60 && !resolved) return { step: "resolve" };
+  return null;
+}
+// the read the record is judged on — the call; reads written before `kind` existed are told apart by their 15:50 label
+export const isCallRead = r => r?.kind ? r.kind === "call" : r?.label === "15:50";
+
 // after the bell: did SPY go the graded way from the 3:50 print to the official close?
 export function resolveCloseRead(read, closePx) {
   if (!read || !(closePx > 0) || !(read.spy?.px > 0)) return null;
@@ -142,7 +157,7 @@ export function settleCloseReads(hist, prevClose, prevSession, now = Date.now())
     if (was && Math.abs((was.close ?? 0) - o.close) >= 0.01) r.outcome.provisional = { close: was.close, movePct: was.movePct, dir: was.dir, hit: was.hit };
     n++;
   }
-  if (n) hist.record = closeReadRecord(hist.reads.filter(r => r.label === "15:50"));
+  if (n) hist.record = closeReadRecord(hist.reads.filter(isCallRead));
   return n;
 }
 // the record the grade is judged on: hits per grade over the kept history (reads with hit === null are not counted)
