@@ -46,6 +46,36 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-26 — scheduled run 14
+- Checked: 65 tests and smoke green before changes. Feed loop in progress on `a4d2097` (run 45732098761, overnight cadence, cycle 197, index.json
+  10.8 min old at 00:11 ET — the 10-minute closed-phase tick; fast 77/77 with 0 fails, sweep 5071/5071, 0 429s, symbols 11421/5071 optionable,
+  macro hourly ok; the cancelled run before it is the 5.5-hour handoff). Wednesday was a session: close-read.json is the 15:58 read (v2, BUY A +71,
+  $6.33B net on $32.34B core, $15.98B on $116.61B market, SPY 718.36 → 716.81 at 16:03, −0.216%, miss; the 15:50 read was BUY D +16, a hit at
+  +0.087% — the call strengthened between the reads on breadth −11 → +65 and whole market −24 → +34; gamma stale as expected). Tuesday's two reads
+  now carry `official: true` (718.58 vs the 718.57 print). anomalies.json still 2026-11-19 (frozen, 9 A / 31 B). hist 77/77, oldest 0.27 days —
+  the weekly refresh ran during 11-25 (last night's unverified item). macro (EFFR 3.88% on 11-24, yields 4/4 with 10y 4.848 vs prev 4.904, BLS Oct,
+  `yoy13` 4.08) ok. breadth `day: 2026-11-25`, 71 points. scan 337 rows, `at` 11-19 (frozen); chainAt 150.8 h old, `fail` is the tier-B dozen
+  `cb:*:http 403` — the Cboe outage's seventh calendar day, no decision on the Backlog proposal yet. Thursday is Thanksgiving (no session).
+- Found 1 (feed): **the closing read would have skipped Friday's half day.** `closingRead()` asked for `ph === "regular" && t.min >= 15:50`, and on a
+  13:00 close (2026-11-27, 12-24) the phase is "post" from 1 PM — no call, no final, nothing to resolve; the same fixed minutes delayed the closes
+  sweep to 16:15 and kept the day's expiries counted as positioning until 16:00.
+- Fixed: `sessionCloseMin(date)` in market-clock.mjs (13:00 on `NYSE_HALF_DAYS`, 16:00 otherwise; `marketPhase` uses it too) drives the new
+  `closeReadDue(ph, min, {closeMin, done, resolved})` in close-read.mjs — the call ten minutes before the close, the final two minutes before (the call
+  built first if missed), the verdict three minutes after — so a half day reads at 12:50 / 12:58 and resolves at 13:03, a normal day exactly as before.
+  Reads carry `kind` ("call" / "final"); the feed's record keys on `isCallRead` (older reads by their 15:50 label). The app (`crKind`, `crClock`,
+  `etCloseMin`, `crHot`, `crTimesText`) groups the record and badge rows by kind, names the right print in the resolved notice, polls hot around the
+  session's real close and says "12:50 PM ET, a final one at 12:58" on a half day; Ava's note follows. New test in test/close-read.test.mjs (the
+  half-day schedule minute by minute, the normal day unchanged, holiday, `kind` on the read, the record through settleCloseReads); the app
+  closeReadRecords test now feeds a half day's pair. Rendered the Flow tab headlessly with tonight's real close-read.json + close-reads.json: card,
+  both records (3:50 2/5, 3:58 2/8), shift block, no page errors; an offline `--once` cycle on fake-net ran clean. README (closing-read paragraph,
+  test count 66), docs/LAB.md. App v61 (KN_VERSION, sw.js CACHE, index.html). Commit 7fcbcc0.
+- State: 66 tests green, smoke clean; feed redispatched (run 45760761798, loop_minutes 330) after cancelling 45732098761; verified on its first
+  cycle (cycle 0 on 7fcbcc0, fast 77/77, sweep 5071/5071, the 403s continue). Preview artifact republished (version 32). No backlog item taken —
+  the half-day fix was the night's one change.
+- Not verified: github.io (unreachable from here); the half-day reads live — Friday 11-27 should show a 12:50 call, a 12:58 final and a 13:03
+  verdict (check Saturday's run: close-reads.json rows dated 2026-11-27 with `kind`); Wednesday's provisional 716.81 close against the official
+  print, which settles on Friday's premarket quote.
+
 ### 2026-11-25 — scheduled run 13
 - Checked: 64 tests and smoke green before changes. Feed loop in progress on `e7e601c` (run 45537923478, overnight cadence, cycle 95, index.json
   1.0 min old at 00:11 ET; fast 77/77 with 0 fails, sweep 5070/5070, 0 429s, symbols 11421/5070 optionable, macro hourly ok; the cancelled run
