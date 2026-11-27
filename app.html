@@ -681,7 +681,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v62 beta";
+const KN_VERSION = "v63 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -953,7 +953,7 @@ function renderTape(){
 }
 setInterval(() => { if (document.visibilityState === "visible" && (S.set.proxy||"").trim()) loadTape(); }, 10000);
 setInterval(() => { if (document.visibilityState === "visible" && !(S.set.proxy||"").trim()) loadTape(); }, 15000); // the feed writes the tape every 20 s in regular hours
-setInterval(() => { if (document.visibilityState === "visible"){ if (!rhAvailable()) loadMacroData(); loadUniverse(true).then(() => { renderLiveQuote(); applyLivePatches(); }); if (!FEED_NAMES.has(S.sym)) loadMarket(true).then(() => { renderLiveQuote(); applyLivePatches(); }); else if (Date.now() - MKT.at > 5*60e3) loadMarket(true).then(renderLiveQuote); } }, 30000); // the feed's universe quote backs the header for every name, not just the tape; the sweep covers the rest
+setInterval(() => { if (document.visibilityState === "visible"){ if (!feedless()) loadMacroData(); loadUniverse(true).then(() => { renderLiveQuote(); applyLivePatches(); }); if (!FEED_NAMES.has(S.sym)) loadMarket(true).then(() => { renderLiveQuote(); applyLivePatches(); }); else if (Date.now() - MKT.at > 5*60e3) loadMarket(true).then(renderLiveQuote); } }, 30000); // the feed's universe quote backs the header for every name, not just the tape; the sweep covers the rest
 
 // ---------- Broker quotes: the viewer's own Robinhood connection, when the page runs inside Claude's artifact viewer ----------
 // The published preview is sandboxed: it cannot reach the feed or any website. What it can reach, with the viewer's consent and the viewer's own
@@ -1131,7 +1131,7 @@ async function loadRun(){
         const snap = await snapshotJson(`${sym}.json`, 40); const wrap = sn => ({ ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => ({...sn, source: (sn.source||"cboe") + " · snapshot", stale: !!sn._stale, snapAt: sn._at}) });
         if (snap?.rows?.length && !snap._stale) r = wrap(snap);
         else { r = await cboeDirect(sym); if ((!r || !r.ok) && snap?.rows?.length) r = wrap(snap); }
-        if ((!r || !r.ok) && rhReady()){ const rc = await rhChain(sym); if (rc?.rows?.length && mySeq === loadSeq && S.sym === sym) r = { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => rc }; } } } // Claude's preview: the viewer's Robinhood chain, real-time
+        if (rhReady()){ const rc = await rhChain(sym); if (rc?.rows?.length && mySeq === loadSeq && S.sym === sym) r = { ok:true, status:200, headers:{get:()=>"application/json"}, json: async () => rc }; } } } // Claude's preview: the viewer's Robinhood chain is real-time, so it beats a snapshot — bundled or not
     if (!r.ok) throw 0;
     data = await r.json();
     if (!data.rows || !data.rows.length) throw 0;
@@ -1157,15 +1157,19 @@ async function loadRun(){
 // Snapshot feed: the GitHub Action writes chains/bars/quotes to the `data` branch every 5 minutes; raw.githubusercontent allows browser reads.
 let DATA_BASE = "https://raw.githubusercontent.com/edwinp2342/kingnode/data/";
 // ---------- Kingnode's own server (Railway, a VPS, the desktop app): same-origin data with no CDN in the way, and Ava through a server-held key ----------
-const SRV = { checked:false, data:false, ava:null, base:null }; // ava: {configured, locked, local} from GET /api/ava, or null when there is no server
+const SRV = { checked:false, data:false, bundled:false, bundledAt:null, ava:null, base:null }; // ava: {configured, locked, local} from GET /api/ava, or null when there is no server
 async function detectServer(){
   if (SRV.checked) return SRV; SRV.checked = true;
-  if (!/^https?:$/.test(location.protocol) || /github\.io$|vercel\.app$|claudeusercontent\.com$/.test(location.hostname)) return SRV; // static hosts and Claude's preview have no server
-  try { const r = await fetch("/data/index.json", { cache:"no-store" }); if (r.ok){ const j = await r.json(); if (j && (j.at || j.cycle != null)){ SRV.data = true; SRV.base = location.origin + "/data/"; DATA_BASE = SRV.base; LIVE_MISS.clear(); } } } catch {}
-  try { const r = await fetch("/api/ava", { cache:"no-store" }); if (r.ok){ const j = await r.json(); if (j && typeof j.configured === "boolean") SRV.ava = j; } } catch {}
-  if (SRV.data || SRV.ava) console.log(`[server] data ${SRV.data ? "same-origin" : "GitHub"} · Ava ${SRV.ava?.configured ? (SRV.ava.locked ? "server key (password)" : "server key") : "browser key"}`);
+  if (!/^https?:$/.test(location.protocol)) return SRV;
+  const staticHost = /github\.io$|vercel\.app$|claudeusercontent\.com$/.test(location.hostname); // static hosts and Claude's preview have no server — but may carry a bundled snapshot of the feed next to the page
+  const candidates = []; try { candidates.push(new URL("data/", document.baseURI).href); } catch {} if (!staticHost) candidates.unshift(location.origin + "/data/");
+  for (const base of [...new Set(candidates)]){ try { const r = await fetch(base + "index.json", { cache:"no-store" }); if (r.ok){ const j = await r.json(); if (j && (j.at || j.cycle != null)){ SRV.data = true; SRV.bundled = staticHost; SRV.bundledAt = j.at || null; SRV.base = base; DATA_BASE = base; LIVE_MISS.clear(); break; } } } catch {} }
+  if (!staticHost){ try { const r = await fetch("/api/ava", { cache:"no-store" }); if (r.ok){ const j = await r.json(); if (j && typeof j.configured === "boolean") SRV.ava = j; } } catch {} }
+  if (SRV.data || SRV.ava) console.log(`[server] data ${SRV.bundled ? "bundled snapshot next to the page" : SRV.data ? "same-origin" : "GitHub"} · Ava ${SRV.ava?.configured ? (SRV.ava.locked ? "server key (password)" : "server key") : "browser key"}`);
   return SRV;
 }
+// no feed reachable at all: Claude's preview without a bundled snapshot (the sandbox cannot fetch GitHub)
+function feedless(){ return rhAvailable() && !SRV.data; }
 // Returns the snapshot with its age attached (_at, _age ms, _stale). Old real data beats fresh fake data, so callers show the age instead of dropping it.
 // The raw CDN caches each path for five minutes whatever the query string, so the feed also writes the tape every 20 s and the universe every
 // minute under time-bucketed names (live/q-<bucket>.json, live/u-<bucket>.json). A path nobody has asked for yet is a cache miss: asking for
@@ -1512,7 +1516,7 @@ function macroReadings(){ const d = MAC.d?.data; if (!d) return null; const line
   if (d.yields) lines.yields = `Treasuries: 3m ${d.yields.t3m ?? "—"} · 5y ${d.yields.t5y ?? "—"} · 10y ${d.yields.t10y ?? "—"} · 30y ${d.yields.t30y ?? "—"}${d.yields.t10y != null && d.yields.t3m != null ? ` · 10y−3m ${(d.yields.t10y - d.yields.t3m).toFixed(2)}` : ""} (${whenLabel(Date.parse(d.yields.asOf))})`;
   return Object.keys(lines).length ? { ...lines, asOf: MAC.d.at ? new Date(MAC.d.at).toISOString() : null, sources: MAC.d.sources } : null; }
 function macroReadingsBlock(){ const r = macroReadings(); const box = h("div",{class:"card", style:{marginBottom:"10px"}}, h("h2",null,"Latest readings"));
-  if (!r){ box.append(h("p",{class:"hint",style:{margin:0}}, rhAvailable() ? "No readings inside Claude's preview — the feed that fetches them (BLS, NY Fed, Treasury) is unreachable here; the calendar above is the built-in, verified one." : MAC.at ? "The feed has not written macro.json yet — it fetches BLS, NY Fed and Treasury readings hourly." : "Loading…")); return box; }
+  if (!r){ box.append(h("p",{class:"hint",style:{margin:0}}, feedless() ? "No readings inside Claude's preview — the feed that fetches them (BLS, NY Fed, Treasury) is unreachable here; the calendar above is the built-in, verified one." : MAC.at ? "The feed has not written macro.json yet — it fetches BLS, NY Fed and Treasury readings hourly." : "Loading…")); return box; }
   const ks = ["cpi","unemployment","payrolls","wages","fedFunds","yields"].filter(k => r[k]);
   box.append(h("div",{style:{display:"grid",gap:"3px",fontSize:"12.5px"}}, ...ks.map(k => h("div",{style:{padding:"3px 0",borderBottom:"1px solid var(--rule)"}}, r[k]))), h("p",{class:"hint",style:{margin:"6px 0 0"}}, `BLS public API, NY Fed and Yahoo's Treasury quotes, via the feed · fetched ${ageLabel(MAC.d.at)}${MAC.d.calendarVerified ? ` · release dates verified ${MAC.d.calendarVerified}` : ""}${MAC.d.sources?.fred ? " · FRED calendar on" : ""}`)); return box; }
 // ---------- The closing read (3:50 / 3:58) and suspicious flow, from the feed ----------
@@ -1548,7 +1552,7 @@ function onCloseRead(r){ const key = `${r.date}|${r.label}|${r.outcome ? "resolv
   if (crKind(r) !== "call"){ const first = (CRD.hist?.reads || []).find(x => x.date === r.date && crKind(x) === "call") || CRD.prev; if (first && first.side === r.side && first.grade === r.grade){ notice(`Closing read ${r.label}: unchanged — ${line}.`); return; } }
   CRD.prev = r;
   if (settingOn("closeReadAlerts")) fireAlert(`Closing read ${r.label}`, `${line}. ${r.text.split(". ").slice(1, 3).join(". ")}.`); notice(`Closing read ${line} — see the Flow tab.`); }
-function closeReadPoll(){ clearTimeout(CRD.timer); const hot = crHot(); if (!rhAvailable()) loadCloseRead(); CRD.timer = setTimeout(closeReadPoll, hot ? 25e3 : 5*60e3); }
+function closeReadPoll(){ clearTimeout(CRD.timer); const hot = crHot(); if (!feedless()) loadCloseRead(); CRD.timer = setTimeout(closeReadPoll, hot ? 25e3 : 5*60e3); }
 const moneyS = v => { if (v == null || !isFinite(v)) return "—"; const a = Math.abs(v); const s = a >= 1e9 ? (a/1e9).toFixed(2) + "B" : a >= 1e6 ? (a/1e6).toFixed(a >= 1e8 ? 0 : 1) + "M" : (a/1e3).toFixed(0) + "k"; return (v < 0 ? "−$" : "$") + s; };
 // the record per read time, from close-reads.json: the feed's `record` covers the 3:50 calls only, but the 3:58 read is the one close-read.json
 // carries and the alert fires on, so each read time earns its own record (hits per grade, judged on SPY's move from that read's print to the
@@ -1571,7 +1575,7 @@ function closeReadShift(first, last){
 }
 function closeReadCard(compact){
   const r = CRD.d; const box = h("div",{class:"card", id:"closeReadCard"}, h("h2",null, "Closing read", h("span",{class:"hint", style:{fontWeight:400, marginLeft:"8px"}}, "3:50 · which way the bell leans, graded")));
-  if (rhAvailable()){ box.append(h("p",{class:"hint",style:{margin:0}}, "Not inside Claude's preview — the closing read comes from the feed.")); return box; }
+  if (feedless()){ box.append(h("p",{class:"hint",style:{margin:0}}, "Not inside Claude's preview — the closing read comes from the feed.")); return box; }
   if (!r){ box.append(h("p",{class:"hint",style:{margin:0}}, CRD.at ? `No closing read yet today. It lands at ${crTimesText()}, and is scored after the bell.` : "Loading…")); return box; }
   const today = etDayNow() === r.date; const col = r.side === "BUY" ? "var(--pos)" : r.side === "SELL" ? "var(--neg)" : "var(--muted)";
   const head = h("div",{style:{display:"flex",alignItems:"baseline",gap:"10px",flexWrap:"wrap",margin:"4px 0 6px"}},
@@ -1632,8 +1636,8 @@ function onNewAnomalies(items){
   if (settingOn("avaFlowAuto") && avaRoute() && marketPhase() === "regular" && Date.now() - ANOM.updateAt > 30*60e3) avaFlowUpdate(true).catch(() => {});
 }
 function anomalyList(limit = 40, filter = "all"){
-  const d = ANOM.d; const st = d && !rhAvailable() ? anomalyStaleness(d, tapeSessionDate()) : null; const box = h("div",{class:"card", id:"anomCard"}, h("h2",null, "Suspicious flow", h("span",{class: st ? "hint warn" : "hint", style:{fontWeight:400, marginLeft:"8px"}}, st ? st.title : "today's tape against each name's own 20-day baseline")));
-  if (rhAvailable()){ box.append(h("p",{class:"hint",style:{margin:0}}, "Not inside Claude's preview — the anomaly pass runs in the feed.")); return box; }
+  const d = ANOM.d; const st = d && !feedless() ? anomalyStaleness(d, tapeSessionDate()) : null; const box = h("div",{class:"card", id:"anomCard"}, h("h2",null, "Suspicious flow", h("span",{class: st ? "hint warn" : "hint", style:{fontWeight:400, marginLeft:"8px"}}, st ? st.title : "today's tape against each name's own 20-day baseline")));
+  if (feedless()){ box.append(h("p",{class:"hint",style:{margin:0}}, "Not inside Claude's preview — the anomaly pass runs in the feed.")); return box; }
   if (!d){ box.append(h("p",{class:"hint",style:{margin:0}}, ANOM.at ? "Nothing from the feed yet — the pass runs with every chain refresh in market hours." : "Loading…")); return box; }
   const items = d.items.filter(x => filter === "all" ? true : filter === "idx" ? x.idx : filter === "names" ? !x.idx : filter === "new" ? Date.now() - x.firstSeen < 45*60e3 : x.kind === filter).slice(0, limit);
   const ctl = h("div",{class:"ctl", style:{marginBottom:"6px"}}, h("label",null, "Show", h("select",{onchange:e => { S.anomFilter = e.target.value; renderTabs(); }}, [["all","All"],["new","New (45 min)"],["idx","Indexes & ETFs"],["names","Single names"],["surge","Premium surges"],["block","Blocks"],["skew","One-sided"],["volOi","Vol / OI"]].map(([v,l]) => h("option",{value:v, selected:(S.anomFilter||"all")===v}, l)))),
@@ -1662,11 +1666,11 @@ async function avaFlowUpdate(auto){
   return text;
 }
 // what Ava sees: the read as a compact object (and the record), the flagged items as lines
-function closeReadForAva(brief){ const r = CRD.d; if (rhAvailable()) return null; if (!r) return CRD.at ? { none:true, note:`no closing read yet today — it lands at ${crTimesText().replace(", a final one at", " (final at")}), scored after the bell` } : null;
+function closeReadForAva(brief){ const r = CRD.d; if (feedless()) return null; if (!r) return CRD.at ? { none:true, note:`no closing read yet today — it lands at ${crTimesText().replace(", a final one at", " (final at")}), scored after the bell` } : null;
   const o = { at: whenLabel(r.at), date:r.date, label:r.label, side:r.side, grade:r.grade, score:r.score, confidence:r.confidence ?? null, text:r.text, spy:r.spy || null, outcome:r.outcome || null, record:r.record || CRD.hist?.record || null, recordByRead:(() => { const x = closeReadRecords(CRD.hist?.reads); return Object.keys(x).length ? { note:"hits per grade for each read time (the `record` field is the 3:50 calls)", ...x } : null; })(), note:"a proxy for the closing auction imbalance built from the last 30 minutes of signed volume, the market-wide sweeps, index position vs VWAP, breadth, volume pace and SPX gamma — not the exchange's MOC feed" };
   if (!brief){ o.factors = r.factors; o.leaders = r.leaders; o.laggards = r.laggards; o.recent = (CRD.hist?.reads || []).filter(x => crKind(x) === "call").slice(-10).map(x => `${x.date} ${x.side} ${x.grade} (${x.score > 0 ? "+" : ""}${x.score})${x.outcome ? ` → SPY ${x.outcome.movePct >= 0 ? "+" : ""}${x.outcome.movePct}% ${x.outcome.hit ? "✓" : x.outcome.hit === false ? "✗" : "flat"}` : " (open)"}`); }
   return o; }
-function flowAlertsForAva({ limit = 12, filter = "all", grade = "all", sym = null } = {}){ const d = ANOM.d; if (rhAvailable()) return null; if (!d) return ANOM.at ? { none:true, note:"nothing from the anomaly pass yet — it runs with every chain refresh in market hours" } : null;
+function flowAlertsForAva({ limit = 12, filter = "all", grade = "all", sym = null } = {}){ const d = ANOM.d; if (feedless()) return null; if (!d) return ANOM.at ? { none:true, note:"nothing from the anomaly pass yet — it runs with every chain refresh in market hours" } : null;
   const want = String(sym || "").toUpperCase(); const items = d.items.filter(x => want ? x.sym === want : true).filter(x => filter === "idx" ? x.idx : filter === "names" ? !x.idx : filter === "new" ? Date.now() - x.firstSeen < 45*60e3 : ["surge","block","skew","volOi"].includes(filter) ? x.kind === filter : true).filter(x => grade === "all" ? true : grade === "B" ? x.grade !== "C" : x.grade === grade).slice(0, Math.min(40, limit));
   const st = anomalyStaleness(d, tapeSessionDate()); return { at: whenLabel(d.at), date:d.date, ...(st ? { stale:true, session: st.session, warning: st.note } : {}), sessionIn: `${Math.round(d.frac*100)}%`, counts:d.counts, shown: items.length, items: items.map(x => `${x.grade} · ${x.kind}${x.aggr ? " " + (x.aggr === "A" ? "bought" : x.aggr === "B" ? "sold" : "mid") : ""} · ${x.text}${x.levels?.cw || x.levels?.pw ? ` · walls ${x.levels.pw ?? "—"}/${x.levels.cw ?? "—"}` : ""}${Date.now() - x.firstSeen < 45*60e3 ? " · NEW " + ageLabel(x.firstSeen) : " · first seen " + whenLabel(x.firstSeen)}`), note:"premium is derived from the 15-minute-delayed chain (last × volume) against the name's own 20-day daily median, paced for the time of day; grade A ≥75, B ≥55, C below; 'fresh' means volume above open interest; the aggressor side is the last print against the quote" }; }
 // ---------- The Lab: research on the feed's ten-year history, in this browser ----------
@@ -1960,12 +1964,12 @@ function renderStatus(){
     row("Market sweep", MKT.snapAt ? `${Object.keys(MKT.q||{}).length} names · ${ageLabel(MKT.snapAt)}${MKT.stale ? " · STALE" : ""}` : "—", MKT.snapAt ? !MKT.stale : null, "Every optionable name, every 5 minutes in regular hours (10 pre/post, 30 overnight)."),
     row("Breadth", BRD.d ? `${fmt(BRD.d.adv)} up / ${fmt(BRD.d.dec)} down · ${ageLabel(BRD.d.at)}` : "—", BRD.d ? true : null),
     row("Tape", tapeQuotes.size ? `${tapeQuotes.size} tickers · ${[...tapeQuotes.values()][0]?.demo ? "demo" : ([...tapeQuotes.values()][0]?.src || "server")}` : "loading", tapeQuotes.size ? ![...tapeQuotes.values()][0]?.demo : null),
-    row("Closing read", rhAvailable() ? "not in the preview" : CRD.d ? `${CRD.d.date === etDayNow() ? "" : CRD.d.date + " · "}${CRD.d.label} ${CRD.d.side} ${CRD.d.grade}${CRD.d.outcome ? (CRD.d.outcome.hit ? " ✓" : CRD.d.outcome.hit === false ? " ✗" : "") : ""} · ${ageLabel(CRD.d.at)}` : CRD.at ? "none yet today" : "—", rhAvailable() ? null : CRD.d ? CRD.d.date === etDayNow() : null, "The feed's 3:50 PM read of which way the close leans (final at 3:58), scored after the bell against SPY's move from the 3:50 print to the official close. Flow tab."),
-    row("Suspicious flow", rhAvailable() ? "not in the preview" : ANOM.d ? `${ANOM.d.counts.A} A · ${ANOM.d.counts.B} B · ${ANOM.d.counts.C} C · ${ageLabel(ANOM.d.at)}` : ANOM.at ? "nothing yet" : "—", rhAvailable() ? null : ANOM.d ? Date.now() - ANOM.d.at < 40*60e3 || marketPhase() !== "regular" : null, "Today's options tape graded against each name's own 20-day baseline — surges, blocks with the aggressor side, one-sided days, vol/OI outliers. Runs with every chain refresh in market hours. Flow tab."),
+    row("Closing read", feedless() ? "not in the preview" : CRD.d ? `${CRD.d.date === etDayNow() ? "" : CRD.d.date + " · "}${CRD.d.label} ${CRD.d.side} ${CRD.d.grade}${CRD.d.outcome ? (CRD.d.outcome.hit ? " ✓" : CRD.d.outcome.hit === false ? " ✗" : "") : ""} · ${ageLabel(CRD.d.at)}` : CRD.at ? "none yet today" : "—", rhAvailable() ? null : CRD.d ? CRD.d.date === etDayNow() : null, "The feed's 3:50 PM read of which way the close leans (final at 3:58), scored after the bell against SPY's move from the 3:50 print to the official close. Flow tab."),
+    row("Suspicious flow", feedless() ? "not in the preview" : ANOM.d ? `${ANOM.d.counts.A} A · ${ANOM.d.counts.B} B · ${ANOM.d.counts.C} C · ${ageLabel(ANOM.d.at)}` : ANOM.at ? "nothing yet" : "—", rhAvailable() ? null : ANOM.d ? Date.now() - ANOM.d.at < 40*60e3 || marketPhase() !== "regular" : null, "Today's options tape graded against each name's own 20-day baseline — surges, blocks with the aggressor side, one-sided days, vol/OI outliers. Runs with every chain refresh in market hours. Flow tab."),
     row("Stream", STR.state === "off" ? "none — polling the feed" : STR.state === "live" ? `${streamLabel()} · ${STR.status?.provider} · ${STR.subs.size} symbols${STR.status?.reconnects ? ` · ${STR.status.reconnects} reconnects` : ""}` : `${STR.state}${STR.status?.errors?.length ? " · " + STR.status.errors.at(-1).msg : ""}`, STR.state === "off" ? null : STR.state === "live", "A self-hosted Kingnode server with provider keys (docs/MARKET-DATA.md). IEX is one exchange's prints; SIP is the consolidated tape."),
     row("Broker", RH.state === "off" ? (rhAvailable() ? "Robinhood · not started" : "none — only inside Claude's preview") : RH.state === "live" ? `Robinhood · ${RH.calls} calls · answered ${ageLabel(RH.lastOk)}` : rhLabel(), RH.state === "off" ? null : RH.state === "live", "Inside Claude's preview (where the feed is unreachable) the page asks your own Robinhood connection, with your consent, for quotes — last trade, bid × ask, previous close, index levels — and bars. Your credentials never touch this page; Robinhood does not serve RUT or options chains through it."),
     row("Heatseeker", `${S.seekerHist.length} snapshots`, S.seekerHist.length > 1),
-    row("Host", `${location.hostname.includes("github.io") ? "static site — snapshot mode" : rhAvailable() ? "Claude preview" : SRV.data || SRV.ava ? `Kingnode server (${location.hostname}) · data ${SRV.data ? "same-origin, no CDN" : "GitHub"} · Ava ${avaRouteLabel()}` : location.hostname || "file"} · ${KN_VERSION}`, SRV.data ? true : null),
+    row("Host", `${SRV.bundled ? `Claude preview · bundled snapshot of the feed as of ${SRV.bundledAt ? whenLabel(SRV.bundledAt) : "—"} (not live)` : location.hostname.includes("github.io") ? "static site — snapshot mode" : rhAvailable() ? "Claude preview" : SRV.data || SRV.ava ? `Kingnode server (${location.hostname}) · data ${SRV.data ? "same-origin, no CDN" : "GitHub"} · Ava ${avaRouteLabel()}` : location.hostname || "file"} · ${KN_VERSION}`, SRV.data ? true : null),
     row("Proxy", (S.set.proxy||"").trim() ? "set" : "none — direct browser fetch", (S.set.proxy||"").trim() ? true : null),
     h("p",{style:{margin:"6px 0 0"}},"Red = something is wrong; gold = older than it should be. Ava's data_status tool reports the same table."),
     h("div",{style:{marginTop:"8px",display:"flex",gap:"6px",flexWrap:"wrap"}}, h("button",{class:"btn small", onclick: showDiagnostics, title:"Everything about this session's data in one block of text — paste it when reporting a problem"}, "Diagnostics"), h("button",{class:"btn small", onclick: () => renderStatus()}, "Refresh")));
@@ -2823,7 +2827,7 @@ function synthFlow(){
 }
 function viewFlow(){
   const f = S.flow; const box = h("div",null);
-  if (!rhAvailable()){ loadCloseRead(); loadAnomalies(); const desk = h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(360px, 1fr))",gap:"12px",marginBottom:"14px",alignItems:"start"}}, closeReadCard(false), anomalyList(S.anomMore ? 40 : 14, S.anomFilter || "all")); const more = ANOM.d && ANOM.d.n > 14 ? h("div",{style:{marginBottom:"14px"}}, h("button",{class:"btn small", onclick:() => { S.anomMore = !S.anomMore; renderTabs(); }}, S.anomMore ? "Fewer" : `All ${ANOM.d.n} flagged`)) : null; box.append(desk); if (more) box.append(more);
+  if (!feedless()){ loadCloseRead(); loadAnomalies(); const desk = h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(360px, 1fr))",gap:"12px",marginBottom:"14px",alignItems:"start"}}, closeReadCard(false), anomalyList(S.anomMore ? 40 : 14, S.anomFilter || "all")); const more = ANOM.d && ANOM.d.n > 14 ? h("div",{style:{marginBottom:"14px"}}, h("button",{class:"btn small", onclick:() => { S.anomMore = !S.anomMore; renderTabs(); }}, S.anomMore ? "Fewer" : `All ${ANOM.d.n} flagged`)) : null; box.append(desk); if (more) box.append(more);
     box.append(h("div",{class:"qhead",style:{marginBottom:"6px"}}, h("div",null, h("div",{class:"qtitle"}, `${S.sym} — today's options flow`), h("div",{class:"hint"},"Where the money went in this name: by contract, with the aggressor side.")))); }
   const filt = h("div",{class:"ctl"},
     h("label",null,"Min premium", h("select",{onchange:e=>{S.flowMinPrem=Number(e.target.value); renderTabs();}}, [[25000,"$25K"],[50000,"$50K"],[100000,"$100K"],[250000,"$250K"],[1000000,"$1M"]].map(([v,l])=>h("option",{value:v, selected:S.flowMinPrem===v}, l)))),
@@ -3669,7 +3673,7 @@ function viewCalendar(){
     cells.push(h("div",{class:"jc-cell"+(k===todayKey?" today":""), style:{minHeight:"84px", background: top>=3 ? "rgba(239,83,80,.10)" : top===2 ? "rgba(245,185,66,.08)" : "var(--panel2)"}}, h("div",{class:"jc-d"}, d, HOLIDAY_NAMES[k] ? h("span",{class:"hint", title:HOLIDAY_NAMES[k], style:{color:"var(--gold)"}}, NYSE_HOLIDAYS.has(k) ? " closed" : NYSE_HALF_DAYS.has(k) ? " 1pm close" : " bonds closed") : null),
       ...evs.map(e => h("div",{style:{fontSize:"10.5px",lineHeight:"1.3",margin:"2px 0",color: e.impact>=3?"#FCA5A5":e.impact===2?"var(--gold)":"var(--ink)"}, title:e.name + (e.time?` · ${e.time} ET`:"")}, (e.time ? e.time + " " : "") + e.name.replace(/ \(.*?\)/,""), e.mine ? h("button",{class:"btn small", style:{marginLeft:"4px",padding:"0 4px"}, onclick:()=>{ setEvents(getEvents().filter(x => !(x.name===e.name && x.date===e.date))); renderTabs(); renderEvents(); }},"×") : null)))); }
   box.append(h("div",{class:"card"}, h("div",{class:"jc-head"}, ...["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>h("div",null,x))), h("div",{class:"jc-grid"}, ...cells)));
-  box.append(macroReadingsBlock()); if (!MAC.d && !rhAvailable()) loadMacroData();
+  box.append(macroReadingsBlock()); if (!MAC.d && !feedless()) loadMacroData();
   // list view for the month
   const monthEvs = all.filter(e => e.date.startsWith(`${CALV.y}-${String(CALV.m+1).padStart(2,"0")}`)).sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
   box.append(h("div",{class:"card",style:{marginTop:"12px"}}, h("h2",null,"This month, in order"), h("table",{class:"data"}, h("thead",null,h("tr",null,["Date","Time ET","Event","Impact","What it tends to move"].map(x=>h("th",null,x)))), h("tbody",null, monthEvs.map(e => h("tr",null, h("td",null, new Date(e.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})), h("td",null,e.time||"—"), h("td",{style:{textAlign:"left"}},e.name), h("td",{style:{color:e.impact>=3?"var(--neg)":e.impact===2?"var(--gold)":"var(--muted)"}},"●".repeat(e.impact||1)), h("td",{style:{textAlign:"left",color:"var(--muted)"}}, /CPI|PCE|PPI/.test(e.name) ? "rates, TLT, growth vs value, VIX" : /FOMC|Fed/.test(e.name) ? "everything — rates, dollar, indexes, vol" : /Jobs|payroll|claims/i.test(e.name) ? "rates, small caps, TLT" : /opex|VIX/i.test(e.name) ? "pin/unpin around walls; gamma rolls off" : /earnings/i.test(e.name) ? "the name, its group, the index if mega-cap" : /Retail/.test(e.name) ? "consumer names, growth" : /GDP/.test(e.name) ? "rates, cyclicals" : "sector")))))));
@@ -3692,7 +3696,7 @@ setInterval(checkEventAlerts, 60000); setTimeout(checkEventAlerts, 5000);
 const MACRO = ["SPY","IWM","QQQ","TLT","GLD","UUP","XLE","SMH"]; const MC = { bars:new Map(), at:0, loading:false };
 async function loadMacro(){ if (MC.loading || Date.now() - MC.at < 10*60e3) return; MC.loading = true; let changed = false; for (const s of MACRO){ if (MC.bars.has(s)) continue; const b = await fetchBarsAny(s); MC.bars.set(s, b || (S.demo ? synthBars({SPY:775,IWM:283,QQQ:756,TLT:77.1,GLD:378,UUP:28,XLE:62.7,SMH:330}[s]||100,"1d") : null)); changed = true; } MC.loading = false; MC.at = Date.now(); if (changed && S.tab === "macro") renderTabs(); }
 function viewMacro(){
-  const box = h("div",null); const rets = new Map(); box.append(macroReadingsBlock()); if (!MAC.d && !rhAvailable()) loadMacroData(); if (!rhAvailable()){ loadCloseRead(); const cr = closeReadCard(true); cr.style.marginBottom = "12px"; box.append(cr); }
+  const box = h("div",null); const rets = new Map(); box.append(macroReadingsBlock()); if (!MAC.d && !feedless()) loadMacroData(); if (!feedless()){ loadCloseRead(); const cr = closeReadCard(true); cr.style.marginBottom = "12px"; box.append(cr); }
   for (const s of MACRO){ const b = MC.bars.get(s); if (!b || b.length < 25) continue; const cl = b.map(x=>x[4]); rets.set(s, {r:cl.slice(1).map((c,i)=>Math.log(c/cl[i])).slice(-20), c1:cl.at(-1)/cl.at(-2)-1, c5:cl.at(-1)/cl.at(-6)-1, c20:cl.at(-1)/cl.at(-21)-1, px:cl.at(-1)}); }
   const corr = (a,b) => { const n = Math.min(a.length,b.length); if (n < 10) return null; const ma = a.reduce((x,y)=>x+y,0)/n, mb = b.reduce((x,y)=>x+y,0)/n; let num=0, da=0, db=0; for (let i=0;i<n;i++){ num += (a[i]-ma)*(b[i]-mb); da += (a[i]-ma)**2; db += (b[i]-mb)**2; } return num/Math.sqrt(da*db||1); };
   const syms = MACRO.filter(s => rets.has(s));
@@ -4650,7 +4654,7 @@ window.__kn = { S, renderTabs, viewBook, bookRows, loadBookGreeks, LIVEB, applyL
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
 if (S.set.defaultSym){ S.sym = S.set.defaultSym; document.getElementById("symIn").value = S.sym; }
 { const m = location.search.match(/[?&]s=([A-Za-z.]+)/); if (m){ const v = m[1].toUpperCase(); S.sym = v; document.getElementById("symIn").value = v; } }
-detectServer().then(() => { if (SRV.data){ loadTape(); loadUniverse(true); } if (SRV.ava) ediRender(); renderStatus(); if (!rhAvailable()){ closeReadPoll(); loadAnomalies(); setInterval(() => { if (marketPhase() === "regular" || Date.now() - ANOM.at > 20*60e3) loadAnomalies(); }, 2*60e3); } }); // a Kingnode server of our own? then its data and its key
+detectServer().then(() => { if (SRV.data){ loadTape(); loadUniverse(true); } if (SRV.ava) ediRender(); renderStatus(); if (!feedless()){ closeReadPoll(); loadAnomalies(); setInterval(() => { if (marketPhase() === "regular" || Date.now() - ANOM.at > 20*60e3) loadAnomalies(); }, 2*60e3); } }); // a Kingnode server of our own? then its data and its key
 load();
 rhStart(); // inside Claude's preview: the viewer's Robinhood connection; everywhere else this returns at once
 let tickTimer = null, nextAt = 0;
