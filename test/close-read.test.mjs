@@ -221,3 +221,25 @@ test("half day: the closing read keys on the session's close — 12:50 / 12:58 /
   const hist = { reads: [{ date: "2026-11-27", label: "12:50", kind: "call", side: "SELL", grade: "B", spy: { px: 700 } }, { date: "2026-11-27", label: "12:58", kind: "final", side: "SELL", grade: "A", spy: { px: 699 } }] };
   assert.equal(settleCloseReads(hist, 697, "2026-11-27", 1), 2); assert.deepEqual(hist.record, { byGrade: { B: { n: 1, hits: 1 } }, all: { n: 1, hits: 1 } }, "the half day's call joins the record, its final does not");
 });
+
+test("half day: the app's session helpers close at 1:00 PM too — the header badge, the regular-bar test, the ext-hours label, the volume pace; the anomaly pace is whole after the early close", async () => {
+  // the feed: between 13:00 and 16:00 on 2026-11-27 the premium pace is the whole day's, not 54% of one (before the fix `et.min < 960` kept projecting)
+  const an = (date, min) => detectAnomalies({ scan: { rows: {} }, history: { days: {} }, now: Date.UTC(2026, 10, 27, 19), et: { date, min, dow: 5 } }).frac;
+  assert.equal(an("2026-11-27", 14 * 60), 1, "2 PM on the half day: the session is over"); assert.ok(Math.abs(an("2026-11-20", 14 * 60) - 270 / 390) < 0.01, "2 PM on a normal Friday: 69% of the day");
+  assert.ok(Math.abs(an("2026-11-27", 12 * 60) - 150 / 390) < 0.01, "noon on the half day: the per-minute pace, as on any day");
+  // the app, read out of app.html: the helpers that used to say 960
+  const fs = await import("node:fs"); const vm = await import("node:vm");
+  const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const fn = name => { const i = js.indexOf(`function ${name}(`); assert.ok(i >= 0, `${name} lives in app.html`); let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } } return js.slice(i, j + 1); };
+  const line = start => { const i = js.indexOf(start); assert.ok(i >= 0, `${start} lives in app.html`); return js.slice(i, js.indexOf("\n", i)); };
+  const ctx = { Math, Number, Map, Intl, Date }; vm.createContext(ctx);
+  vm.runInContext([line("const NYSE_HALF_DAYS ="), fn("sessionCloseMinOf"), line("const closeClock ="), line("const ET_CACHE ="), fn("etInfo"), fn("isRegularBar"), fn("extState"), fn("sessionFraction"), fn("marketStateText")].join("\n")
+    + "\nthis.o = { sessionCloseMinOf, closeClock, isRegularBar, extState, sessionFraction, marketStateText };", ctx);
+  const o = ctx.o; const et = (h, m, d = 27) => Date.UTC(2026, 10, d, h + 5, m); // ET + 5h = UTC in November
+  assert.equal(o.sessionCloseMinOf("2026-11-27"), 13 * 60); assert.equal(o.sessionCloseMinOf("2026-11-30"), 16 * 60); assert.equal(o.closeClock("2026-11-27"), "1:00 PM"); assert.equal(o.closeClock("2026-11-30"), "4:00 PM");
+  assert.equal(o.marketStateText("regular", 5, "2026-11-27"), "Regular session · closes 1:00 PM (early close)"); assert.equal(o.marketStateText("regular", 1, "2026-11-30"), "Regular session · closes 4:00 PM");
+  assert.equal(o.marketStateText("post", 5, "2026-11-27"), "After hours · until 8:00 PM (1:00 PM close)"); assert.equal(o.marketStateText("closed", 6, "2026-11-28"), "Closed · overnight session opens Sun 8:00 PM");
+  assert.equal(o.isRegularBar(et(13, 0)), true, "the 1:00 PM bar is the closing print"); assert.equal(o.isRegularBar(et(13, 1)), false); assert.equal(o.isRegularBar(et(15, 59, 30)), true, "3:59 PM on a normal day");
+  assert.equal(o.extState({ t: et(13, 30) }), "POST", "1:30 PM on the half day is after hours"); assert.equal(o.extState({ t: et(13, 30, 30) }), false, "1:30 PM on a normal day is not"); assert.equal(o.extState({ t: et(8, 0) }), "PRE"); assert.equal(o.extState({ state: "POST" }), "POST", "the feed's state wins");
+  assert.equal(o.sessionFraction(et(14, 0)), 1, "the half day is whole by 2 PM"); assert.ok(Math.abs(o.sessionFraction(et(14, 0, 30)) - 270 / 390) < 0.01); assert.ok(Math.abs(o.sessionFraction(et(12, 0)) - 150 / 390) < 0.01, "noon: the per-minute pace");
+});

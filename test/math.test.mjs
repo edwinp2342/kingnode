@@ -118,7 +118,7 @@ test("feed session date: the tape belongs to today only once a trading day has o
   assert.ok(isTradingDay("2026-11-13", 5) && !isTradingDay("2026-11-14", 6));
 });
 test("app market clock matches the feed's, and staleness only counts while the market is open", () => {
-  const src2 = [grab("marketPhase"), grab("marketOpenNow"), grab("isStale"), grab("NYSE_HOLIDAYS"), grab("NYSE_HALF_DAYS")].join("\n");
+  const src2 = [grab("marketPhase"), grab("marketOpenNow"), grab("isStale"), grab("NYSE_HOLIDAYS"), grab("NYSE_HALF_DAYS"), grab("sessionCloseMinOf")].join("\n");
   const c2 = { Math, Date, Number, Map, Set, Array, Object, isFinite, String, Intl, marketDate: ctx.marketDate };
   vm.createContext(c2); vm.runInContext(src2 + "\nthis.marketPhase = marketPhase; this.isStale = isStale;", c2);
   for (const iso of ["2026-10-12T14:00:00Z", "2026-10-12T10:30:00Z", "2026-10-12T22:00:00Z", "2026-10-13T01:00:00Z", "2026-10-17T15:00:00Z", "2026-11-26T15:00:00Z", "2026-11-27T18:30:00Z"])
@@ -240,7 +240,7 @@ test("series: 1-minute bars aggregate on the 09:30 grid, live minutes rebuild th
   const sctx = { Math, Date, Number, Map, Set, Array, Object, isFinite, Intl, String, console };
   vm.createContext(sctx);
   const grabConst = name => { const i = js.indexOf(`const ${name} = `); const j = js.indexOf("\n", i); return js.slice(i, j); };
-  vm.runInContext([grabConst("IV_MIN"), grabConst("ET_CACHE"), grabConst("NYSE_HALF_DAYS"), grab("etInfo"), grab("isRegularBar"), grab("bucketStart"), grab("aggregateBars"), grab("mergeBars"), grab("foldMinutes"), grab("barDay"), grab("foldQuote"), grab("foldQuoteBar"), grab("barsForInterval")].join("\n") + "\nthis.f = { etInfo, isRegularBar, bucketStart, aggregateBars, mergeBars, foldMinutes, foldQuote, barsForInterval };", sctx);
+  vm.runInContext([grabConst("IV_MIN"), grabConst("ET_CACHE"), grabConst("NYSE_HALF_DAYS"), grab("sessionCloseMinOf"), grab("etInfo"), grab("isRegularBar"), grab("bucketStart"), grab("aggregateBars"), grab("mergeBars"), grab("foldMinutes"), grab("barDay"), grab("foldQuote"), grab("foldQuoteBar"), grab("barsForInterval")].join("\n") + "\nthis.f = { etInfo, isRegularBar, bucketStart, aggregateBars, mergeBars, foldMinutes, foldQuote, barsForInterval };", sctx);
   const f = sctx.f;
   const open = Date.parse("2026-10-22T09:30:00-04:00"); const m = k => open + k * 60000;
   // a session of 1-minute bars 09:30 → 16:00
@@ -276,7 +276,7 @@ test("series: 1-minute bars aggregate on the 09:30 grid, live minutes rebuild th
 
 // ---------- the latest print: which number the header, tape and chart follow in each session ----------
 test("latest print: regular price in regular hours, the extended bar after hours, the 24-hour price overnight, indices unchanged", () => {
-  const mk = phase => { const c = { Math, Date, Number, Set, isFinite, INDEX_SYMS: new Set(["SPX"]), marketPhase: () => phase }; vm.createContext(c); vm.runInContext([grab("extState"), grab("latestPrint")].join("\n") + "\nthis.latestPrint = latestPrint;", c); return c.latestPrint; };
+  const mk = phase => { const c = { Math, Date, Number, Set, Map, Intl, isFinite, INDEX_SYMS: new Set(["SPX"]), marketPhase: () => phase }; vm.createContext(c); vm.runInContext([grab("ET_CACHE"), grab("NYSE_HALF_DAYS"), grab("sessionCloseMinOf"), grab("etInfo"), grab("extState"), grab("latestPrint")].join("\n") + "\nthis.latestPrint = latestPrint;", c); return c.latestPrint; };
   const t4 = Date.parse("2026-10-22T16:00:00-04:00"), t8 = Date.parse("2026-10-22T19:59:00-04:00"), now = Date.parse("2026-10-22T23:30:00-04:00");
   const q = { symbol: "NVDA", price: 212.21, prev: 221.97, last: 212.38, t: t8, state: null, full: 213.87, fullT: now };
   const eq = (a, b, m) => assert.deepEqual(JSON.parse(JSON.stringify(a)), b, m); // objects cross a vm boundary: compare by value

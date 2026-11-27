@@ -4,7 +4,7 @@ A personal options terminal. It reads the options chain the way a dealer desk do
 
 **Run it:** https://edwinp2342.github.io/kingnode/app.html (install from the browser as an app; see DESKTOP.md). Data: a GitHub Actions loop snapshots Cboe (chains, 15-min delayed) and Yahoo (bars/quotes, near real-time, pre/after-hours) about once a minute to the `data` branch; the site reads from there. Options: a Cloudflare proxy (proxy/), the desktop server (desktop/), or a vendor key for real-time (LIVE.md).
 
-**Tests:** `npm test` (66 node tests across `test/*.test.mjs`: math, macro, breadth, history, the Lab, the closing read, the feed banner, the stream and the local server) and `python3 test/smoke.py` (every tab in a headless browser). CI runs the math tests and a syntax check of every script on push. `node scripts/backtest.mjs` re-runs the Ideas validation (v2: regime, relative-strength and ATR-stop variants; `DATA_DIR=<local copy of the data branch>` to run offline).
+**Tests:** `npm test` (67 node tests across `test/*.test.mjs`: math, macro, breadth, history, the Lab, the closing read, the feed banner, the stream and the local server) and `python3 test/smoke.py` (every tab in a headless browser). CI runs the math tests and a syntax check of every script on push. `node scripts/backtest.mjs` re-runs the Ideas validation (v2: regime, relative-strength and ATR-stop variants; `DATA_DIR=<local copy of the data branch>` to run offline).
 
 ## Files
 

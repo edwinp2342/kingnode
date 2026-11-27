@@ -681,7 +681,7 @@ window.KNLab = { LAB_VERSION, mean, stdev, median, quantile, round, mulberry32, 
 <script>
 (() => {
 "use strict";
-const KN_VERSION = "v61 beta";
+const KN_VERSION = "v62 beta";
 // the last few page errors, for the Diagnostics report in Data health (what a beta tester pastes back)
 window.__knErrors = []; window.addEventListener("error", e => { window.__knErrors.push({ at: new Date().toISOString(), msg: String(e.message || "").slice(0, 160), where: `${String(e.filename || "").slice(-30)}:${e.lineno || 0}` }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
 window.addEventListener("unhandledrejection", e => { const r = e.reason; window.__knErrors.push({ at: new Date().toISOString(), msg: "unhandled: " + String(r?.code ? r.code + " " + (r.message || "") : r?.message || r).slice(0, 160) }); if (window.__knErrors.length > 20) window.__knErrors.shift(); });
@@ -825,7 +825,7 @@ async function loadTape(){
 }
 function extState(q){ // "PRE" | "POST" | false — from the feed's marketState, else from the print's ET clock
   const st = (q.state||"").toUpperCase(); if (st.startsWith("PRE")) return "PRE"; if (st.startsWith("POST") || st === "CLOSED") return "POST";
-  if (q.t){ const et = new Date(new Date(q.t).toLocaleString("en-US",{timeZone:"America/New_York"})); const m = et.getHours()*60+et.getMinutes(); if (m < 570) return "PRE"; if (m >= 960) return "POST"; } return false;
+  if (q.t){ const e = etInfo(q.t); if (e.min < 570) return "PRE"; if (e.min >= sessionCloseMinOf(e.day)) return "POST"; } return false;
 }
 // The latest print for a quote and which session it belongs to. Regular hours: the regular price. Pre/after hours: the last extended-hours bar
 // (it has a real trade time) or the 24-hour price. Overnight (20:00–04:00): the 24-hour price the feed sampled — Yahoo's fulldayPrice — stamped
@@ -935,9 +935,11 @@ function renderBbo(q){ const el = document.getElementById("bbo"); if (!el) retur
   const dp = q.ask < 2 ? 4 : 2; const spread = q.ask - q.bid, mid = (q.ask + q.bid) / 2, bps = mid > 0 ? spread / mid * 1e4 : 0; const sz = q.bidSize > 0 && q.askSize > 0 ? ` · ${fmt(q.bidSize)} × ${fmt(q.askSize)}` : "";
   el.replaceChildren(h("span",{class:"bid"}, fmt(q.bid, dp)), h("b",null,"×"), h("span",{class:"ask"}, fmt(q.ask, dp)), h("span",{class:"sp"}, `spread ${fmt(spread, dp)} · ${bps < 10 ? bps.toFixed(1) : Math.round(bps)} bp${sz}`));
   el.title = `bid × ask from ${q.src === "broker" ? "your Robinhood connection" : q.src === "stream" ? streamLabel() : q.src}${q.bboT ? " · " + whenLabel(q.bboT) : ""}${q.src === "stream" && STR.status?.feedType === "iex" ? " · one exchange's book, not the NBBO" : ""}`; el.hidden = false; }
-function renderMarketState(){ const el = document.getElementById("mktState"); if (!el) return; const ph = marketPhase(); const et = new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"})); const dow = et.getDay();
-  const text = ph === "regular" ? "Regular session · closes 4:00 PM" : ph === "pre" ? "Pre-market · opens 9:30 AM" : ph === "post" ? "After hours · until 8:00 PM" : ph === "overnight" ? "Overnight · 24-hour session until 4:00 AM" : dow === 6 || (dow === 0) ? "Closed · overnight session opens Sun 8:00 PM" : dow === 5 ? "Closed for the weekend" : "Closed";
-  el.textContent = text; el.className = "badge mkt" + (ph === "regular" ? " up" : ""); el.style.textTransform = "none"; el.title = "New York time. Sessions: pre-market 4:00–9:30, regular 9:30–4:00, after hours 4:00–8:00, overnight 8:00 PM–4:00 AM (a sampled 24-hour price, no bars)."; el.hidden = false; }
+// the header's session badge text: a half day says "closes 1:00 PM" and "early close" instead of 4:00 PM
+function marketStateText(ph, dow, ymd){ const half = sessionCloseMinOf(ymd) === 13*60;
+  return ph === "regular" ? `Regular session · closes ${closeClock(ymd)}${half ? " (early close)" : ""}` : ph === "pre" ? `Pre-market · opens 9:30 AM${half ? ", 1:00 PM close today" : ""}` : ph === "post" ? `After hours · until 8:00 PM${half ? " (1:00 PM close)" : ""}` : ph === "overnight" ? "Overnight · 24-hour session until 4:00 AM" : dow === 6 || (dow === 0) ? "Closed · overnight session opens Sun 8:00 PM" : dow === 5 ? "Closed for the weekend" : "Closed"; }
+function renderMarketState(){ const el = document.getElementById("mktState"); if (!el) return; const ph = marketPhase(); const et = new Date(new Date().toLocaleString("en-US",{timeZone:"America/New_York"})); const dow = et.getDay(); const ymd = etDayNow(); const cc = closeClock(ymd);
+  el.textContent = marketStateText(ph, dow, ymd); el.className = "badge mkt" + (ph === "regular" ? " up" : ""); el.style.textTransform = "none"; el.title = `New York time. Sessions: pre-market 4:00–9:30, regular 9:30–${cc.replace(" PM", "")}, after hours ${cc.replace(" PM", "")}–8:00, overnight 8:00 PM–4:00 AM (a sampled 24-hour price, no bars).${cc === "1:00 PM" ? " Early close today." : ""}`; el.hidden = false; }
 let statusAt = 0;
 function renderLiveQuote(){ renderHeaderPrice(); renderMarketState(); if (S.chain && !S.demo) renderAsOf(); if (Date.now() - statusAt > 10000){ statusAt = Date.now(); renderStatus(); } const rv = document.getElementById("rvolq"); if (rv){ const chip = INDEX_SYMS.has(S.sym) ? null : rvolChip(S.sym); rv.replaceChildren(chip || ""); } }
 function renderTape(){
@@ -1276,9 +1278,12 @@ function liveExps(exps){ const { ymd, min } = etNowParts(); return exps.filter(e
 // NYSE calendar + ET market phase. Shared logic with scripts/market-clock.mjs (the feed), kept in sync by hand.
 const NYSE_HOLIDAYS = new Set(["2026-01-01","2026-01-19","2026-02-16","2026-04-03","2026-05-25","2026-06-19","2026-07-03","2026-09-07","2026-11-26","2026-12-25","2027-01-01","2027-01-18","2027-02-15","2027-03-26","2027-05-31","2027-06-18","2027-07-05","2027-09-06","2027-11-25","2027-12-24"]);
 const NYSE_HALF_DAYS = new Set(["2026-11-27","2026-12-24","2027-11-26"]);
+// the minute the regular session closes on an ET date — 13:00 on a half day, 16:00 otherwise; every "is it still the regular session" check keys on it
+function sessionCloseMinOf(ymd){ return NYSE_HALF_DAYS.has(ymd) ? 13*60 : 16*60; }
+const closeClock = ymd => sessionCloseMinOf(ymd) === 13*60 ? "1:00 PM" : "4:00 PM";
 const HOLIDAY_NAMES = {"2026-10-12":"Columbus Day — stocks open, bond market closed","2026-11-11":"Veterans Day — stocks open, bond market closed","2026-11-26":"Thanksgiving — market closed","2026-11-27":"Day after Thanksgiving — 1:00 PM close","2026-12-24":"Christmas Eve — 1:00 PM close","2026-12-25":"Christmas — market closed","2027-01-01":"New Year's Day — market closed","2027-01-18":"MLK Day — market closed","2027-02-15":"Presidents' Day — market closed","2027-03-26":"Good Friday — market closed","2027-05-31":"Memorial Day — market closed","2027-06-18":"Juneteenth (observed) — market closed","2027-07-05":"Independence Day (observed) — market closed","2027-09-06":"Labor Day — market closed","2027-11-25":"Thanksgiving — market closed","2027-11-26":"Day after Thanksgiving — 1:00 PM close","2027-12-24":"Christmas (observed) — market closed"};
 // pre 04:00–09:30 · regular 09:30–16:00 · post 16:00–20:00 · overnight 20:00–04:00 (Sunday 20:00 to Friday 04:00: the 24-hour session, a price but no bars) · closed otherwise
-function marketPhase(t = Date.now()){ const et = new Date(new Date(t).toLocaleString("en-US",{timeZone:"America/New_York"})); const ymd = marketDate(t); const dow = et.getDay(); const min = et.getHours()*60 + et.getMinutes(); if (dow === 6 || NYSE_HOLIDAYS.has(ymd)) return "closed"; if (dow === 0) return min >= 20*60 ? "overnight" : "closed"; const close = NYSE_HALF_DAYS.has(ymd) ? 13*60 : 16*60; if (min < 4*60) return "overnight"; if (min < 570) return "pre"; if (min < close) return "regular"; if (min < 20*60) return "post"; return dow === 5 ? "closed" : "overnight"; }
+function marketPhase(t = Date.now()){ const et = new Date(new Date(t).toLocaleString("en-US",{timeZone:"America/New_York"})); const ymd = marketDate(t); const dow = et.getDay(); const min = et.getHours()*60 + et.getMinutes(); if (dow === 6 || NYSE_HOLIDAYS.has(ymd)) return "closed"; if (dow === 0) return min >= 20*60 ? "overnight" : "closed"; const close = sessionCloseMinOf(ymd); if (min < 4*60) return "overnight"; if (min < 570) return "pre"; if (min < close) return "regular"; if (min < 20*60) return "post"; return dow === 5 ? "closed" : "overnight"; }
 function marketOpenNow(){ return marketPhase() !== "closed"; }
 // A snapshot is stale only while the market is open and it is older than maxMin. When the market is closed, old data is simply the last session.
 function isStale(t, maxMin){ return !!t && marketOpenNow() && Date.now() - t > maxMin*60e3; }
@@ -1520,7 +1525,7 @@ const ANOM = { d:null, at:0, seen:new Set(), announcedAt:0, loading:false, updat
 const settingOn = (k, def = "on") => (S.set[k] || def) !== "off";
 const etMinNow = () => etNowParts().min; const etDayNow = () => etNowParts().ymd;
 // the closing read keys on the session's close: 16:00, or 13:00 on a half day (2026-11-27, 12-24), when the reads land at 12:50 / 12:58 instead
-const etCloseMin = () => NYSE_HALF_DAYS.has(etDayNow()) ? 13*60 : 16*60;
+const etCloseMin = () => sessionCloseMinOf(etDayNow());
 const crKind = r => r?.kind ? r.kind : r?.label === "15:50" ? "call" : "final"; // reads written before `kind` existed are told apart by the label
 const crClock = lbl => { const m = /^(\d{2}):(\d{2})$/.exec(lbl || ""); if (!m) return lbl || ""; const hh = Number(m[1]); return `${hh > 12 ? hh - 12 : hh}:${m[2]}`; }; // "15:58" → "3:58", "12:50" → "12:50"
 const crHot = (m = etMinNow(), c = etCloseMin()) => m >= c - 12 && m <= c + 12;
@@ -2403,7 +2408,7 @@ const IV_MIN = { "1m":1, "5m":5, "15m":15, "30m":30, "1h":60, "1d":1440 };
 const ET_CACHE = new Map(); const ET_FMT = new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York", hour12:false, year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", weekday:"short"});
 // ET calendar facts for a timestamp, cached: {min (minute of day), day ("2026-10-22"), dow, label ("Thu 10/22")}
 function etInfo(t){ let e = ET_CACHE.get(t); if (e) return e; const p = ET_FMT.formatToParts(new Date(t)); const g = k => p.find(x => x.type === k)?.value; const day = `${g("year")}-${g("month")}-${g("day")}`; e = { min:(Number(g("hour"))%24)*60 + Number(g("minute")), day, dow:g("weekday"), label:`${g("weekday")} ${Number(g("month"))}/${Number(g("day"))}`, month:Number(g("month")), year:Number(g("year")) }; if (ET_CACHE.size > 20000) ET_CACHE.clear(); ET_CACHE.set(t, e); return e; }
-function isRegularBar(t){ const e = etInfo(t); const close = NYSE_HALF_DAYS.has(e.day) ? 780 : 960; return e.min >= 570 && e.min <= close; } // the bar stamped at the close (16:00, 13:00 on a half day) is the closing print
+function isRegularBar(t){ const e = etInfo(t); const close = sessionCloseMinOf(e.day); return e.min >= 570 && e.min <= close; } // the bar stamped at the close (16:00, 13:00 on a half day) is the closing print
 // bucket start for an intraday interval: minutes from the ET session grid (09:30 is a boundary for every interval, so 1h bars run 9:30–10:30)
 function bucketStart(t, mins){ if (mins >= 1440) return t; const e = etInfo(t); const anchor = 570; const rel = e.min - anchor; const k = Math.floor(rel / mins) * mins; return t - (rel - k) * 60000 - (t % 60000); }
 // aggregate finer bars into coarser ones; same interval passes through
@@ -2747,7 +2752,7 @@ function updateAh(){
   const el = document.getElementById("ahq"); if (!el) return; el.hidden = true; return; // the header badge carries the pre/after-hours/overnight print now
   const m = S.barsMeta, b = S.bars; if (!b || !m || m.sym !== S.sym || !m.ext || S.barsDemo || INDEX_SYMS.has(S.sym)) return;
   const last = b[b.length-1], t = new Date(last[0]), et = new Date(t.toLocaleString("en-US",{timeZone:"America/New_York"}));
-  const mins = et.getHours()*60 + et.getMinutes(), regular = mins >= 570 && mins < 960, fresh = Date.now() - last[0] < 6*3600e3;
+  const mins = et.getHours()*60 + et.getMinutes(), regular = mins >= 570 && mins < sessionCloseMinOf(etInfo(last[0]).day), fresh = Date.now() - last[0] < 6*3600e3;
   if (regular || !fresh) return;
   const ref = S.chain?.spot || last[4], chg = last[4] - ref; if (Math.abs(chg) < 0.005) return;
   el.textContent = `${mins < 570 ? "PRE" : "AH"} ${fmt(last[4],2)} (${chg>=0?"+":""}${fmt(chg,2)})`; el.className = "badge " + (chg >= 0 ? "up" : "dn"); el.hidden = false;
@@ -3533,7 +3538,7 @@ function coachReport(){
   const chron = closed.slice().sort((a,b)=>a.closed-b.closed); let eq = 0, peak = 0, maxDD = 0, ddFrom = null; for (const e of chron){ eq += e.pnl; if (eq > peak){ peak = eq; } const dd = peak - eq; if (dd > maxDD){ maxDD = dd; ddFrom = e; } }
   const grossW = wins.reduce((a,e)=>a+e.pnl,0), net = closed.reduce((a,e)=>a+e.pnl,0); const outlierShare = grossW > 0 ? best.pnl / grossW : 0; const netExBest = net - (best.pnl > 0 ? best.pnl : 0);
   const lossSizes = losses.map(e => -e.pnl).sort((a,b)=>a-b); const q = p => lossSizes.length ? lossSizes[Math.min(lossSizes.length-1, Math.floor(p*(lossSizes.length-1)))] : 0; const lossMedian = q(0.5), lossP90 = q(0.9), lossMax = lossSizes.at(-1) || 0;
-  const sessionOf = e => { const et = new Date(new Date(e.opened).toLocaleString("en-US",{timeZone:"America/New_York"})); const m = et.getHours()*60+et.getMinutes(); return m < 570 ? "pre-market" : m < 630 ? "first hour" : m < 900 ? "midday" : m < 960 ? "last hour" : "after hours"; };
+  const sessionOf = e => { const i = etInfo(e.opened), m = i.min, close = sessionCloseMinOf(i.day); return m < 570 ? "pre-market" : m < 630 ? "first hour" : m < close - 60 ? "midday" : m < close ? "last hour" : "after hours"; };
   const bySession = new Map(); for (const e of closed){ const k = sessionOf(e); const v = bySession.get(k) || {n:0,pnl:0,w:0}; v.n++; v.pnl += e.pnl; if (e.pnl>0) v.w++; bySession.set(k,v); }
   const sessions = [...bySession.entries()].sort((a,b)=>b[1].pnl-a[1].pnl);
   out.stats = { n:closed.length, wr, avgW, avgL, expectancy, pf, avgHoldW, avgHoldL, maxLossStreak, bigLoss, weekendHolds, setups, alignedWr, alignedN:aligned.length, net, maxDrawdown:maxDD, drawdownTrade: ddFrom ? ddFrom.contract : null, outlierShare, netExBest, lossMedian, lossP90, lossMax, sessions };
@@ -4149,7 +4154,7 @@ async function loadCloses(){ if (CL.pending) return CL.pending; if (CL.c && Date
 function marketQuote(sym){ const r = MKT.q?.[sym]; if (!r || !r[0]) return null; return { symbol:sym, price:r[0], prev:r[1] ?? r[0], last:r[0], t:r[4] || MKT.snapAt, state:r[5], volume:r[3], avgVol:r[6] || null, full:r[7] || null, fullT:r[7] ? MKT.snapAt : null, src:"sweep", stale:MKT.stale, snapAt:MKT.snapAt }; }
 // Relative volume for any optionable name: today's volume against the 20-day average, adjusted for how much of the session has run (a name
 // that has done its whole average by 11:00 is running at ~2.6×, not 1×). After the close it is the plain ratio.
-function sessionFraction(t = Date.now()){ const e = etInfo(t); if (e.min >= 960) return 1; if (e.min < 570) return 0.05; return Math.max(0.05, Math.min(1, (e.min - 570) / 390)); }
+function sessionFraction(t = Date.now()){ const e = etInfo(t); if (e.min >= sessionCloseMinOf(e.day)) return 1; if (e.min < 570) return 0.05; return Math.max(0.05, Math.min(1, (e.min - 570) / 390)); } // the pace is per minute of a 390-minute day; once a half day has closed at 1:00 the day is whole
 function rvolFor(sym){ const r = MKT.q?.[sym]; if (!r || !r[6] || !r[3]) return null; const st = (r[5] || "").toUpperCase(); const frac = st.startsWith("PRE") || st === "CLOSED" || st.startsWith("POST") ? 1 : sessionFraction(r[4] || MKT.snapAt || Date.now()); const x = r[3] / (r[6] * frac); return { x, vol:r[3], avg:r[6], pace: frac < 1 }; }
 function rvolChip(sym, small){ const rv = rvolFor(sym); if (!rv) return null; const cls = rv.x >= 2 ? "up" : rv.x >= 1.3 ? "" : rv.x <= 0.6 ? "dim" : ""; return h("span",{class:"badge rvol " + cls, title:`${fmt(rv.vol)} shares today vs a 20-day average of ${fmt(rv.avg)}${rv.pace ? " — pace-adjusted for the time of day" : ""}`}, `${small ? "" : "RVOL "}${rv.x >= 10 ? fmt(rv.x, 0) : fmt(rv.x, 1)}×`); }
 // Market internals from the feed (computed after every sweep: advancers, up/down dollar volume, share above the 50-EMA, 60-day highs/lows)

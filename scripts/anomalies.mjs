@@ -13,7 +13,7 @@
 // before an ex-dividend date the dividend-capture desks put tens of thousands of deep calls through XOM, COP, MMM or SO — 50–70× a normal
 // day, 0% puts — and that is a financing trade, not a view. `prem` on an item is still the whole day; `deep` says how much was set aside.
 // A block and a vol/OI outlier on the same contract are one observation (the block keeps it); a one-sided day on a name that already surged folds into the surge.
-import { etNow, sessionDate } from "./market-clock.mjs";
+import { etNow, sessionDate, sessionCloseMin } from "./market-clock.mjs";
 
 export const ANOMALIES_VERSION = 2;
 const INDEXISH = new Set(["SPX", "SPY", "QQQ", "IWM", "DIA", "VIX", "XSP", "NDX", "RUT", "TLT", "GLD", "HYG"]);
@@ -38,7 +38,7 @@ export function detectAnomalies({ scan, history, now = Date.now(), et = etNow(ne
   // the session the tape belongs to: before the open, overnight and on weekends the chains still show the last session, so the day key,
   // the baseline cut-off and the first-seen keys follow that session rather than the calendar date (nothing becomes "new" at midnight)
   const day = sessionDate(et);
-  const rows = scan?.rows || {}; const base = baselines(history, day); const frac = et.min >= 570 && et.min < 960 ? sessionFraction(et.min) : 1; const items = [];
+  const rows = scan?.rows || {}; const base = baselines(history, day); const frac = et.min >= 570 && et.min < sessionCloseMin(et.date) ? sessionFraction(et.min) : 1; const items = []; // the pace cut-off is the session's close: 13:00 on a half day, the whole day from then
   for (const [sym, r] of Object.entries(rows)) {
     if (!r || !(r.spot > 0)) continue; const idx = INDEXISH.has(sym); const all = (r.cPrem || 0) + (r.pPrem || 0); if (!(all > 0)) continue;
     const cDir = Math.max(0, (r.cPrem || 0) - (r.cDeep || 0)), pDir = Math.max(0, (r.pPrem || 0) - (r.pDeep || 0)); const total = cDir + pDir; const deep = Math.round(all - total); if (!(total > 0)) continue;
