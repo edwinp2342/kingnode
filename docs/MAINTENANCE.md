@@ -46,6 +46,34 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-27 — scheduled run 15
+- Checked: 66 tests and smoke green before changes. Feed loop in progress on `29e7dc1` (run 45932004318, overnight cadence, cycle 13, index.json
+  0.6 min old at 00:10 ET; fast 77/77 with 0 fails, sweep 5071/5071, 0 429s, symbols 11421/5071 optionable, macro hourly ok; the cancelled run
+  before it is the 5.5-hour handoff). Thursday was Thanksgiving (no session): close-read.json is still Wednesday's 15:58 read (BUY A +71, miss at
+  −0.216%); Wednesday's pair is not yet `official` — that settles on Friday's premarket quote, as expected. Tuesday's pair stays `official: true`.
+  anomalies.json 2026-11-19 (frozen, 9 A / 31 B). hist 77/77, oldest 1.27 days. macro (EFFR 3.88% on 11-24, yields 4/4 with 10y 4.848 vs prev
+  4.904, BLS Oct, `yoy13` 4.08) ok. breadth `day: 2026-11-25`, 71 points. scan 337 rows, `at` 11-19 (frozen); chainAt 174.8 h old, `fail` is the
+  tier-B dozen `cb:*:http 403` + `b:ROKU` — the Cboe outage's eighth calendar day, no decision on the Backlog proposal yet (no new commits or
+  issues from Edwin). Today is the 1 PM half day the 11-26 fix was for.
+- Found 1 (app + feed): **the rest of the app still closed at 4:00 on a half day.** 7fcbcc0 moved the closing read to the session's close, but
+  the header badge would have said "Regular session · closes 4:00 PM" all morning, `extState` called a 1:30 PM print regular, the ext-hours
+  change line and the journal's session buckets ended at 16:00, and `sessionFraction` (RVOL) kept pace-adjusting until 4:00 — so a name's
+  relative volume read ~1.9× too high between 1:00 and 4:00 unless the feed's state said POST. The feed's anomaly pace (`anomalies.mjs`) had the
+  same `et.min < 960` cut-off (moot while the chains are 403, but wrong).
+- Fixed: `sessionCloseMinOf(ymd)` + `closeClock(ymd)` in app.html drive `marketPhase`, `etCloseMin`, `isRegularBar`, `extState`, the ext-hours
+  line, the journal's `sessionOf`, `sessionFraction` and the new `marketStateText(ph, dow, ymd)` ("Regular session · closes 1:00 PM (early close)",
+  "After hours · until 8:00 PM (1:00 PM close)", the badge title too); `detectAnomalies` cuts the pace off at `sessionCloseMin(et.date)`. New test in
+  test/close-read.test.mjs (the feed's `frac` at noon / 2 PM on the half day and on a normal Friday; the app helpers read out of app.html through vm);
+  the three math tests that read these helpers now carry the new one. Rendered app.html headlessly with the clock at 12:30 / 13:30 on 11-27 and
+  14:00 on 11-30: the three badge texts are right, no page errors; an offline `--once` cycle on fake-net ran clean. README / docs/LAB.md test count 67.
+  App v62 (KN_VERSION, sw.js CACHE, index.html). Commit fa2674a.
+- State: 67 tests green, smoke clean; feed redispatched (run 45944976374, loop_minutes 330) after cancelling 45932004318; verified on its first cycle
+  (cycle 0 on fa2674a, fast 77/77, sweep 5071/5071; the 403s continue — cycle 0 retries all 77 core chains, so `fail` is 77 `c:` + the tier-B dozen
+  until the loop settles). Preview artifact republished (version 33). No backlog item taken — the half-day follow-through was the night's one change.
+- Not verified: github.io (unreachable from here); the half-day reads live — Friday 11-27 should show a 12:50 call, a 12:58 final and a 13:03
+  verdict (check Saturday's run: close-reads.json rows dated 2026-11-27 with `kind`), and the header badge on the real day; Wednesday's provisional
+  716.81 close against the official print (settles on Friday's premarket quote).
+
 ### 2026-11-26 — scheduled run 14
 - Checked: 65 tests and smoke green before changes. Feed loop in progress on `a4d2097` (run 45732098761, overnight cadence, cycle 197, index.json
   10.8 min old at 00:11 ET — the 10-minute closed-phase tick; fast 77/77 with 0 fails, sweep 5071/5071, 0 429s, symbols 11421/5071 optionable,
