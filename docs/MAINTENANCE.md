@@ -46,6 +46,35 @@ most one small improvement from the backlog when everything is clean. Each run a
 
 ## Entries
 
+### 2026-11-28 — scheduled run 16
+- Checked: 70 tests and smoke green before changes (Edwin's two daytime commits on 11-27 — v63 bundled-snapshot host detection, v64 Ava
+  freshness/record/transcript — came with 3 new tests and pass). Feed loop in progress on `200a2fe` (run 46101039889, overnight cadence,
+  cycle 12, index.json 3.0 min old at 00:10 ET; fast 77/77 with 0 fails, sweep 5068/5068, 0 429s, symbols 11417/5069 optionable with 182
+  listings in the last 45 days, macro hourly ok; the cancelled run before it is the 5.5-hour handoff). **Friday's half day read as designed**
+  (last two nights' unverified item): close-reads.json carries a 12:50 `call` (SELL C −32, SPY 725.65) and a 12:58 `final` (BUY C +22, 726.91,
+  −$556M net on $27.86B core, $3.49B on $78.12B market; gamma stale as expected), both resolved at 13:03 against 728.68 — call a miss, final a
+  hit (+0.243%); close-read.json is the 12:58 final. Wednesday's pair is `official: true` (716.81 both ways). Record 2/6 overall. anomalies.json
+  2026-11-19 (frozen, 9 A / 31 B). hist 77/77, oldest 2.27 days. macro (EFFR 3.88% on 11-25, yields 4/4 with 10y 4.936 vs prev 4.848, BLS Oct,
+  `yoy13` 4.08) ok. breadth `day: 2026-11-27`, 38 points (a half day's worth). scan 337 rows, `at` 11-19 (frozen); chainAt 198.8 h old, `fail`
+  is the whole core batch + the tier-B dozen `cb:*:http 403` (cycle 12 still retries all 77) — the Cboe outage's ninth calendar day, no decision
+  on the Backlog proposal yet (no note in Edwin's commits, no issues). Rendered app.html headlessly as a bundled-snapshot preview with tonight's
+  real data-branch files: every tab, no page errors; the Host row reads "Claude preview · bundled snapshot of the feed as of 12:07 AM".
+- Found 1 (app): **the Data health rows for the closing read and suspicious flow were judged by the clock, not the session.** The Closing read
+  row was red every weekend (its rule was `date === today`) and would have been green with Wednesday's read on a Saturday had Friday's close
+  gone unread; the Suspicious flow row was green on the nine-day-old 11-19 file whenever the market was not in regular hours (its rule was
+  "under 40 minutes old or not regular hours"), while the Flow card above it has said "the Thu, Nov 19 session's tape" since 11-22.
+- Fixed: `closeReadExpectedDate(t)` / `closeReadStaleness(d, t)` in app.html — the read the feed should be showing is today's once a trading day's
+  verdict has landed (five minutes after the session's close, 13:05 on a half day), otherwise the last trading day's; Friday's read is green all
+  weekend and a missed close reads "behind — no read for the Fri, Nov 27 session" in red. The Suspicious flow row uses the Flow card's
+  `anomalyStaleness` (now with `label`): "the Thu, Nov 19 session's tape — no chain update since" in red. New test in test/feed-banner.test.mjs
+  (the expected date around the half-day and normal closes, the weekend, today's 3:50 call never behind, the note's wording). Rendered the Data
+  status card headlessly with tonight's real files (green 11-27 read, red tape) and with close-read.json re-dated 11-25 (red "behind" note);
+  no page errors. README (Data health line, test count 71), docs/LAB.md. App v65 (KN_VERSION, sw.js CACHE, index.html). Commit 94fc813.
+- State: 71 tests green, smoke clean; feed code unchanged, loop left running; preview artifact republished (version 36; its bundled snapshot
+  files from Edwin's 11-27 publish were left in place). The docs backlog item (test counts) was folded into the commit; no other item taken.
+- Not verified: github.io (unreachable from here); the two rows on a live trading day (16:05 flip to "today's" is unit-tested only); whether
+  the v63 bundled snapshot inside the preview card still loads with v65 (the files were not republished, only the page).
+
 ### 2026-11-27 — scheduled run 15
 - Checked: 66 tests and smoke green before changes. Feed loop in progress on `29e7dc1` (run 45932004318, overnight cadence, cycle 13, index.json
   0.6 min old at 00:10 ET; fast 77/77 with 0 fails, sweep 5071/5071, 0 429s, symbols 11421/5071 optionable, macro hourly ok; the cancelled run
