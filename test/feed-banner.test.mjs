@@ -51,3 +51,28 @@ test("app: anomalyStaleness says when suspicious flow is a past session's tape, 
   // nothing to compare → nothing said
   assert.equal(anomalyStaleness(null, "2026-11-20"), null); assert.equal(anomalyStaleness({ date: "2026-11-20" }, null), null); assert.equal(anomalyStaleness({ date: "today" }, "2026-11-20"), null);
 });
+
+test("app: closeReadStaleness judges the Data health row by session — Friday's read is current all weekend, a read that skipped a session is behind", () => {
+  const html = fs.readFileSync(new URL("../app.html", import.meta.url), "utf8"); const js = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const fn = name => { const i = js.indexOf(`function ${name}(`); assert.ok(i >= 0, `${name} lives in app.html`); let j = js.indexOf("{", i), depth = 0; for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}") { depth--; if (!depth) break; } } return js.slice(i, j + 1); };
+  const line = start => { const i = js.indexOf(start); assert.ok(i >= 0, `${start} lives in app.html`); return js.slice(i, js.indexOf("\n", i)); };
+  const ctx = { Math, Date, Intl, String }; vm.createContext(ctx);
+  vm.runInContext([line("const NYSE_HOLIDAYS ="), line("const NYSE_HALF_DAYS ="), fn("sessionCloseMinOf"), fn("marketDate"), fn("prevTradingDay"), fn("closeReadExpectedDate"), fn("closeReadStaleness")].join("\n")
+    + "\nthis.o = { closeReadExpectedDate, closeReadStaleness };", ctx);
+  const { closeReadExpectedDate, closeReadStaleness } = ctx.o; const et = (d, h, m) => Date.UTC(2026, 10, d, h + 5, m); // November: ET + 5h = UTC
+  // Saturday 2026-11-28 00:10 ET (tonight): Friday's half-day read is the one expected
+  assert.equal(closeReadExpectedDate(et(28, 0, 10)), "2026-11-27"); assert.equal(closeReadStaleness({ date: "2026-11-27" }, et(28, 0, 10)), null);
+  // the half day: Thursday was a holiday, so until 13:05 the expected read is Wednesday's; from 13:05 it is Friday's own
+  assert.equal(closeReadExpectedDate(et(27, 13, 4)), "2026-11-25"); assert.equal(closeReadExpectedDate(et(27, 13, 6)), "2026-11-27");
+  // a normal Tuesday: Monday's read until 16:05, then today's
+  assert.equal(closeReadExpectedDate(et(24, 16, 4)), "2026-11-23"); assert.equal(closeReadExpectedDate(et(24, 16, 6)), "2026-11-24");
+  // Monday morning: Friday's; Sunday: Friday's
+  assert.equal(closeReadExpectedDate(et(23, 10, 0)), "2026-11-20"); assert.equal(closeReadExpectedDate(et(22, 12, 0)), "2026-11-20");
+  // today's 3:50 call during the session is never behind; a read that skipped a session is, and the note names the missed session
+  assert.equal(closeReadStaleness({ date: "2026-11-24" }, et(24, 15, 52)), null);
+  const st = closeReadStaleness({ date: "2026-11-25" }, et(28, 0, 10)); assert.ok(st, "Wednesday's read on Saturday means Friday's close went unread");
+  assert.equal(st.expected, "2026-11-27"); assert.match(st.note, /no read for the Fri, Nov 27 session/);
+  assert.equal(closeReadStaleness(null, et(28, 0, 10)), null); assert.equal(closeReadStaleness({ date: "today" }, et(28, 0, 10)), null);
+  // anomalyStaleness now carries the session label the Data health row prints
+  assert.equal(appFn("anomalyStaleness")({ date: "2026-11-19" }, "2026-11-27").label, "Thu, Nov 19");
+});
